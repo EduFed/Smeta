@@ -33,8 +33,6 @@
     -webkit-font-smoothing:antialiased;
   }
   .app{
-    display:grid;
-    grid-template-columns:280px 1fr;
     min-height:100vh;
   }
   /* SIDEBAR */
@@ -45,7 +43,15 @@
     display:flex;
     flex-direction:column;
     gap:20px;
+    position:fixed; top:0; left:0;
+    width:280px; height:100vh;
+    box-sizing:border-box;
+    overflow-y:auto;
+    transform:translateX(-100%);
+    transition:transform .25s ease;
+    z-index:1000;
   }
+  body.nav-open .sidebar{ transform:translateX(0); }
   .brand{
     font-family:'Space Grotesk',sans-serif;
     font-weight:700;
@@ -54,6 +60,7 @@
     display:flex;
     align-items:baseline;
     gap:8px;
+    padding-left:36px;
   }
   .brand span{
     font-family:'JetBrains Mono',monospace;
@@ -107,7 +114,27 @@
   .sidebar-footer{margin-top:auto;padding-top:16px;border-top:1px solid #2C3A42;}
 
   /* MAIN */
-  .main{padding:36px 44px;overflow-x:hidden;}
+  .main{padding:36px 44px;overflow-x:hidden;transition:margin-left .25s ease;}
+  @media (min-width:1024px){
+    body.nav-open .main{ margin-left:280px; }
+  }
+  /* NAV toggle + drawer */
+  .nav-toggle{
+    position:fixed; top:12px; left:12px; z-index:1100;
+    width:40px; height:40px; border:none; border-radius:10px;
+    background:var(--ink); color:var(--white);
+    font-size:18px; cursor:pointer; display:none;
+    align-items:center; justify-content:center;
+    box-shadow:0 2px 8px rgba(0,0,0,.18);
+  }
+  body.app-ready .nav-toggle{ display:flex; }
+  .nav-toggle:hover{ background:#28353D; }
+  .nav-backdrop{
+    position:fixed; inset:0; background:rgba(20,28,33,.45);
+    opacity:0; pointer-events:none; transition:opacity .25s ease; z-index:900;
+  }
+  body.nav-open .nav-backdrop{ opacity:1; pointer-events:auto; }
+  @media (min-width:1024px){ .nav-backdrop{ display:none; } }
   .empty-state{
     max-width:480px;margin-top:15vh;
   }
@@ -177,8 +204,20 @@
     font-family:'JetBrains Mono',monospace;font-size:11px;text-transform:uppercase;letter-spacing:0.1em;
     color:var(--ink-soft);margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;
   }
+  /* Аккордеон "Виды работ" */
+  .works-acc-head{
+    width:100%;display:flex;justify-content:space-between;align-items:center;
+    background:none;border:none;cursor:pointer;padding:6px 0;
+    font-family:'JetBrains Mono',monospace;font-size:11px;text-transform:uppercase;letter-spacing:0.1em;
+    color:var(--ink-soft);
+  }
+  .works-acc-head:hover{color:var(--ink);}
+  .works-acc-head .chev{transition:transform .2s ease;font-size:12px;}
+  .works-acc.open .works-acc-head .chev{transform:rotate(180deg);}
+  .works-acc-body{max-height:0;overflow:hidden;transition:max-height .3s ease;}
+  .works-acc.open .works-acc-body{max-height:6000px;}
   .opening-row{
-    display:grid;grid-template-columns:1fr 70px 70px 60px 24px;gap:8px;align-items:center;
+    display:grid;grid-template-columns:1fr 105px 105px 90px 24px;gap:8px;align-items:center;
     margin-bottom:6px;font-size:12px;
   }
   .opening-row span{color:var(--ink-soft);font-family:'JetBrains Mono',monospace;font-size:11px;}
@@ -214,6 +253,33 @@
   }
   .badge{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--ink-soft);}
   .badge b{color:var(--ink);font-size:13px;}
+
+  /* СТЕНЫ */
+  .wall-list{display:flex;flex-direction:column;gap:6px;margin-bottom:10px;}
+  .wall-row{
+    display:grid;grid-template-columns:1fr auto 24px;gap:10px;align-items:center;
+    padding:7px 10px;border:1px solid var(--paper-line);border-radius:var(--radius);
+    background:var(--paper);font-size:12px;
+  }
+  .wall-row .wall-label{color:var(--ink);}
+  .wall-row .wall-area{font-family:'JetBrains Mono',monospace;font-weight:600;color:var(--ink);}
+  .wall-empty{font-size:12px;color:var(--ink-soft);margin-bottom:10px;font-style:italic;}
+  .wall-builder{border:1px dashed var(--paper-line);border-radius:var(--radius);padding:12px;}
+  .wall-field{display:flex;flex-direction:column;gap:4px;margin-bottom:8px;}
+  .wall-field label{font-family:'JetBrains Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:0.06em;color:var(--ink-soft);}
+  .wall-field input,.wall-field select{
+    font-family:'Inter',sans-serif;font-size:13px;border:1px solid var(--paper-line);
+    border-radius:var(--radius);padding:6px 8px;background:var(--white);color:var(--ink);
+  }
+  .wall-field input:focus,.wall-field select:focus{outline:none;border-color:var(--blue);}
+  .wall-fields{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;}
+  .wall-preview-row{display:flex;justify-content:space-between;align-items:center;margin-top:8px;gap:10px;flex-wrap:wrap;}
+  .wall-preview{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--ink-soft);}
+  .wall-preview b{color:var(--ink);font-size:14px;}
+  .wall-error{color:var(--red);font-size:12px;margin-top:6px;min-height:14px;}
+  @media (max-width:520px){
+    .wall-fields{grid-template-columns:1fr;}
+  }
 
   .add-room-btn{
     width:100%;padding:16px;border:2px dashed var(--paper-line);border-radius:var(--radius);
@@ -265,14 +331,19 @@
   @media print{
     .sidebar,.tabs,.header-actions,.add-room-btn,.no-print{display:none !important;}
     .app{display:block;}
-    .main{padding:0;}
+    .main{padding:0;margin-left:0 !important;}
     body{background:white;}
     .room{break-inside:avoid;}
+    .works-acc-body{max-height:none !important;overflow:visible !important;}
   }
-  @media (max-width:820px){
-    .app{grid-template-columns:1fr;}
-    .sidebar{position:sticky;top:0;z-index:10;}
-    .main{padding:24px 18px;}
+  @media (max-width:1024px){
+    .main{padding:64px 18px 24px;}
+  }
+  @media (max-width:520px){
+    .sidebar{width:86vw;}
+    .main{padding:64px 14px 24px;}
+    .opening-row{grid-template-columns:1fr 66px 66px 54px 22px;gap:6px;}
+    .dims-row{gap:14px;}
   }
 
   /* AUTH + SYNC */
@@ -310,11 +381,14 @@
 </style>
 </head>
 <body>
+<button class="nav-toggle no-print" id="navToggle" aria-label="Меню">☰</button>
+<div class="nav-backdrop no-print" id="navBackdrop"></div>
 <div class="app">
   <aside class="sidebar">
-    <div class="brand">СМЕТА<span>РЕМОНТ.РАСЧЁТ</span></div>
+    <div class="brand">СМЕТА<span>РАСЧЁТ</span></div>
 
     <div class="sb-section">
+      <button class="btn btn-ghost" id="catalogBtn">⚙ Виды работ</button>
       <button class="btn btn-primary" id="newProjectBtn">+ Новый проект</button>
     </div>
 
@@ -324,7 +398,6 @@
     </div>
 
     <div class="sidebar-footer sb-section">
-      <button class="btn btn-ghost" id="catalogBtn">⚙ Виды работ</button>
       <div class="user-email" id="userEmail"></div>
       <div class="sync-status"><span class="sync-dot" id="syncDot"></span><span id="syncText">—</span></div>
       <button class="btn btn-ghost" id="signOutBtn">Выйти</button>
@@ -408,7 +481,7 @@ function emptyRoom(){
   return {
     id: uid('r'), name:'Новое помещение',
     length:'', width:'', height:'',
-    windows:[], doors:[],
+    windows:[], doors:[], walls:[],
     works:[] // {workId, manualQty}
   };
 }
@@ -519,13 +592,38 @@ async function doSignOut(){
   await sb.auth.signOut();
   state.projects = [];
   state.currentProjectId = null;
+  document.body.classList.remove('app-ready');
+  setNav(false);
 }
 
 async function afterLogin(){
   hideLogin();
+  document.body.classList.add('app-ready');
   document.getElementById('userEmail').textContent = currentUser.email || '';
   await loadFromCloud();
   render();
+}
+
+// ---------- NAV (сворачивание меню) ----------
+function setNav(open){
+  document.body.classList.toggle('nav-open', open);
+  try{ localStorage.setItem('nav-open', open ? '1' : '0'); }catch(e){}
+}
+function initNav(){
+  let open;
+  try{
+    const s = localStorage.getItem('nav-open');
+    open = (s === null) ? (window.innerWidth >= 1024) : (s === '1');
+  }catch(e){ open = window.innerWidth >= 1024; }
+  document.body.classList.toggle('nav-open', open);
+  const t = document.getElementById('navToggle');
+  const b = document.getElementById('navBackdrop');
+  if(t) t.onclick = ()=> setNav(!document.body.classList.contains('nav-open'));
+  if(b) b.onclick = ()=> setNav(false);
+  // на телефоне закрываем меню после выбора проекта
+  document.addEventListener('click', e=>{
+    if(e.target.closest && e.target.closest('.proj-item') && window.innerWidth < 1024) setNav(false);
+  });
 }
 
 // ---------- BOOTSTRAP ----------
@@ -542,6 +640,7 @@ async function bootstrap(){
   document.getElementById('authSignUp').onclick = doSignUp;
   document.getElementById('signOutBtn').onclick = doSignOut;
   document.getElementById('authPass').addEventListener('keydown', e=>{ if(e.key==='Enter') doSignIn(); });
+  initNav();
 
   sb.auth.onAuthStateChange((evt, session)=>{
     currentUser = session?.user || null;
@@ -562,15 +661,54 @@ async function bootstrap(){
 }
 
 // ---------- CALCULATIONS ----------
+// какие аккордеоны "Виды работ" раскрыты (по помещению), в пределах сессии
+const uiWorksOpen = {};
+
+// ---------- СТЕНЫ (типы фигур) ----------
+const WALL_SHAPES = {
+  rect:      { label:'Прямоугольник / квадрат',                fields:[['a','ширина'],['h','высота']] },
+  trap:      { label:'Трапеция',                                fields:[['a','нижнее основание'],['b','верхнее основание'],['h','высота']] },
+  rtrap:     { label:'Прямоугольная трапеция',                  fields:[['a','нижнее основание'],['b','верхнее основание'],['h','высота']] },
+  tri:       { label:'Треугольник',                             fields:[['a','основание'],['h','высота']] },
+  rtri:      { label:'Прямоугольный треугольник',               fields:[['a','катет 1'],['b','катет 2']] },
+  recttrap:  { label:'Прямоугольник с трапецией',               fields:[['w','ширина прямоуг.'],['h1','высота прямоуг.'],['b','верхнее осн. трапеции'],['h2','высота трапеции']] },
+  rectrtrap: { label:'Прямоугольник с прямоугольной трапецией', fields:[['w','ширина прямоуг.'],['h1','высота прямоуг.'],['b','верхнее осн. трапеции'],['h2','высота трапеции']] },
+};
+function computeWallArea(w){
+  switch(w.shape){
+    case 'rect':      return num(w.a)*num(w.h);
+    case 'trap':
+    case 'rtrap':     return ((num(w.a)+num(w.b))/2)*num(w.h);
+    case 'tri':       return (num(w.a)*num(w.h))/2;
+    case 'rtri':      return (num(w.a)*num(w.b))/2;
+    case 'recttrap':
+    case 'rectrtrap': return num(w.w)*num(w.h1) + ((num(w.w)+num(w.b))/2)*num(w.h2);
+    default:          return 0;
+  }
+}
+// черновик добавляемой стены по помещению (в пределах сессии)
+const uiWallDraft = {};
+function wallDraft(roomId){
+  if(!uiWallDraft[roomId]) uiWallDraft[roomId] = { shape:'rect' };
+  return uiWallDraft[roomId];
+}
+
+function num(v){
+  const n = parseFloat(String(v==null?'':v).replace(',', '.').replace(/\s/g,''));
+  return isFinite(n) ? n : 0;
+}
 function calcRoomGeometry(room){
-  const L = parseFloat(room.length)||0, W = parseFloat(room.width)||0, H = parseFloat(room.height)||0;
+  const L = num(room.length), W = num(room.width), H = num(room.height);
   const perimeter = (L+W)*2;
   const floorArea = L*W;
   const ceilingArea = L*W;
-  const windowsArea = (room.windows||[]).reduce((s,o)=> s + (parseFloat(o.w)||0)*(parseFloat(o.h)||0)*(parseInt(o.qty)||0), 0);
-  const doorsArea = (room.doors||[]).reduce((s,o)=> s + (parseFloat(o.w)||0)*(parseFloat(o.h)||0)*(parseInt(o.qty)||0), 0);
-  const doorsWidthSum = (room.doors||[]).reduce((s,o)=> s + (parseFloat(o.w)||0)*(parseInt(o.qty)||0), 0);
-  const wallArea = Math.max(0, perimeter*H - windowsArea - doorsArea);
+  const windowsArea = (room.windows||[]).reduce((s,o)=> s + num(o.w)*num(o.h)*(num(o.qty)||0), 0);
+  const doorsArea = (room.doors||[]).reduce((s,o)=> s + num(o.w)*num(o.h)*(num(o.qty)||0), 0);
+  const doorsWidthSum = (room.doors||[]).reduce((s,o)=> s + num(o.w)*(num(o.qty)||0), 0);
+  const hasManualWalls = (room.walls||[]).length > 0;
+  const wallsSum = (room.walls||[]).reduce((s,w)=> s + computeWallArea(w), 0);
+  const grossWall = hasManualWalls ? wallsSum : perimeter*H;
+  const wallArea = Math.max(0, grossWall - windowsArea - doorsArea);
   const perimeterForSkirting = Math.max(0, perimeter - doorsWidthSum);
   return {perimeter, floorArea, ceilingArea, wallArea, perimeterForSkirting};
 }
@@ -583,9 +721,9 @@ function calcWorkLine(room, roomWork, work){
   } else if(work.unit === 'ml'){
     qty = work.appliesTo==='perimeter' ? g.perimeterForSkirting : g.perimeter;
   } else {
-    qty = parseFloat(roomWork.manualQty)||0;
+    qty = num(roomWork.manualQty);
   }
-  const sum = qty * (parseFloat(work.price)||0);
+  const sum = qty * num(work.price);
   return {qty, sum};
 }
 
@@ -633,8 +771,7 @@ function renderEmptyState(){
   `;
 }
 
-function renderProjectView(proj){
-  const roomsHtml = proj.rooms.map(r=>renderRoom(r)).join('');
+function renderSmetaBlock(proj){
   const grandTotal = proj.rooms.reduce((sum, r)=>{
     return sum + (r.works||[]).reduce((s2, rw)=>{
       const work = state.catalog.find(w=>w.id===rw.workId);
@@ -642,6 +779,17 @@ function renderProjectView(proj){
       return s2 + calcWorkLine(r, rw, work).sum;
     }, 0);
   }, 0);
+  return `
+    <div class="smeta-head"><h2>Итоговая смета</h2></div>
+    ${renderSmetaTable(proj)}
+    <div class="smeta-total">
+      <span class="label">Итого по проекту</span>
+      <span class="value">${fmtMoney(grandTotal)}</span>
+    </div>`;
+}
+
+function renderProjectView(proj){
+  const roomsHtml = proj.rooms.map(r=>renderRoom(r)).join('');
 
   return `
     <div class="proj-header">
@@ -658,14 +806,7 @@ function renderProjectView(proj){
     ${roomsHtml}
     <button class="add-room-btn no-print" id="addRoom">+ Добавить помещение</button>
 
-    <div class="smeta-wrap" style="margin-top:32px;">
-      <div class="smeta-head"><h2>Итоговая смета</h2></div>
-      ${renderSmetaTable(proj)}
-      <div class="smeta-total">
-        <span class="label">Итого по проекту</span>
-        <span class="value">${fmtMoney(grandTotal)}</span>
-      </div>
-    </div>
+    <div class="smeta-wrap" id="smetaBlock" style="margin-top:32px;">${renderSmetaBlock(proj)}</div>
   `;
 }
 
@@ -681,12 +822,13 @@ function renderRoom(room){
         <input type="checkbox" data-toggle-work="${room.id}|${work.id}" ${checked?'checked':''}>
         <span class="wname">${escapeHtml(work.name)}</span>
         <span class="wmeta">${fmtMoney(work.price)}/${UNIT_LABEL[work.unit]} · ${APPLIES_LABEL[work.appliesTo]}</span>
-        ${checked && manual ? `<input class="manual-qty" type="number" min="0" step="0.01" placeholder="${work.unit==='pcs'?'кол-во':'м³'}" value="${rw.manualQty||''}" data-manual-qty="${room.id}|${work.id}">` : ''}
-        ${checked ? `<span class="wsum">${fmt(line.qty)} ${UNIT_LABEL[work.unit]} · ${fmtMoney(line.sum)}</span>` : `<span class="wsum" style="color:#B7BEC2;">—</span>`}
+        ${checked && manual ? `<input class="manual-qty" type="text" inputmode="decimal" placeholder="${work.unit==='pcs'?'кол-во':'м³'}" value="${escapeAttr(rw.manualQty||'')}" data-manual-qty="${room.id}|${work.id}">` : ''}
+        ${checked ? `<span class="wsum" data-wsum="${room.id}|${work.id}">${fmt(line.qty)} ${UNIT_LABEL[work.unit]} · ${fmtMoney(line.sum)}</span>` : `<span class="wsum" style="color:#B7BEC2;">—</span>`}
       </div>
     `;
   }).join('');
 
+  const worksOpen = !!uiWorksOpen[room.id];
   return `
     <div class="room" data-room="${room.id}">
       <div class="room-head">
@@ -698,17 +840,19 @@ function renderRoom(room){
         <div class="dims-row">
           <div class="dim">
             <label>Длина <span class="unit">(м)</span></label>
-            <input type="number" min="0" step="0.01" value="${room.length}" data-dim="${room.id}|length">
+            <input type="text" inputmode="decimal" value="${escapeAttr(room.length)}" data-dim="${room.id}|length" placeholder="0">
           </div>
           <div class="dim">
             <label>Ширина <span class="unit">(м)</span></label>
-            <input type="number" min="0" step="0.01" value="${room.width}" data-dim="${room.id}|width">
+            <input type="text" inputmode="decimal" value="${escapeAttr(room.width)}" data-dim="${room.id}|width" placeholder="0">
           </div>
           <div class="dim">
             <label>Высота <span class="unit">(м)</span></label>
-            <input type="number" min="0" step="0.01" value="${room.height}" data-dim="${room.id}|height">
+            <input type="text" inputmode="decimal" value="${escapeAttr(room.height)}" data-dim="${room.id}|height" placeholder="0">
           </div>
         </div>
+
+        ${renderWallsSection(room)}
 
         <div class="subsection">
           <div class="subsection-title">Окна</div>
@@ -722,29 +866,73 @@ function renderRoom(room){
           <button class="add-link" data-add-opening="${room.id}|doors">+ добавить дверь</button>
         </div>
 
-        <div class="subsection">
-          <div class="subsection-title">Виды работ</div>
-          <div class="work-list">${worksHtml}</div>
+        <div class="subsection works-acc ${worksOpen?'open':''}" data-works-acc="${room.id}">
+          <button class="works-acc-head" type="button" data-works-toggle="${room.id}" aria-expanded="${worksOpen}">
+            <span>Виды работ</span><span class="chev">▾</span>
+          </button>
+          <div class="works-acc-body">
+            <div class="work-list">${worksHtml}</div>
+          </div>
         </div>
 
         <div class="room-summary">
-          <div class="badge">Периметр: <b>${fmt(g.perimeter)} м.п.</b></div>
-          <div class="badge">Площадь стен (с вычетом проёмов): <b>${fmt(g.wallArea)} м²</b></div>
-          <div class="badge">Площадь пола: <b>${fmt(g.floorArea)} м²</b></div>
-          <div class="badge">Площадь потолка: <b>${fmt(g.ceilingArea)} м²</b></div>
+          <div class="badge">Периметр: <b data-out="perimeter">${fmt(g.perimeter)} м.п.</b></div>
+          <div class="badge">Площадь стен (с вычетом проёмов): <b data-out="wallArea">${fmt(g.wallArea)} м²</b></div>
+          <div class="badge">Площадь пола: <b data-out="floorArea">${fmt(g.floorArea)} м²</b></div>
+          <div class="badge">Площадь потолка: <b data-out="ceilingArea">${fmt(g.ceilingArea)} м²</b></div>
         </div>
       </div>
     </div>
   `;
 }
 
+function renderWallsSection(room){
+  const draft = wallDraft(room.id);
+  const shape = draft.shape || 'rect';
+  const cfg = WALL_SHAPES[shape] || WALL_SHAPES.rect;
+  const wallsList = (room.walls||[]).map((w,i)=>{
+    const label = WALL_SHAPES[w.shape] ? WALL_SHAPES[w.shape].label : 'Стена';
+    return `
+      <div class="wall-row">
+        <span class="wall-label">${escapeHtml(label)}</span>
+        <span class="wall-area">${fmt(computeWallArea(w))} м²</span>
+        <button class="btn-icon" data-del-wall="${room.id}|${i}" title="Удалить">✕</button>
+      </div>`;
+  }).join('');
+  const fieldsHtml = cfg.fields.map(([key,label])=>`
+    <div class="wall-field">
+      <label>${label}</label>
+      <input type="text" inputmode="decimal" placeholder="0" value="${escapeAttr(draft[key]||'')}" data-wall-draft="${room.id}|${key}">
+    </div>`).join('');
+  const optionsHtml = Object.keys(WALL_SHAPES).map(k=>
+    `<option value="${k}" ${k===shape?'selected':''}>${WALL_SHAPES[k].label}</option>`).join('');
+  return `
+    <div class="subsection">
+      <div class="subsection-title">Стены</div>
+      ${wallsList ? `<div class="wall-list">${wallsList}</div>`
+        : `<div class="wall-empty">Стены не заданы — площадь считается как периметр × высота.</div>`}
+      <div class="wall-builder">
+        <div class="wall-field">
+          <label>Тип стены</label>
+          <select data-wall-shape="${room.id}">${optionsHtml}</select>
+        </div>
+        <div class="wall-fields" data-wall-fields="${room.id}">${fieldsHtml}</div>
+        <div class="wall-preview-row">
+          <span class="wall-preview">S = <b data-wall-preview="${room.id}">${fmt(computeWallArea(draft))}</b> м²</span>
+          <button class="add-link" data-add-wall="${room.id}">+ Добавить стену</button>
+        </div>
+        <div class="wall-error" data-wall-error="${room.id}"></div>
+      </div>
+    </div>`;
+}
+
 function renderOpeningRow(roomId, kind, idx, o){
   return `
     <div class="opening-row">
       <span>${kind==='windows'?'окно':'дверь'} ${idx+1}</span>
-      <input type="number" min="0" step="0.01" placeholder="ширина" value="${o.w}" data-opening="${roomId}|${kind}|${idx}|w">
-      <input type="number" min="0" step="0.01" placeholder="высота" value="${o.h}" data-opening="${roomId}|${kind}|${idx}|h">
-      <input type="number" min="1" step="1" placeholder="кол-во" value="${o.qty}" data-opening="${roomId}|${kind}|${idx}|qty">
+      <input type="text" inputmode="decimal" placeholder="ширина" value="${escapeAttr(o.w)}" data-opening="${roomId}|${kind}|${idx}|w">
+      <input type="text" inputmode="decimal" placeholder="высота" value="${escapeAttr(o.h)}" data-opening="${roomId}|${kind}|${idx}|h">
+      <input type="text" inputmode="numeric" placeholder="кол-во" value="${escapeAttr(o.qty)}" data-opening="${roomId}|${kind}|${idx}|qty">
       <button class="btn-icon" data-del-opening="${roomId}|${kind}|${idx}" title="Удалить">✕</button>
     </div>
   `;
@@ -808,7 +996,7 @@ function renderCatalogView(){
           <option value="manual" ${w.appliesTo==='manual'?'selected':''}>вручную</option>
         </select>
       </td>
-      <td><input type="number" min="0" step="1" value="${w.price}" data-cat-field="${w.id}|price"></td>
+      <td><input type="text" inputmode="decimal" value="${escapeAttr(w.price)}" data-cat-field="${w.id}|price"></td>
       <td><button class="btn-icon" data-del-work="${w.id}" title="Удалить">✕</button></td>
     </tr>
   `).join('');
@@ -932,7 +1120,7 @@ function attachHandlers(){
     el.addEventListener('input', ()=>{
       const [roomId, field] = el.getAttribute('data-dim').split('|');
       const r = proj.rooms.find(x=>x.id===roomId);
-      if(r){ r[field] = el.value; scheduleSave(); render(); }
+      if(r){ r[field] = el.value; scheduleSave(); updateDerived(proj); }
     });
   });
 
@@ -940,7 +1128,7 @@ function attachHandlers(){
     el.onclick = ()=>{
       const [roomId, kind] = el.getAttribute('data-add-opening').split('|');
       const r = proj.rooms.find(x=>x.id===roomId);
-      if(r){ r[kind] = r[kind]||[]; r[kind].push({w:'', h:'', qty:1}); scheduleSave(); render(); }
+      if(r){ r[kind] = r[kind]||[]; r[kind].push({w:'', h:'', qty:''}); scheduleSave(); render(); }
     };
   });
   main.querySelectorAll('[data-del-opening]').forEach(el=>{
@@ -954,8 +1142,50 @@ function attachHandlers(){
     el.addEventListener('input', ()=>{
       const [roomId, kind, idx, field] = el.getAttribute('data-opening').split('|');
       const r = proj.rooms.find(x=>x.id===roomId);
-      if(r){ r[kind][parseInt(idx)][field] = el.value; scheduleSave(); render(); }
+      if(r){ r[kind][parseInt(idx)][field] = el.value; scheduleSave(); updateDerived(proj); }
     });
+  });
+
+  // --- Стены ---
+  main.querySelectorAll('[data-wall-shape]').forEach(el=>{
+    el.addEventListener('change', ()=>{
+      const roomId = el.getAttribute('data-wall-shape');
+      uiWallDraft[roomId] = { shape: el.value };
+      render();
+    });
+  });
+  main.querySelectorAll('[data-wall-draft]').forEach(el=>{
+    el.addEventListener('input', ()=>{
+      const [roomId, field] = el.getAttribute('data-wall-draft').split('|');
+      const d = wallDraft(roomId);
+      d[field] = el.value;
+      const prev = main.querySelector(`[data-wall-preview="${roomId}"]`);
+      if(prev) prev.textContent = fmt(computeWallArea(d));
+      const err = main.querySelector(`[data-wall-error="${roomId}"]`);
+      if(err) err.textContent = '';
+    });
+  });
+  main.querySelectorAll('[data-add-wall]').forEach(el=>{
+    el.onclick = ()=>{
+      const roomId = el.getAttribute('data-add-wall');
+      const r = proj.rooms.find(x=>x.id===roomId);
+      const d = wallDraft(roomId);
+      const area = computeWallArea(d);
+      const err = main.querySelector(`[data-wall-error="${roomId}"]`);
+      if(!r) return;
+      if(!(area > 0)){ if(err) err.textContent = 'Заполните размеры стены (площадь должна быть больше 0).'; return; }
+      r.walls = r.walls || [];
+      r.walls.push({ ...d });
+      uiWallDraft[roomId] = { shape: d.shape };
+      scheduleSave(); render();
+    };
+  });
+  main.querySelectorAll('[data-del-wall]').forEach(el=>{
+    el.onclick = ()=>{
+      const [roomId, idx] = el.getAttribute('data-del-wall').split('|');
+      const r = proj.rooms.find(x=>x.id===roomId);
+      if(r && r.walls){ r.walls.splice(parseInt(idx),1); scheduleSave(); render(); }
+    };
   });
 
   main.querySelectorAll('[data-toggle-work]').forEach(el=>{
@@ -978,9 +1208,43 @@ function attachHandlers(){
       const r = proj.rooms.find(x=>x.id===roomId);
       if(!r) return;
       const rw = r.works.find(w=>w.workId===workId);
-      if(rw){ rw.manualQty = el.value; scheduleSave(); render(); }
+      if(rw){ rw.manualQty = el.value; scheduleSave(); updateDerived(proj); }
     });
   });
+
+  main.querySelectorAll('[data-works-toggle]').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      const roomId = el.getAttribute('data-works-toggle');
+      const open = !uiWorksOpen[roomId];
+      uiWorksOpen[roomId] = open;
+      const box = main.querySelector(`[data-works-acc="${roomId}"]`);
+      if(box) box.classList.toggle('open', open);
+      el.setAttribute('aria-expanded', open);
+    });
+  });
+}
+
+// Живой пересчёт итогов и площадей без перерисовки полей ввода
+function updateDerived(proj){
+  proj.rooms.forEach(room=>{
+    const roomEl = document.querySelector(`.room[data-room="${room.id}"]`);
+    if(!roomEl) return;
+    const g = calcRoomGeometry(room);
+    const setB = (k, txt)=>{ const b = roomEl.querySelector(`[data-out="${k}"]`); if(b) b.textContent = txt; };
+    setB('perimeter', fmt(g.perimeter)+' м.п.');
+    setB('wallArea', fmt(g.wallArea)+' м²');
+    setB('floorArea', fmt(g.floorArea)+' м²');
+    setB('ceilingArea', fmt(g.ceilingArea)+' м²');
+    (room.works||[]).forEach(rw=>{
+      const work = state.catalog.find(w=>w.id===rw.workId);
+      if(!work) return;
+      const line = calcWorkLine(room, rw, work);
+      const span = roomEl.querySelector(`[data-wsum="${room.id}|${rw.workId}"]`);
+      if(span) span.textContent = `${fmt(line.qty)} ${UNIT_LABEL[work.unit]} · ${fmtMoney(line.sum)}`;
+    });
+  });
+  const sm = document.getElementById('smetaBlock');
+  if(sm) sm.innerHTML = renderSmetaBlock(proj);
 }
 
 function createProject(){
