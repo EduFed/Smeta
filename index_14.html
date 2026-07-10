@@ -1,0 +1,2203 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>СМЕТА — расчёт ремонтных работ</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#F6F3EC;
+    --paper-line:#D9D2BE;
+    --ink:#1E2A32;
+    --ink-soft:#5B6B74;
+    --blue:#2C5F7C;
+    --blue-soft:#DDE7EA;
+    --orange:#E8622C;
+    --orange-soft:#FBE4D8;
+    --green:#4A7C59;
+    --red:#B33A2E;
+    --white:#FFFDF9;
+    --radius:2px;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;}
+  html,body{height:100%;}
+  body{
+    font-family:'Inter',sans-serif;
+    color:var(--ink);
+    background:
+      linear-gradient(var(--paper-line) 1px, transparent 1px) 0 0/100% 28px,
+      var(--paper);
+    -webkit-font-smoothing:antialiased;
+  }
+  .app{
+    min-height:100vh;
+  }
+  /* SIDEBAR */
+  .sidebar{
+    background:var(--ink);
+    color:var(--white);
+    padding:24px 20px;
+    display:flex;
+    flex-direction:column;
+    gap:20px;
+    position:fixed; top:0; left:0;
+    width:280px; height:100vh;
+    box-sizing:border-box;
+    overflow-y:auto;
+    transform:translateX(-100%);
+    transition:transform .25s ease;
+    z-index:1000;
+  }
+  body.nav-open .sidebar{ transform:translateX(0); }
+  .brand{
+    font-family:'Space Grotesk',sans-serif;
+    font-weight:700;
+    font-size:20px;
+    letter-spacing:0.02em;
+    display:flex;
+    align-items:baseline;
+    gap:8px;
+    padding-left:36px;
+  }
+  .brand span{
+    font-family:'JetBrains Mono',monospace;
+    font-size:11px;
+    color:var(--orange);
+    font-weight:500;
+  }
+  .sb-section{display:flex;flex-direction:column;gap:8px;}
+  .sb-label{
+    font-family:'JetBrains Mono',monospace;
+    font-size:10px;
+    text-transform:uppercase;
+    letter-spacing:0.12em;
+    color:#8FA0A8;
+    margin-bottom:2px;
+  }
+  .btn{
+    font-family:'Inter',sans-serif;
+    font-size:13px;
+    font-weight:600;
+    border:none;
+    border-radius:var(--radius);
+    padding:9px 14px;
+    cursor:pointer;
+    transition:transform .08s ease, opacity .12s ease;
+  }
+  .btn:active{transform:scale(0.98);}
+  .btn-primary{background:var(--orange);color:var(--white);}
+  .btn-primary:hover{opacity:0.92;}
+  .btn-ghost{background:transparent;color:var(--white);border:1px solid #3D4B53;}
+  .btn-ghost:hover{border-color:var(--orange);}
+  .btn-outline{background:transparent;color:var(--ink);border:1px solid var(--ink);}
+  .btn-outline:hover{background:var(--ink);color:var(--white);}
+  .btn-danger-text{background:none;border:none;color:var(--red);font-size:12px;cursor:pointer;padding:2px 4px;}
+  .btn-icon{background:none;border:none;color:var(--ink-soft);cursor:pointer;font-size:14px;padding:2px 6px;}
+  .btn-icon:hover{color:var(--red);}
+
+  .proj-list{display:flex;flex-direction:column;gap:4px;max-height:38vh;overflow-y:auto;}
+  .proj-item{
+    display:flex;justify-content:space-between;align-items:center;
+    padding:9px 10px;border-radius:var(--radius);cursor:pointer;
+    font-size:13px; color:#C9D2D5;
+    border-left:2px solid transparent;
+  }
+  .proj-item:hover{background:#28353D;}
+  .proj-item.active{background:#28353D;border-left-color:var(--orange);color:var(--white);font-weight:600;}
+  .proj-item .del{opacity:0;font-size:12px;color:#8FA0A8;}
+  .proj-item:hover .del{opacity:1;}
+  .proj-item .del:hover{color:var(--red);}
+
+  .sidebar-footer{margin-top:auto;padding-top:16px;border-top:1px solid #2C3A42;}
+
+  /* MAIN */
+  .main{padding:36px 44px;overflow-x:hidden;transition:margin-left .25s ease;}
+  @media (min-width:1024px){
+    body.nav-open .main{ margin-left:280px; }
+  }
+  /* NAV toggle + drawer */
+  .nav-toggle{
+    position:fixed; top:12px; left:12px; z-index:1100;
+    width:40px; height:40px; border:none; border-radius:10px;
+    background:var(--ink); color:var(--white);
+    font-size:18px; cursor:pointer; display:none;
+    align-items:center; justify-content:center;
+    box-shadow:0 2px 8px rgba(0,0,0,.18);
+  }
+  body.app-ready .nav-toggle{ display:flex; }
+  .nav-toggle:hover{ background:#28353D; }
+  .nav-backdrop{
+    position:fixed; inset:0; background:rgba(20,28,33,.45);
+    opacity:0; pointer-events:none; transition:opacity .25s ease; z-index:900;
+  }
+  body.nav-open .nav-backdrop{ opacity:1; pointer-events:auto; }
+  @media (min-width:1024px){ .nav-backdrop{ display:none; } }
+  .empty-state{
+    max-width:480px;margin-top:15vh;
+  }
+  .empty-state h1{
+    font-family:'Space Grotesk',sans-serif;
+    font-size:30px;margin:0 0 10px;
+  }
+  .empty-state p{color:var(--ink-soft);line-height:1.6;font-size:14px;}
+
+  .proj-header{
+    display:flex;justify-content:space-between;align-items:flex-end;
+    margin-bottom:28px;padding-bottom:16px;border-bottom:2px solid var(--ink);
+    gap:20px;flex-wrap:wrap;
+  }
+  .proj-title-input{
+    font-family:'Space Grotesk',sans-serif;
+    font-size:28px;font-weight:700;
+    border:none;background:none;color:var(--ink);
+    padding:2px 0;min-width:200px;
+    border-bottom:1px dashed transparent;
+  }
+  .proj-title-input:focus{outline:none;border-bottom:1px dashed var(--blue);}
+  .proj-meta{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--ink-soft);margin-top:4px;}
+  .header-actions{display:flex;gap:8px;}
+
+  .tabs{display:flex;gap:2px;margin-bottom:24px;}
+  .tab{
+    font-family:'JetBrains Mono',monospace;font-size:11px;text-transform:uppercase;letter-spacing:0.08em;
+    padding:8px 16px;cursor:pointer;color:var(--ink-soft);border-bottom:2px solid transparent;
+  }
+  .tab.active{color:var(--ink);border-bottom-color:var(--orange);font-weight:600;}
+
+  /* ROOM CARD */
+  .room{
+    background:var(--white);
+    border:1px solid var(--ink);
+    border-radius:var(--radius);
+    margin-bottom:22px;
+    position:relative;
+  }
+  .room-head{
+    display:flex;justify-content:space-between;align-items:center;
+    padding:12px 16px;border-bottom:1px solid var(--paper-line);
+    background:var(--blue-soft);
+  }
+  .room-name{
+    font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:16px;
+    border:none;background:none;color:var(--ink);width:100%;
+  }
+  .room-name:focus{outline:none;}
+  .room-tag{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--blue);}
+  .room-body{padding:18px 20px 20px;}
+
+  .dims-row{display:flex;gap:22px;flex-wrap:wrap;margin-bottom:20px;}
+  .dim{display:flex;flex-direction:column;gap:5px;}
+  .dim label{font-family:'JetBrains Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:var(--ink-soft);display:flex;align-items:center;gap:5px;}
+  .dim input{
+    font-family:'JetBrains Mono',monospace;font-size:16px;font-weight:600;
+    border:none;border-bottom:1.5px solid var(--ink);background:none;
+    width:88px;padding:4px 2px;color:var(--ink);
+  }
+  .dim input:focus{outline:none;border-bottom-color:var(--orange);}
+  .dim .unit{color:var(--ink-soft);font-weight:400;font-size:12px;}
+
+  .subsection{margin-bottom:20px;}
+  .subsection-title{
+    font-family:'JetBrains Mono',monospace;font-size:11px;text-transform:uppercase;letter-spacing:0.1em;
+    color:var(--ink-soft);margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;
+  }
+  /* Аккордеон "Виды работ" */
+  .works-acc-head{
+    width:100%;display:flex;justify-content:space-between;align-items:center;
+    background:none;border:none;cursor:pointer;padding:6px 0;
+    font-family:'JetBrains Mono',monospace;font-size:11px;text-transform:uppercase;letter-spacing:0.1em;
+    color:var(--ink-soft);
+  }
+  .works-acc-head:hover{color:var(--ink);}
+  .works-acc-head .chev{transition:transform .2s ease;font-size:12px;}
+  .works-acc.open .works-acc-head .chev{transform:rotate(180deg);}
+  .works-acc-body{max-height:0;overflow:hidden;transition:max-height .3s ease;}
+  .works-acc.open .works-acc-body{max-height:6000px;}
+  .opening-row{
+    display:grid;grid-template-columns:1fr 105px 105px 90px 24px;gap:8px;align-items:center;
+    margin-bottom:6px;font-size:12px;
+  }
+  .opening-row span{color:var(--ink-soft);font-family:'JetBrains Mono',monospace;font-size:11px;}
+  .opening-row input{
+    font-family:'JetBrains Mono',monospace;font-size:13px;border:1px solid var(--paper-line);
+    border-radius:var(--radius);padding:5px 6px;width:100%;background:var(--paper);
+  }
+  .opening-row input:focus{outline:none;border-color:var(--blue);}
+  .add-link{
+    background:none;border:none;color:var(--blue);font-size:12px;font-weight:600;cursor:pointer;
+    padding:4px 0;font-family:'Inter',sans-serif;
+  }
+  .add-link:hover{color:var(--orange);}
+
+  .work-list{display:flex;flex-direction:column;gap:6px;}
+  .work-row{
+    display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--paper-line);
+    border-radius:var(--radius);background:var(--paper);
+  }
+  .work-row.checked{border-color:var(--blue);background:var(--white);}
+  .work-row input[type=checkbox]{accent-color:var(--orange);width:16px;height:16px;cursor:pointer;}
+  .work-row .wname{flex:1;font-size:13px;}
+  .work-row .wmeta{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--ink-soft);}
+  .work-row .manual-qty{
+    width:70px;font-family:'JetBrains Mono',monospace;font-size:12px;
+    border:1px solid var(--paper-line);border-radius:var(--radius);padding:4px 6px;background:var(--white);
+  }
+  .work-row .wsum{font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600;color:var(--ink);min-width:90px;text-align:right;}
+
+  .room-summary{
+    display:flex;gap:18px;margin-top:16px;padding-top:14px;border-top:1px dashed var(--paper-line);
+    flex-wrap:wrap;
+  }
+  .badge{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--ink-soft);}
+  .badge b{color:var(--ink);font-size:13px;}
+
+  /* РЕЖИМ РАСЧЁТА ПОМЕЩЕНИЯ */
+  .geometry-block{margin-bottom:20px;}
+  .calc-mode{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;}
+  .calc-mode-btn{
+    flex:1;min-width:150px;padding:10px 12px;border:1px solid var(--paper-line);
+    border-radius:var(--radius);background:var(--white);color:var(--ink-soft);
+    font-family:'Inter',sans-serif;font-size:13px;font-weight:600;cursor:pointer;
+    transition:all .15s ease;
+  }
+  .calc-mode-btn:hover{border-color:var(--ink-soft);color:var(--ink);}
+  .calc-mode-btn.active{background:var(--ink);color:var(--white);border-color:var(--ink);}
+  .calc-mode-hint{font-size:13px;color:var(--ink-soft);font-style:italic;padding:6px 0;}
+  .dims-hint{font-size:12px;color:var(--ink-soft);margin:0 0 10px;}
+  .dims-warn{color:var(--red);font-size:12px;margin:6px 0;min-height:14px;}
+
+  /* ДАННЫЕ ДЛЯ ДОГОВОРА */
+  .cust-acc{border:1px solid var(--paper-line);border-radius:var(--radius);background:var(--white);margin-bottom:24px;overflow:hidden;}
+  .cust-head{
+    width:100%;display:flex;justify-content:space-between;align-items:center;
+    background:none;border:none;cursor:pointer;padding:16px 20px;
+    font-family:'Space Grotesk',sans-serif;font-size:15px;font-weight:600;color:var(--ink);
+  }
+  .cust-head .chev{transition:transform .2s ease;color:var(--ink-soft);}
+  .cust-acc.open .cust-head .chev{transform:rotate(180deg);}
+  .cust-body{max-height:0;overflow:hidden;transition:max-height .3s ease;padding:0 20px;}
+  .cust-acc.open .cust-body{max-height:2000px;padding:0 20px 20px;}
+  .cust-group{margin-bottom:18px;}
+  .cust-group-title{font-family:'JetBrains Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:var(--ink-soft);margin-bottom:10px;border-bottom:1px solid var(--paper-line);padding-bottom:5px;}
+  .cust-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+  .cust-field{margin-bottom:12px;display:flex;flex-direction:column;gap:5px;}
+  .cust-field label{font-size:12px;color:var(--ink-soft);}
+  .cust-field input,.cust-field textarea{
+    font-family:'Inter',sans-serif;font-size:14px;border:1px solid var(--paper-line);
+    border-radius:var(--radius);padding:9px 11px;background:var(--paper);color:var(--ink);resize:vertical;
+  }
+  .cust-field input:focus,.cust-field textarea:focus{outline:none;border-color:var(--blue);background:var(--white);}
+  .cust-err{color:var(--red);font-size:11px;min-height:13px;}
+  .cust-words{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--ink-soft);font-style:italic;}
+  .cust-readonly{font-size:16px;color:var(--ink);padding:4px 0;}
+  @media (max-width:520px){ .cust-grid{grid-template-columns:1fr;} }
+
+  /* ДОКУМЕНТЫ */
+  .docs-block{margin-top:24px;border:1px solid var(--paper-line);border-radius:var(--radius);padding:18px 20px;background:var(--white);}
+  .docs-title{font-family:'Space Grotesk',sans-serif;font-size:15px;font-weight:600;color:var(--ink);margin-bottom:12px;}
+  .docs-row{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:10px 0;border-top:1px solid var(--paper-line);}
+  .docs-row:first-of-type{border-top:none;}
+  .docs-name{font-family:'JetBrains Mono',monospace;font-size:12px;text-transform:uppercase;letter-spacing:0.08em;color:var(--ink-soft);min-width:70px;}
+  .docs-btns{display:flex;gap:8px;flex-wrap:wrap;}
+  .docs-btns .btn{font-size:13px;padding:8px 12px;}
+
+  /* СХЕМА ФИГУРЫ СТЕНЫ */
+  .wall-diagram{
+    display:flex;justify-content:center;align-items:center;
+    padding:12px;margin:4px 0 12px;background:var(--paper);
+    border:1px solid var(--paper-line);border-radius:var(--radius);
+  }
+
+  /* СТЕНЫ */
+  .wall-list{display:flex;flex-direction:column;gap:6px;margin-bottom:10px;}
+  .wall-row{
+    display:grid;grid-template-columns:1fr auto 24px;gap:10px;align-items:center;
+    padding:7px 10px;border:1px solid var(--paper-line);border-radius:var(--radius);
+    background:var(--paper);font-size:12px;
+  }
+  .wall-row .wall-label{color:var(--ink);}
+  .wall-row .wall-area{font-family:'JetBrains Mono',monospace;font-weight:600;color:var(--ink);}
+  .wall-empty{font-size:12px;color:var(--ink-soft);margin-bottom:10px;font-style:italic;}
+  .wall-builder{border:1px dashed var(--paper-line);border-radius:var(--radius);padding:12px;}
+  .wall-field{display:flex;flex-direction:column;gap:4px;margin-bottom:8px;}
+  .wall-field label{font-family:'JetBrains Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:0.06em;color:var(--ink-soft);}
+  .wall-field input,.wall-field select{
+    font-family:'Inter',sans-serif;font-size:13px;border:1px solid var(--paper-line);
+    border-radius:var(--radius);padding:6px 8px;background:var(--white);color:var(--ink);
+  }
+  .wall-field input:focus,.wall-field select:focus{outline:none;border-color:var(--blue);}
+  .wall-fields{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;}
+  .wall-preview-row{display:flex;justify-content:space-between;align-items:center;margin-top:8px;gap:10px;flex-wrap:wrap;}
+  .wall-preview{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--ink-soft);}
+  .wall-preview b{color:var(--ink);font-size:14px;}
+  .wall-error{color:var(--red);font-size:12px;margin-top:6px;min-height:14px;}
+
+  /* УЧАСТКИ ПОЛА */
+  .floor-row{
+    display:grid;grid-template-columns:1fr 90px 90px auto 24px;gap:8px;align-items:center;
+    margin-bottom:6px;font-size:12px;
+  }
+  .floor-row input{
+    font-family:'Inter',sans-serif;font-size:13px;border:1px solid var(--paper-line);
+    border-radius:var(--radius);padding:6px 8px;background:var(--white);color:var(--ink);
+  }
+  .floor-row input:focus{outline:none;border-color:var(--blue);}
+  .floor-area{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--ink-soft);text-align:right;white-space:nowrap;}
+  .floor-total{
+    margin-top:8px;font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--ink-soft);
+  }
+  .floor-total b{color:var(--ink);font-size:14px;}
+  @media (max-width:520px){
+    .floor-row{grid-template-columns:1fr 64px 64px auto 22px;gap:6px;}
+  }
+  @media (max-width:520px){
+    .wall-fields{grid-template-columns:1fr;}
+  }
+
+  .add-room-btn{
+    width:100%;padding:16px;border:2px dashed var(--paper-line);border-radius:var(--radius);
+    background:none;font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--ink-soft);
+    cursor:pointer;text-transform:uppercase;letter-spacing:0.08em;
+  }
+  .add-room-btn:hover{border-color:var(--orange);color:var(--orange);}
+
+  /* SMETA TABLE */
+  .smeta-wrap{background:var(--white);border:1px solid var(--ink);margin-top:10px;}
+  .smeta-head{
+    padding:14px 20px;border-bottom:1px solid var(--ink);
+    display:flex;justify-content:space-between;align-items:center;
+  }
+  .smeta-head h2{font-family:'Space Grotesk',sans-serif;font-size:16px;margin:0;}
+  table.smeta{width:100%;border-collapse:collapse;font-size:13px;}
+  table.smeta th{
+    font-family:'JetBrains Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:0.06em;
+    text-align:left;color:var(--ink-soft);padding:8px 20px;border-bottom:1px solid var(--paper-line);
+  }
+  table.smeta td{padding:9px 20px;border-bottom:1px solid var(--paper-line);}
+  table.smeta tr.room-divider td{
+    background:var(--blue-soft);font-weight:600;font-family:'JetBrains Mono',monospace;font-size:11px;
+    text-transform:uppercase;letter-spacing:0.05em;color:var(--blue);
+  }
+  table.smeta td.num{font-family:'JetBrains Mono',monospace;text-align:right;white-space:nowrap;}
+  table.smeta th:not(:first-child){white-space:nowrap;}
+  .smeta-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;}
+  .hint-inline{text-transform:none;letter-spacing:0;font-weight:400;color:var(--ink-soft);font-size:10px;}
+  @media (max-width:520px){
+    table.smeta{font-size:12px;}
+    table.smeta th{padding:8px 10px;}
+    table.smeta td{padding:8px 10px;}
+    table.smeta td:first-child{min-width:120px;}
+  }
+  .smeta-total{
+    display:flex;justify-content:space-between;align-items:center;padding:18px 20px;background:var(--ink);color:var(--white);
+  }
+  .smeta-total .label{font-family:'JetBrains Mono',monospace;font-size:12px;text-transform:uppercase;letter-spacing:0.1em;color:#9FB0B8;}
+  .smeta-total .value{font-family:'Space Grotesk',sans-serif;font-size:26px;font-weight:700;color:var(--orange);}
+
+  /* CATALOG */
+  .catalog-table{width:100%;border-collapse:collapse;background:var(--white);border:1px solid var(--ink);}
+  .catalog-table th{
+    font-family:'JetBrains Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:0.06em;
+    text-align:left;color:var(--ink-soft);padding:10px 14px;border-bottom:1px solid var(--ink);background:var(--blue-soft);
+  }
+  .catalog-table td{padding:8px 14px;border-bottom:1px solid var(--paper-line);}
+  .catalog-table input, .catalog-table select{
+    font-family:'Inter',sans-serif;font-size:13px;border:1px solid var(--paper-line);border-radius:var(--radius);
+    padding:6px 8px;background:var(--paper);width:100%;
+  }
+  .catalog-table select{font-family:'JetBrains Mono',monospace;font-size:12px;}
+  .catalog-table input:focus,.catalog-table select:focus{outline:none;border-color:var(--blue);}
+
+  .empty-hint{color:var(--ink-soft);font-size:13px;font-style:italic;padding:20px;text-align:center;}
+
+  @media print{
+    .sidebar,.tabs,.header-actions,.add-room-btn,.no-print{display:none !important;}
+    .app{display:block;}
+    .main{padding:0;margin-left:0 !important;}
+    body{background:white;}
+    .room{break-inside:avoid;}
+    .works-acc-body{max-height:none !important;overflow:visible !important;}
+  }
+  @media (max-width:1024px){
+    .main{padding:64px 18px 24px;}
+  }
+  @media (max-width:520px){
+    .sidebar{width:86vw;}
+    .main{padding:64px 14px 24px;}
+    .opening-row{grid-template-columns:1fr 66px 66px 54px 22px;gap:6px;}
+    .dims-row{gap:14px;}
+  }
+
+  /* AUTH + SYNC */
+  .auth-overlay{
+    position:fixed;inset:0;z-index:1000;background:var(--ink);
+    display:flex;align-items:center;justify-content:center;padding:20px;
+  }
+  .auth-card{
+    background:var(--white);border:1px solid #000;border-radius:var(--radius);
+    max-width:360px;width:100%;padding:30px 28px;
+  }
+  .auth-card h1{font-family:'Space Grotesk',sans-serif;font-size:24px;margin:0 0 2px;letter-spacing:0.02em;}
+  .auth-card .sub{color:var(--ink-soft);font-size:11px;margin-bottom:22px;font-family:'JetBrains Mono',monospace;text-transform:uppercase;letter-spacing:0.1em;}
+  .auth-field{display:flex;flex-direction:column;gap:6px;margin-bottom:14px;}
+  .auth-field label{font-family:'JetBrains Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:var(--ink-soft);}
+  .auth-field input{font-family:'Inter',sans-serif;font-size:14px;border:1px solid var(--paper-line);border-radius:var(--radius);padding:10px 12px;background:var(--paper);color:var(--ink);}
+  .auth-field input:focus{outline:none;border-color:var(--blue);}
+  .auth-actions{display:flex;gap:8px;margin-top:4px;}
+  .auth-actions .btn{flex:1;}
+  .auth-msg{font-size:12px;margin-top:14px;min-height:16px;line-height:1.5;}
+  .auth-msg.err{color:var(--red);}
+  .auth-msg.ok{color:var(--green);}
+  .user-email{font-family:'JetBrains Mono',monospace;font-size:11px;color:#C9D2D5;word-break:break-all;margin-bottom:6px;}
+  .sync-status{font-family:'JetBrains Mono',monospace;font-size:10px;color:#8FA0A8;display:flex;align-items:center;gap:6px;margin-bottom:8px;}
+  .sync-dot{width:7px;height:7px;border-radius:50%;background:#8FA0A8;flex:0 0 auto;}
+  .sync-dot.saved{background:var(--green);}
+  .sync-dot.saving{background:var(--orange);}
+  .sync-dot.error{background:var(--red);}
+  .config-warn{
+    position:fixed;inset:0;z-index:1001;background:var(--ink);color:var(--white);
+    display:flex;align-items:center;justify-content:center;padding:24px;
+    font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.7;text-align:center;
+  }
+  .config-warn code{color:var(--orange);}
+</style>
+</head>
+<body>
+<button class="nav-toggle no-print" id="navToggle" aria-label="Меню">☰</button>
+<div class="nav-backdrop no-print" id="navBackdrop"></div>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">СМЕТА<span>РАСЧЁТ</span></div>
+
+    <div class="sb-section">
+      <button class="btn btn-ghost" id="catalogBtn">⚙ Виды работ</button>
+      <button class="btn btn-primary" id="newProjectBtn">+ Новый проект</button>
+    </div>
+
+    <div class="sb-section">
+      <div class="sb-label">Мои проекты</div>
+      <div class="proj-list" id="projList"></div>
+    </div>
+
+    <div class="sidebar-footer sb-section">
+      <div class="user-email" id="userEmail"></div>
+      <div class="sync-status"><span class="sync-dot" id="syncDot"></span><span id="syncText">—</span></div>
+      <button class="btn btn-ghost" id="signOutBtn">Выйти</button>
+    </div>
+  </aside>
+
+  <main class="main" id="main"></main>
+</div>
+
+<!-- Экран входа -->
+<div class="auth-overlay" id="authOverlay" style="display:none;">
+  <div class="auth-card">
+    <h1>СМЕТА</h1>
+    <div class="sub">вход в аккаунт</div>
+    <div class="auth-field">
+      <label>Email</label>
+      <input type="email" id="authEmail" autocomplete="username" placeholder="you@example.com">
+    </div>
+    <div class="auth-field">
+      <label>Пароль</label>
+      <input type="password" id="authPass" autocomplete="current-password" placeholder="минимум 6 символов">
+    </div>
+    <div class="auth-actions">
+      <button class="btn btn-primary" id="authSignIn">Войти</button>
+      <button class="btn btn-outline" id="authSignUp">Регистрация</button>
+    </div>
+    <div class="auth-msg" id="authMsg"></div>
+  </div>
+</div>
+
+<!-- Экран «не настроено» -->
+<div class="config-warn" id="configWarn" style="display:none;">
+  <div>
+    ⚙ Приложение ещё не подключено к облаку.<br>
+    Впишите <code>SUPABASE_URL</code> и <code>SUPABASE_ANON_KEY</code><br>
+    в начале блока &lt;script&gt; и откройте страницу снова.<br>
+    <span style="color:#8FA0A8;">(см. инструкцию по настройке)</span>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+// ============================================================
+//  НАСТРОЙКА ПОДКЛЮЧЕНИЯ К ОБЛАКУ
+//  Заполните два значения ниже (взять их в кабинете Supabase:
+//  Project Settings → Data API / API Keys). Больше ничего
+//  в коде менять не нужно.
+// ============================================================
+const SUPABASE_URL      = 'https://jqbvnhybdxaftbybequy.supabase.co';       // напр. https://abcd1234.supabase.co
+const SUPABASE_ANON_KEY = 'sb_publishable_9ktDgBcYQ3BylN5QLh-18g_zqajTlGH';  // длинный ключ "anon public"
+// ============================================================
+
+// ---------- STATE ----------
+let state = {
+  projects: [],
+  catalog: [],
+  currentProjectId: null,
+  view: 'project' // 'project' | 'catalog'
+};
+
+const UNIT_LABEL = { m2:'м²', ml:'м.п.', m3:'м³', pcs:'шт.' };
+const APPLIES_LABEL = { walls:'стены', floor:'пол', ceiling:'потолок', perimeter:'периметр', manual:'вручную' };
+
+function uid(prefix){ return prefix + '_' + Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
+
+const DEFAULT_CATALOG = [
+  {id:uid('w'), name:'Штукатурка стен', unit:'m2', price:450, appliesTo:'walls'},
+  {id:uid('w'), name:'Покраска стен', unit:'m2', price:250, appliesTo:'walls'},
+  {id:uid('w'), name:'Поклейка обоев', unit:'m2', price:300, appliesTo:'walls'},
+  {id:uid('w'), name:'Выравнивание пола (стяжка)', unit:'m2', price:600, appliesTo:'floor'},
+  {id:uid('w'), name:'Укладка ламината', unit:'m2', price:500, appliesTo:'floor'},
+  {id:uid('w'), name:'Укладка плитки (пол)', unit:'m2', price:900, appliesTo:'floor'},
+  {id:uid('w'), name:'Натяжной потолок', unit:'m2', price:550, appliesTo:'ceiling'},
+  {id:uid('w'), name:'Монтаж плинтуса', unit:'ml', price:180, appliesTo:'perimeter'},
+  {id:uid('w'), name:'Монтаж потолочного багета', unit:'ml', price:150, appliesTo:'perimeter'},
+  {id:uid('w'), name:'Установка розетки/выключателя', unit:'pcs', price:400, appliesTo:'manual'},
+  {id:uid('w'), name:'Демонтажные работы', unit:'m3', price:1200, appliesTo:'manual'},
+];
+
+function emptyRoom(){
+  return {
+    id: uid('r'), name:'Новое помещение',
+    length:'', width:'', height:'',
+    shape:'rect', dims:{},
+    windows:[], doors:[], walls:[], floorSections:[],
+    works:[] // {workId, manualQty}
+  };
+}
+
+function emptyProject(){
+  return { id: uid('p'), name:'Новый проект', createdAt: Date.now(), customer:{}, rooms:[emptyRoom()] };
+}
+
+// ---------- CLOUD (Supabase) ----------
+let sb = null;              // клиент Supabase
+let currentUser = null;     // текущий пользователь
+let pendingSave = false;    // есть несохранённые изменения
+
+function setSync(status, text){
+  const dot = document.getElementById('syncDot');
+  const t   = document.getElementById('syncText');
+  if(dot) dot.className = 'sync-dot' + (status ? (' ' + status) : '');
+  if(t)   t.textContent = text;
+}
+
+let saveTimer = null;
+function scheduleSave(){
+  pendingSave = true;
+  setSync('saving', 'сохранение…');
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(persist, 700);
+}
+
+async function persist(){
+  if(!currentUser || !sb) return;
+  const payload = { projects: state.projects, catalog: state.catalog };
+  try{
+    const { error } = await sb.from('smeta_state').upsert(
+      { user_id: currentUser.id, data: payload, updated_at: new Date().toISOString() },
+      { onConflict: 'user_id' }
+    );
+    if(error) throw error;
+    setSync('saved', 'сохранено в облаке');
+  }catch(e){
+    console.error('Save failed', e);
+    setSync('error', 'ошибка сохранения');
+  }finally{
+    pendingSave = false;
+  }
+}
+
+async function loadFromCloud(){
+  if(!currentUser || !sb) return;
+  try{
+    const { data, error } = await sb
+      .from('smeta_state').select('data')
+      .eq('user_id', currentUser.id).maybeSingle();
+    if(error) throw error;
+    const blob = (data && data.data) ? data.data : null;
+    state.projects = (blob && Array.isArray(blob.projects)) ? blob.projects : [];
+    state.catalog  = (blob && Array.isArray(blob.catalog) && blob.catalog.length) ? blob.catalog : DEFAULT_CATALOG;
+    normalizeProjects();
+    setSync('saved', 'синхронизировано');
+  }catch(e){
+    console.error('Load failed', e);
+    if(!state.catalog || !state.catalog.length) state.catalog = DEFAULT_CATALOG;
+    setSync('error', 'нет связи с облаком');
+  }
+  if(state.projects.length && !state.currentProjectId){
+    state.currentProjectId = state.projects[0].id;
+  }
+}
+
+// ---------- AUTH ----------
+function showLogin(){ document.getElementById('authOverlay').style.display = 'flex'; }
+function hideLogin(){ document.getElementById('authOverlay').style.display = 'none'; }
+
+function authMsg(text, kind){
+  const m = document.getElementById('authMsg');
+  m.textContent = text || '';
+  m.className = 'auth-msg' + (kind ? (' ' + kind) : '');
+}
+
+function translateAuthError(m){
+  if(/invalid login/i.test(m))        return 'Неверный email или пароль';
+  if(/already registered/i.test(m))   return 'Такой email уже зарегистрирован — просто войдите';
+  if(/rate limit|too many/i.test(m))  return 'Слишком много попыток, подождите минуту';
+  if(/password should be/i.test(m))   return 'Пароль должен быть не короче 6 символов';
+  return m;
+}
+
+async function doSignIn(){
+  const email = document.getElementById('authEmail').value.trim();
+  const pass  = document.getElementById('authPass').value;
+  if(!email || !pass){ authMsg('Введите email и пароль', 'err'); return; }
+  authMsg('Входим…');
+  const { error } = await sb.auth.signInWithPassword({ email, password: pass });
+  if(error) authMsg(translateAuthError(error.message), 'err');
+}
+
+async function doSignUp(){
+  const email = document.getElementById('authEmail').value.trim();
+  const pass  = document.getElementById('authPass').value;
+  if(!email || pass.length < 6){ authMsg('Email и пароль от 6 символов', 'err'); return; }
+  authMsg('Создаём аккаунт…');
+  const { data, error } = await sb.auth.signUp({ email, password: pass });
+  if(error){ authMsg(translateAuthError(error.message), 'err'); return; }
+  if(!data.session){
+    authMsg('Аккаунт создан. Подтвердите email по ссылке из письма, затем войдите.', 'ok');
+  }
+}
+
+async function doSignOut(){
+  await sb.auth.signOut();
+  state.projects = [];
+  state.currentProjectId = null;
+  document.body.classList.remove('app-ready');
+  setNav(false);
+}
+
+async function afterLogin(){
+  hideLogin();
+  document.body.classList.add('app-ready');
+  document.getElementById('userEmail').textContent = currentUser.email || '';
+  await loadFromCloud();
+  render();
+}
+
+// ---------- NAV (сворачивание меню) ----------
+function setNav(open){
+  document.body.classList.toggle('nav-open', open);
+  try{ localStorage.setItem('nav-open', open ? '1' : '0'); }catch(e){}
+}
+function initNav(){
+  let open;
+  try{
+    const s = localStorage.getItem('nav-open');
+    open = (s === null) ? (window.innerWidth >= 1024) : (s === '1');
+  }catch(e){ open = window.innerWidth >= 1024; }
+  document.body.classList.toggle('nav-open', open);
+  const t = document.getElementById('navToggle');
+  const b = document.getElementById('navBackdrop');
+  if(t) t.onclick = ()=> setNav(!document.body.classList.contains('nav-open'));
+  if(b) b.onclick = ()=> setNav(false);
+  // на телефоне закрываем меню после выбора проекта
+  document.addEventListener('click', e=>{
+    if(e.target.closest && e.target.closest('.proj-item') && window.innerWidth < 1024) setNav(false);
+  });
+}
+
+// ---------- BOOTSTRAP ----------
+async function bootstrap(){
+  const configured = (typeof window.supabase !== 'undefined') && /^https:\/\//.test(SUPABASE_URL);
+  if(!configured){ document.getElementById('configWarn').style.display = 'flex'; return; }
+
+  sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    auth: { persistSession: true, autoRefreshToken: true }
+  });
+
+  // одноразовая привязка статичных элементов
+  document.getElementById('authSignIn').onclick = doSignIn;
+  document.getElementById('authSignUp').onclick = doSignUp;
+  document.getElementById('signOutBtn').onclick = doSignOut;
+  document.getElementById('authPass').addEventListener('keydown', e=>{ if(e.key==='Enter') doSignIn(); });
+  initNav();
+
+  sb.auth.onAuthStateChange((evt, session)=>{
+    currentUser = session?.user || null;
+    if(evt === 'SIGNED_IN')  afterLogin();
+    if(evt === 'SIGNED_OUT') showLogin();
+  });
+
+  const { data:{ session } } = await sb.auth.getSession();
+  currentUser = session?.user || null;
+  if(currentUser) afterLogin(); else showLogin();
+
+  // подхватываем свежие данные при возврате на вкладку (переключение устройств)
+  document.addEventListener('visibilitychange', ()=>{
+    if(document.visibilityState === 'visible' && currentUser && !pendingSave){
+      loadFromCloud().then(render);
+    }
+  });
+}
+
+// ---------- CALCULATIONS ----------
+// какие аккордеоны "Виды работ" раскрыты (по помещению), в пределах сессии
+const uiWorksOpen = {};
+const uiCustomerOpen = {};
+
+// ---------- СТЕНЫ (типы фигур) ----------
+// ---------- ФОРМЫ ПОМЕЩЕНИЯ (режим "размеры помещения") ----------
+// Сложные формы задаются последовательностью стен с направлением обхода (E/N/W/S).
+// Площадь считается по контуру (формула площади многоугольника), периметр = сумма стен.
+const DIRV = { E:[1,0], N:[0,1], W:[-1,0], S:[0,-1] };
+const ROOM_SHAPES = {
+  rect: {
+    label:'Прямоугольная', simple:true,
+    fields:[['a','a — длина'],['b','b — ширина']],
+    area:d=>num(d.a)*num(d.b),
+    perimeter:d=>2*(num(d.a)+num(d.b)),
+  },
+  lshape: {
+    label:'Г-образная',
+    walls:[['a','E'],['b','N'],['c','W'],['d','N'],['e','W'],['f','S']],
+  },
+  tshape: {
+    label:'Т-образная',
+    walls:[['a','E'],['b','N'],['c','E'],['d','N'],['e','W'],['f','S'],['g','E'],['h','S']],
+  },
+  ushape: {
+    label:'П-образная',
+    walls:[['a','E'],['b','N'],['c','W'],['d','S'],['e','W'],['f','N'],['g','W'],['h','S']],
+  },
+};
+function shapeArea(shape, d){
+  const def = ROOM_SHAPES[shape] || ROOM_SHAPES.rect;
+  if(def.simple) return def.area(d);
+  let x=0,y=0; const pts=[[0,0]];
+  def.walls.forEach(([key,dir])=>{ const v=DIRV[dir]; const L=num(d[key]); x+=v[0]*L; y+=v[1]*L; pts.push([x,y]); });
+  pts.pop(); // убираем замыкающую точку-дубликат
+  let s=0;
+  for(let i=0;i<pts.length;i++){ const j=(i+1)%pts.length; s += pts[i][0]*pts[j][1] - pts[j][0]*pts[i][1]; }
+  return Math.abs(s)/2;
+}
+function shapePerimeter(shape, d){
+  const def = ROOM_SHAPES[shape] || ROOM_SHAPES.rect;
+  if(def.simple) return def.perimeter(d);
+  return def.walls.reduce((s,[key])=> s + num(d[key]), 0);
+}
+function shapeClosure(shape, d){
+  const def = ROOM_SHAPES[shape] || ROOM_SHAPES.rect;
+  if(def.simple) return 0;
+  let x=0,y=0;
+  def.walls.forEach(([key,dir])=>{ const v=DIRV[dir]; const L=num(d[key]); x+=v[0]*L; y+=v[1]*L; });
+  return Math.hypot(x,y);
+}
+function shapeFields(shape){
+  const def = ROOM_SHAPES[shape] || ROOM_SHAPES.rect;
+  if(def.simple) return def.fields.concat([['h','h — высота']]);
+  return def.walls.map(([key])=>[key, 'Стена '+key]).concat([['h','h — высота']]);
+}
+
+const WALL_SHAPES = {
+  rect:      { label:'Прямоугольник / квадрат',                fields:[['a','a — ширина'],['h','h — высота']] },
+  trap:      { label:'Трапеция',                                fields:[['a','a — нижнее основание'],['b','b — верхнее основание'],['h','h — высота']] },
+  rtrap:     { label:'Прямоугольная трапеция',                  fields:[['a','a — нижнее основание'],['b','b — верхнее основание'],['h','h — высота']] },
+  tri:       { label:'Треугольник',                             fields:[['a','a — основание'],['h','h — высота']] },
+  rtri:      { label:'Прямоугольный треугольник',               fields:[['a','a — катет'],['b','b — катет']] },
+  recttrap:  { label:'Прямоугольник с трапецией',               fields:[['w','w — ширина'],['h1','h₁ — высота прямоуг.'],['b','b — верх трапеции'],['h2','h₂ — высота трапеции']] },
+  rectrtrap: { label:'Прямоугольник с прямоугольной трапецией', fields:[['w','w — ширина'],['h1','h₁ — высота прямоуг.'],['b','b — верх трапеции'],['h2','h₂ — высота трапеции']] },
+};
+function computeWallArea(w){
+  switch(w.shape){
+    case 'rect':      return num(w.a)*num(w.h);
+    case 'trap':
+    case 'rtrap':     return ((num(w.a)+num(w.b))/2)*num(w.h);
+    case 'tri':       return (num(w.a)*num(w.h))/2;
+    case 'rtri':      return (num(w.a)*num(w.b))/2;
+    case 'recttrap':
+    case 'rectrtrap': return num(w.w)*num(w.h1) + ((num(w.w)+num(w.b))/2)*num(w.h2);
+    default:          return 0;
+  }
+}
+// черновик добавляемой стены по помещению (в пределах сессии)
+const uiWallDraft = {};
+function wallDraft(roomId){
+  if(!uiWallDraft[roomId]) uiWallDraft[roomId] = { shape:'rect' };
+  return uiWallDraft[roomId];
+}
+// режим расчёта помещения: 'dims' (по размерам) или 'walls' (по стенам)
+function normalizeProjects(){
+  (state.projects||[]).forEach(p=>{
+    if(!p.customer) p.customer = {};
+    (p.rooms||[]).forEach(r=>{
+      if(!Array.isArray(r.walls)) r.walls = [];
+      if(!Array.isArray(r.windows)) r.windows = [];
+      if(!Array.isArray(r.doors)) r.doors = [];
+      if(!r.shape) r.shape = 'rect';
+      if(!r.dims) r.dims = { a: r.length||'', b: r.width||'', h: r.height||'' };
+      if(!Array.isArray(r.floorSections)){
+        // участки пола нужны только комнатам в режиме "стены"
+        r.floorSections = (r.calcMode==='walls' && (r.length||r.width)) ? [{ l:r.length||'', w:r.width||'' }] : [];
+      }
+      // старые комнаты с размерами, но без явного режима → режим "помещение"
+      if(r.calcMode!=='walls' && r.calcMode!=='dims' && (r.length||r.width||r.height)){
+        r.calcMode = 'dims';
+      }
+    });
+  });
+}
+
+function roomCalcMode(room){
+  if(room.calcMode === 'walls' || room.calcMode === 'dims') return room.calcMode;
+  if(room.length || room.width || room.height) return 'dims';
+  if((room.walls||[]).length) return 'walls';
+  return 'dims';
+}
+
+function num(v){
+  const n = parseFloat(String(v==null?'':v).replace(',', '.').replace(/\s/g,''));
+  return isFinite(n) ? n : 0;
+}
+function wallBase(w){
+  // длина нижней (напольной) стороны стены
+  switch(w.shape){
+    case 'recttrap':
+    case 'rectrtrap': return num(w.w);
+    default:          return num(w.a);
+  }
+}
+function calcRoomGeometry(room){
+  const L = num(room.length), W = num(room.width), H = num(room.height);
+  const mode = roomCalcMode(room);
+  const windowsArea = (room.windows||[]).reduce((s,o)=> s + num(o.w)*num(o.h)*(num(o.qty)||0), 0);
+  const doorsArea = (room.doors||[]).reduce((s,o)=> s + num(o.w)*num(o.h)*(num(o.qty)||0), 0);
+  const doorsWidthSum = (room.doors||[]).reduce((s,o)=> s + num(o.w)*(num(o.qty)||0), 0);
+  const wallsSum = (room.walls||[]).reduce((s,w)=> s + computeWallArea(w), 0);
+
+  let perimeter, floorArea, ceilingArea, grossWall;
+  if(mode === 'walls'){
+    const sections = room.floorSections||[];
+    floorArea = sections.length
+      ? sections.reduce((s,f)=> s + num(f.l)*num(f.w), 0)
+      : L*W; // запасной вариант для старых данных
+    ceilingArea = floorArea;
+    perimeter = (room.walls||[]).reduce((s,w)=> s + wallBase(w), 0);
+    grossWall = wallsSum;
+  } else {
+    const shape = room.shape || 'rect';
+    const d = room.dims || {};
+    floorArea = shapeArea(shape, d);
+    ceilingArea = floorArea;
+    perimeter = shapePerimeter(shape, d);
+    grossWall = perimeter * num(d.h);
+  }
+  const wallArea = Math.max(0, grossWall - windowsArea - doorsArea);
+  const perimeterForSkirting = Math.max(0, perimeter - doorsWidthSum);
+  return {perimeter, floorArea, ceilingArea, wallArea, perimeterForSkirting, mode};
+}
+
+function calcWorkLine(room, roomWork, work){
+  const g = calcRoomGeometry(room);
+  let qty = 0;
+  if(work.unit === 'm2'){
+    qty = work.appliesTo==='floor' ? g.floorArea : work.appliesTo==='ceiling' ? g.ceilingArea : g.wallArea;
+  } else if(work.unit === 'ml'){
+    qty = work.appliesTo==='perimeter' ? g.perimeterForSkirting : g.perimeter;
+  } else {
+    qty = num(roomWork.manualQty);
+  }
+  const sum = qty * num(work.price);
+  return {qty, sum};
+}
+
+function fmt(n){ return (Math.round(n*100)/100).toLocaleString('ru-RU', {maximumFractionDigits:2}); }
+function fmtMoney(n){ return Math.round(n).toLocaleString('ru-RU') + ' ₽'; }
+
+// ---------- СУММА ПРОПИСЬЮ ----------
+const _ONES   = ['','один','два','три','четыре','пять','шесть','семь','восемь','девять'];
+const _ONES_F = ['','одна','две','три','четыре','пять','шесть','семь','восемь','девять'];
+const _TEENS  = ['десять','одиннадцать','двенадцать','тринадцать','четырнадцать','пятнадцать','шестнадцать','семнадцать','восемнадцать','девятнадцать'];
+const _TENS   = ['','','двадцать','тридцать','сорок','пятьдесят','шестьдесят','семьдесят','восемьдесят','девяносто'];
+const _HUND   = ['','сто','двести','триста','четыреста','пятьсот','шестьсот','семьсот','восемьсот','девятьсот'];
+function _triplet(n, fem){
+  const w = []; const h = Math.floor(n/100), t = Math.floor((n%100)/10), u = n%10;
+  if(h) w.push(_HUND[h]);
+  if(t>1){ w.push(_TENS[t]); if(u) w.push((fem?_ONES_F:_ONES)[u]); }
+  else if(t===1){ w.push(_TEENS[u]); }
+  else if(u){ w.push((fem?_ONES_F:_ONES)[u]); }
+  return w.join(' ');
+}
+function _plural(n, one, few, many){
+  const a = Math.abs(n)%100, b = a%10;
+  if(a>10 && a<20) return many;
+  if(b>1 && b<5) return few;
+  if(b===1) return one;
+  return many;
+}
+function rublesToWords(amount){
+  amount = Math.max(0, Number(amount)||0);
+  const rub = Math.floor(amount);
+  const kop = Math.round((amount - rub)*100);
+  const groups = [
+    {d:1000000000, fem:false, f:['миллиард','миллиарда','миллиардов']},
+    {d:1000000,    fem:false, f:['миллион','миллиона','миллионов']},
+    {d:1000,       fem:true,  f:['тысяча','тысячи','тысяч']},
+  ];
+  let n = rub, parts = [];
+  for(const g of groups){
+    const c = Math.floor(n/g.d); n %= g.d;
+    if(c>0){ parts.push(_triplet(c, g.fem)); parts.push(_plural(c, g.f[0], g.f[1], g.f[2])); }
+  }
+  if(n>0) parts.push(_triplet(n, false));
+  let words = parts.filter(Boolean).join(' ').trim();
+  if(!words) words = 'ноль';
+  words = words.charAt(0).toUpperCase() + words.slice(1);
+  const kopStr = String(kop).padStart(2,'0');
+  return `${words} ${_plural(rub,'рубль','рубля','рублей')} ${kopStr} ${_plural(kop,'копейка','копейки','копеек')}`;
+}
+
+function projectTotal(proj){
+  return (proj.rooms||[]).reduce((sum, r)=> sum + (r.works||[]).reduce((s2, rw)=>{
+    const work = state.catalog.find(w=>w.id===rw.workId);
+    return work ? s2 + calcWorkLine(r, rw, work).sum : s2;
+  }, 0), 0);
+}
+
+// ---------- ГЕНЕРАЦИЯ ДОКУМЕНТОВ ----------
+const _scriptCache = {};
+function loadScript(url){
+  if(_scriptCache[url]) return _scriptCache[url];
+  _scriptCache[url] = new Promise((res,rej)=>{
+    const s = document.createElement('script');
+    s.src = url; s.onload = ()=>res(); s.onerror = ()=>rej(new Error('Не удалось загрузить библиотеку'));
+    document.head.appendChild(s);
+  });
+  return _scriptCache[url];
+}
+async function ensurePdfMake(){
+  if(window.pdfMake && window.pdfMake.vfs) return;
+  await loadScript('https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.10/pdfmake.min.js');
+  await loadScript('https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.10/vfs_fonts.js');
+}
+async function ensureXLSX(){
+  if(window.XLSX) return;
+  await loadScript('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js');
+}
+
+function formatDate(iso){
+  if(!iso) return '';
+  const p = String(iso).split('-');
+  return (p.length===3) ? `${p[2]}.${p[1]}.${p[0]}` : String(iso);
+}
+function safeName(proj){
+  return (proj.name||'проект').replace(/[^\wа-яА-ЯёЁ \-]/g,'').trim() || 'проект';
+}
+function buildEstimateData(proj){
+  const groups = [];
+  (proj.rooms||[]).forEach(room=>{
+    const items = [];
+    (room.works||[]).forEach(rw=>{
+      const work = state.catalog.find(w=>w.id===rw.workId);
+      if(!work) return;
+      const line = calcWorkLine(room, rw, work);
+      items.push({ name:work.name||'—', unit:UNIT_LABEL[work.unit]||'', qty:line.qty, price:num(work.price), sum:line.sum });
+    });
+    if(items.length) groups.push({ room: room.name||'Помещение', items });
+  });
+  return { groups, total: projectTotal(proj) };
+}
+
+function smetaPdfDef(proj){
+  const { groups, total } = buildEstimateData(proj);
+  const c = proj.customer || {};
+  const body = [[
+    {text:'№',style:'th'},{text:'Наименование работ',style:'th'},{text:'Ед.',style:'th'},
+    {text:'Кол-во',style:'th'},{text:'Цена',style:'th'},{text:'Сумма',style:'th'}
+  ]];
+  let no = 0;
+  groups.forEach(g=>{
+    body.push([{text:g.room, colSpan:6, style:'group'},{},{},{},{},{}]);
+    g.items.forEach(it=>{
+      no++;
+      body.push([
+        {text:String(no),style:'td'},
+        {text:it.name,style:'td'},
+        {text:it.unit,style:'td',alignment:'center'},
+        {text:fmt(it.qty),style:'td',alignment:'right'},
+        {text:fmt(it.price),style:'td',alignment:'right'},
+        {text:fmt(it.sum),style:'td',alignment:'right'},
+      ]);
+    });
+  });
+  body.push([{text:'Итого:',colSpan:5,alignment:'right',style:'total'},{},{},{},{},{text:fmt(total),style:'total',alignment:'right'}]);
+  const head = [{text:'Смета',style:'h1',alignment:'center'},
+    {text:'на выполнение ремонтно-строительных работ',alignment:'center',margin:[0,0,0,6],fontSize:10}];
+  if(c.address) head.push({text:'Объект: '+c.address, margin:[0,0,0,2], fontSize:9});
+  if(c.contractNo) head.push({text:'к Договору № '+c.contractNo+(c.date?' от '+formatDate(c.date):''), margin:[0,0,0,8], fontSize:9});
+  return {
+    pageMargins:[28,28,28,28],
+    content:[
+      ...head,
+      {table:{headerRows:1, widths:[16,'*',26,42,48,58], body}, layout:'lightHorizontalLines'},
+      {text:'Итоговая сумма составляет: '+rublesToWords(total), margin:[0,12,0,0], italics:true, fontSize:10},
+      {columns:[
+        {text:'Заказчик ______________ / ______________', margin:[0,34,0,0], fontSize:9},
+        {text:'Подрядчик ______________ / ______________', margin:[0,34,0,0], alignment:'right', fontSize:9},
+      ]},
+    ],
+    styles:{
+      h1:{fontSize:18,bold:true,margin:[0,0,0,4]},
+      th:{bold:true,fontSize:9,fillColor:'#e8eaec'},
+      td:{fontSize:9},
+      group:{bold:true,fontSize:10,fillColor:'#f2f4f5',margin:[0,2,0,2]},
+      total:{bold:true,fontSize:10},
+    },
+    defaultStyle:{fontSize:9},
+  };
+}
+
+function smetaXlsxBlob(proj){
+  const { groups, total } = buildEstimateData(proj);
+  const aoa = [['№','Наименование работ','Ед.','Кол-во','Цена','Сумма']];
+  let no = 0;
+  groups.forEach(g=>{
+    aoa.push([g.room,'','','','','']);
+    g.items.forEach(it=>{ no++; aoa.push([no, it.name, it.unit, Math.round(it.qty*100)/100, it.price, Math.round(it.sum)]); });
+  });
+  aoa.push(['','','','','Итого:', Math.round(total)]);
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = [{wch:5},{wch:42},{wch:8},{wch:10},{wch:12},{wch:14}];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Смета');
+  const out = XLSX.write(wb, {type:'array', bookType:'xlsx'});
+  return new Blob([out], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+}
+
+// ---------- ДОГОВОР / РАСПИСКА / АКТ ----------
+const CONTRACTOR = {
+  fio:'Федоров Эдуард Витальевич',
+  birth:'11.03.1989 г.р.',
+  passport:'Паспорт серия 9209 № 659261, выдан ОУФМС РФ по Республике Татарстан в Лениногорском районе 23.05.2009г.',
+  phone:'+7 (989) 754-39-14',
+  email:'Eduardfedorov-work@mail.ru',
+};
+function amountInline(amount){
+  amount = Math.max(0, num(amount));
+  const rub = Math.floor(amount), kop = Math.round((amount-rub)*100);
+  const full = rublesToWords(amount);
+  const m = full.match(/^(.*?)\s+рубл/);
+  const intWords = m ? m[1] : full;
+  return `${rub.toLocaleString('ru-RU')} (${intWords}) рублей ${String(kop).padStart(2,'0')} копеек`;
+}
+const _or = (v, dash)=> (v && String(v).trim()) ? String(v).trim() : (dash||'____________________');
+
+function blocksToPdfContent(blocks){
+  return blocks.map(b=>{
+    const o = { text: b.text||'', margin:[0, b.gapTop||0, 0, (b.gap!=null?b.gap:5)] };
+    if(b.style==='h1'){ o.fontSize=15; o.bold=true; }
+    else if(b.style==='h2'){ o.fontSize=11; o.bold=true; }
+    else if(b.style==='small'){ o.fontSize=8; }
+    else { o.fontSize=10; }
+    if(b.bold) o.bold=true;
+    o.alignment = b.align || 'justify';
+    return o;
+  });
+}
+async function docBlocksToPdfBlob(blocks){
+  await ensurePdfMake();
+  const def = { pageMargins:[42,42,42,48], content: blocksToPdfContent(blocks), defaultStyle:{fontSize:10, lineHeight:1.15} };
+  return await new Promise((res,rej)=>{ try{ pdfMake.createPdf(def).getBlob(res); }catch(e){ rej(e); } });
+}
+function blocksToDocHtml(blocks){
+  const body = blocks.map(b=>{
+    const sz = b.style==='h1'?16 : b.style==='h2'?12 : b.style==='small'?9 : 11;
+    let st = `margin:0 0 ${(b.gap!=null?b.gap:6)}px;font-size:${sz}pt;`;
+    if(b.bold || b.style==='h1' || b.style==='h2') st += 'font-weight:bold;';
+    st += 'text-align:'+(b.align||'justify')+';';
+    const txt = escapeHtml(b.text||'').replace(/\n/g,'<br>') || '&nbsp;';
+    return `<p style="${st}">${txt}</p>`;
+  }).join('');
+  return `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="utf-8"></head><body style="font-family:'Times New Roman',serif;">${body}</body></html>`;
+}
+function docBlocksToDocBlob(blocks){
+  return new Blob(['\ufeff'+blocksToDocHtml(blocks)], {type:'application/msword'});
+}
+
+function dogovorBlocks(proj){
+  const c = proj.customer||{};
+  const total = projectTotal(proj);
+  const date = _or(formatDate(c.date), '«___»__________20___г.');
+  const cn = _or(c.contractNo, '____');
+  const B = [];
+  const P=(t,o)=>B.push(Object.assign({text:t,style:'normal'},o||{}));
+  P(`Договор оказания услуг № ${cn}`, {style:'h1', align:'center', gap:2});
+  P(date, {align:'center', gap:10, style:'small'});
+  P(`${CONTRACTOR.fio}, именуемый в дальнейшем «Подрядчик», с одной стороны и ${_or(c.fio)}, именуемый в дальнейшем «Заказчик», с другой стороны, заключили настоящий договор о следующем.`);
+  P('1. Предмет договора.', {style:'h2', gapTop:4});
+  P(`1.1. Заказчик поручает, а Подрядчик принимает на себя обязательства за осуществление ремонтно-отделочных работ в жилом помещении по адресу: ${_or(c.address)}.`);
+  P('2. Стоимость и сроки выполнения работ.', {style:'h2', gapTop:4});
+  P(`2.1. Стоимость работ по настоящему договору составляет ${amountInline(total)} РФ.`);
+  P(`2.2. В момент заключения настоящего договора Заказчик выплачивает Подрядчику аванс в размере ${c.advance ? amountInline(num(c.advance)) : '______________ (______________________) рублей ___ копеек'} РФ. Далее Заказчик обязуется производить оплату поэтапно, по факту выполненных работ по необходимости Подрядчика.`);
+  P(`2.3. Сроки выполнения работ составляют ${_or(c.termDays,'_____')} рабочих дней с момента получения авансового платежа от Заказчика. В связи с технологической необходимостью сроки могут корректироваться по взаимной договоренности.`);
+  P('2.4. В случае, если в ходе выполнения работ по настоящему Договору обнаружится необходимость проведения работ, заранее не предусмотренных, стороны письменно согласовывают новые сроки, стоимость и порядок выполнения дополнительных объемов работ, что оформляется соответствующими дополнениями к настоящему Договору.');
+  P('2.5. Подрядчик вправе требовать увеличения стоимости работ в случае, если поправки в план работ будут внесены Заказчиком после подписания Договора и плана работ (Спецификации) и будут в сумме составлять более 0,5 (ноль целых пять десятых) % от общей стоимости работ.');
+  P('3. Обязанности сторон.', {style:'h2', gapTop:4});
+  P('3.1. Обязанности Заказчика:');
+  P(`3.1.1. Заказчик обязуется, в случае надлежащего выполнения, оплатить Подрядчику работы согласно Договору № ${cn}.`);
+  P('3.1.2. К моменту начала работ по настоящему Договору обеспечить надлежащую подготовку Объекта для своевременного начала работ, нормального их ведения и завершения в срок.');
+  P('3.1.3. Своевременно обеспечивать работы отделочными материалами.');
+  P('3.2. Обязанности Подрядчика:');
+  P('3.2.1. Приступить к выполнению работ по настоящему Договору в срок не позднее 2 рабочих дней с момента получения авансового платежа Заказчика.');
+  P('3.2.2. Выполнить все работы по ремонту и отделке помещения надлежащего качества в объеме и в сроки, предусмотренные настоящим договором и сдать результат работ Заказчику в установленный срок.');
+  P('3.2.3. Подрядчик имеет право привлекать третьих лиц для выполнения работ по настоящему Договору, требующих специальных лицензий и разрешений. При этом ответственность за качество и сроки выполняемых такими лицами работ несет Подрядчик.');
+  P('3.2.4. Обеспечить производимые в соответствии с условиями настоящего Договора работы на объекте, всеми необходимыми материалами деталями и конструкциями, а также оборудованием и строительной техникой.');
+  P('4. Порядок сдачи-приемки и оплаты работ.', {style:'h2', gapTop:4});
+  P('4.1. Расчет за выполненный этап работ производится после подписания акта выполненных работ обеими сторонами не позднее 2 дней после подписания акта.');
+  P('4.2. Окончательный расчет производится после подписания обеими сторонами акта приема-сдачи работ, не позднее 2-х рабочих дней после подписания акта.');
+  P('4.3. В случае наличия у Заказчика обоснованных претензий по качеству предъявленной работы Подрядчик обязан устранить недостатки и дефекты за свой счет, если эти недостатки и дефекты не являются следствием применения некачественных материалов, предоставленных Заказчиком.');
+  P('4.4. Наличие недостатков и дефектов, а также сроки и порядок их устранения определяется двусторонним актом Заказчика и Подрядчика.');
+  P('5. Гарантийные обязательства Подрядчика.', {style:'h2', gapTop:4});
+  P('5.1. Гарантии качества работы Подрядчика, предусмотренные действующим на момент заключения настоящего Договора законодательством РФ, распространяются только на результаты работ, выполняемых Подрядчиком и привлеченными им третьими лицами в соответствии с условиями настоящего Договора.');
+  P('5.2. Подрядчик гарантирует надлежащее качество всех производимых им на Объекте работ.');
+  P('5.3. Гарантийный срок на результаты работ, выполненных Подрядчиком в соответствии с условиями настоящего Договора, устанавливается – один год с момента подписания Акта сдачи-приемки выполненных Подрядчиком работ.');
+  P('5.4. В случае обнаружения в пределах предусмотренного п.5.3. гарантийного срока, недостатков (дефектов), которые обусловлены ненадлежащим исполнением Подрядчиком своих обязательств по настоящему Договору, Подрядчик обязан устранить такие недостатки за свой счет в согласованные с Заказчиком в письменном виде сроки.');
+  P('6. Ответственность сторон.', {style:'h2', gapTop:4});
+  P('6.1. За неисполнение или ненадлежащее исполнение обязательств по настоящему Договору стороны несут материальную ответственность в соответствии с действующим на момент заключения настоящего Договора законодательством РФ.');
+  P('6.2. Подрядчик несет полную ответственность за ущерб, нанесенный третьим лицам в связи с производством работ по настоящему Договору, если такой ущерб является следствием ненадлежащего выполнения им своих обязательств.');
+  P('6.3. В случае нарушения сроков выполнения работ Подрядчик уплачивает штрафные санкции в размере 0,1% от стоимости незаконченных работ, но не более 10 % от сметной стоимости Договора.');
+  P('6.4. В случае нарушения сроков оплаты работ Заказчик уплачивает штрафные санкции в размере 0,1% от стоимости неоплаченных работ, но не более 10 % от сметной стоимости Договора.');
+  P('7. Разрешение споров и разногласий.', {style:'h2', gapTop:4});
+  P('7.1. Все споры и разногласия, которые могут иметь место в процессе исполнения сторонами настоящего Договора, стороны разрешают путем переговоров, а при невозможности достижения согласия – в арбитражном суде г. Сочи.');
+  P('8. Прочие условия.', {style:'h2', gapTop:4});
+  P('8.1. После подписания настоящего Договора все предыдущие письменные и устные соглашения, переписка, переговоры между сторонами, относящиеся к данному Договору, теряют силу.');
+  P('8.2. Настоящий Договор может быть изменен или дополнен. Любые изменения и дополнения настоящего Договора имеют силу только в том случае, если они согласованы сторонами и оформлены в письменном виде.');
+  P('8.3. Настоящий Договор составлен в двух экземплярах, оба экземпляра имеют одинаковую юридическую силу.');
+  P('9. Приложения:', {style:'h2', gapTop:4});
+  P('Приложение № 1 – Смета.');
+  P('Приложение № 2 – Расписка в получении денежных средств.');
+  P('Реквизиты сторон', {style:'h2', gapTop:8, align:'center'});
+  P('Подрядчик:', {bold:true, gap:2});
+  P(`${CONTRACTOR.fio}, ${CONTRACTOR.birth}`, {gap:2});
+  P(CONTRACTOR.passport, {gap:2});
+  P(`Тел.: ${CONTRACTOR.phone}   E-mail: ${CONTRACTOR.email}`, {gap:8});
+  P('Заказчик:', {bold:true, gap:2});
+  P(_or(c.fio), {gap:2});
+  P(`Паспорт серия ${_or(c.passSeries,'____')} № ${_or(c.passNumber,'________')} выдан ${_or(c.passIssuedBy)}`, {gap:2});
+  P(`Тел.: ${_or(c.phone,'+7 ____________')}`, {gap:12});
+  P('Подрядчик: ________________ / ________________', {gap:4});
+  P('Заказчик: ________________ / ________________');
+  return B;
+}
+
+function raspiskaBlocks(proj){
+  const c = proj.customer||{};
+  const total = projectTotal(proj);
+  const date = _or(formatDate(c.date), '«___»__________20___г.');
+  const cn = _or(c.contractNo, '____');
+  const B = [];
+  const P=(t,o)=>B.push(Object.assign({text:t,style:'normal'},o||{}));
+  P(`Приложение №2 к Договору № ${cn} от ${date}`, {style:'small', align:'right', gap:10});
+  P('Расписка', {style:'h1', align:'center', gap:2});
+  P('в получении денежных средств', {align:'center', gap:10, style:'small'});
+  P(`${date}`, {align:'right', gap:8, style:'small'});
+  P(`Я, ${CONTRACTOR.fio}, паспорт: серия 9209 № 659261, выдан ОУФМС России по Республике Татарстан, получил от ${_or(c.fio)}, паспорт: серия ${_or(c.passSeries,'____')} № ${_or(c.passNumber,'________')}, выдан ${_or(c.passIssuedBy)}, денежные средства в размере ${amountInline(total)} за осуществление работ по ремонту и отделке помещения согласно договору оказания услуг № ${cn} от ${date}.`, {gap:16});
+  P('Подрядчик: ________________ / ________________', {gap:4});
+  P('Заказчик: ________________ / ________________');
+  return B;
+}
+
+function aktBlocks(proj){
+  const c = proj.customer||{};
+  const total = projectTotal(proj);
+  const date = _or(formatDate(c.date), '«___»__________20___г.');
+  const cn = _or(c.contractNo, '____');
+  const B = [];
+  const P=(t,o)=>B.push(Object.assign({text:t,style:'normal'},o||{}));
+  P(`Приложение №3 к Договору № ${cn} от ${date}`, {style:'small', align:'right', gap:10});
+  P('Акт', {style:'h1', align:'center', gap:2});
+  P('приемки выполненных работ', {align:'center', gap:2, style:'small'});
+  P(`к договору подряда № ${cn} от ${date}`, {align:'center', gap:10, style:'small'});
+  P(`${CONTRACTOR.fio}, именуемый в дальнейшем «Подрядчик», с одной стороны и ${_or(c.fio)}, именуемый в дальнейшем «Заказчик», с другой стороны, составили настоящий Акт о нижеследующем:`, {gap:8});
+  P(`1. На дату подписания настоящего Акта Подрядчик передает Заказчику выполненные работы по договору подряда № ${cn} от ${date} в полном объеме.`);
+  P('2. Заказчик не имеет претензий к качеству, срокам и объему выполненных работ, указанным в п. 1 настоящего Акта.');
+  P(`3. Сумма в размере ${amountInline(total)} получена Подрядчиком от Заказчика в день подписания настоящего Акта.`, {gap:16});
+  P('Подрядчик: ________________ / ________________', {gap:4});
+  P('Заказчик: ________________ / ________________');
+  return B;
+}
+
+async function shareOrDownload(blob, filename, action){
+  const file = new File([blob], filename, {type: blob.type});
+  if(action === 'share' && navigator.canShare && navigator.canShare({files:[file]})){
+    try{ await navigator.share({files:[file], title: filename}); return; }
+    catch(e){ if(e && e.name === 'AbortError') return; /* иначе — падаем в скачивание */ }
+  }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 3000);
+}
+
+async function generateDoc(proj, docType, format, action, btn){
+  const old = btn ? btn.textContent : '';
+  if(btn){ btn.disabled = true; btn.textContent = '…'; }
+  try{
+    let blob, filename;
+    const nm = safeName(proj);
+    if(docType==='smeta' && format==='pdf'){
+      await ensurePdfMake();
+      blob = await new Promise((res,rej)=>{ try{ pdfMake.createPdf(smetaPdfDef(proj)).getBlob(res); }catch(e){ rej(e); } });
+      filename = `Смета_${nm}.pdf`;
+    } else if(docType==='smeta' && format==='xlsx'){
+      await ensureXLSX();
+      blob = smetaXlsxBlob(proj);
+      filename = `Смета_${nm}.xlsx`;
+    } else if(['dogovor','raspiska','akt'].includes(docType)){
+      const blocks = docType==='dogovor' ? dogovorBlocks(proj)
+                   : docType==='raspiska' ? raspiskaBlocks(proj)
+                   : aktBlocks(proj);
+      const title = docType==='dogovor' ? 'Договор' : docType==='raspiska' ? 'Расписка' : 'Акт';
+      if(format==='pdf'){
+        blob = await docBlocksToPdfBlob(blocks);
+        filename = `${title}_${nm}.pdf`;
+      } else {
+        blob = docBlocksToDocBlob(blocks);
+        filename = `${title}_${nm}.doc`;
+      }
+    }
+    if(blob) await shareOrDownload(blob, filename, action);
+  }catch(e){
+    console.error('Doc generation failed', e);
+    alert('Не удалось сформировать документ. Проверьте соединение и попробуйте ещё раз.');
+  }finally{
+    if(btn){ btn.disabled = false; btn.textContent = old; }
+  }
+}
+
+// ---------- ВАЛИДАЦИЯ ПОЛЕЙ ЗАКАЗЧИКА ----------
+function validateCustomer(field, v){
+  v = (v||'').trim();
+  if(!v) return '';
+  switch(field){
+    case 'email':      return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v) ? '' : 'Проверьте e-mail';
+    case 'phone':      return /^[+()\d\s-]{6,}$/.test(v) ? '' : 'Проверьте телефон';
+    case 'passSeries': return /^\d{4}$/.test(v) ? '' : 'Серия — 4 цифры';
+    case 'passNumber': return /^\d{6}$/.test(v) ? '' : 'Номер — 6 цифр';
+    case 'advance':    return isFinite(num(v)) ? '' : 'Число';
+    case 'termDays':   return /^\d+$/.test(v) ? '' : 'Целое число дней';
+    default: return '';
+  }
+}
+
+function currentProject(){
+  return state.projects.find(p=>p.id===state.currentProjectId) || null;
+}
+
+// ---------- RENDER ----------
+function render(){
+  renderSidebar();
+  const main = document.getElementById('main');
+  if(state.view === 'catalog'){
+    main.innerHTML = renderCatalogView();
+  } else {
+    const proj = currentProject();
+    main.innerHTML = proj ? renderProjectView(proj) : renderEmptyState();
+  }
+  attachHandlers();
+}
+
+function renderSidebar(){
+  const list = document.getElementById('projList');
+  if(state.projects.length===0){
+    list.innerHTML = '<div style="color:#8FA0A8;font-size:12px;padding:8px 10px;">Пока нет проектов</div>';
+    return;
+  }
+  list.innerHTML = state.projects.map(p=>`
+    <div class="proj-item ${p.id===state.currentProjectId && state.view==='project' ? 'active':''}" data-open="${p.id}">
+      <span>${escapeHtml(p.name || 'Без названия')}</span>
+      <span class="del" data-del="${p.id}" title="Удалить проект">✕</span>
+    </div>
+  `).join('');
+}
+
+function renderEmptyState(){
+  return `
+    <div class="empty-state">
+      <h1>Расчёт сметы ремонта</h1>
+      <p>Создайте новый проект, добавьте помещения с их размерами и выберите виды работ — смета соберётся автоматически.</p>
+      <button class="btn btn-primary" id="emptyNewProject" style="margin-top:16px;">+ Новый проект</button>
+    </div>
+  `;
+}
+
+function renderSmetaBlock(proj){
+  const grandTotal = proj.rooms.reduce((sum, r)=>{
+    return sum + (r.works||[]).reduce((s2, rw)=>{
+      const work = state.catalog.find(w=>w.id===rw.workId);
+      if(!work) return s2;
+      return s2 + calcWorkLine(r, rw, work).sum;
+    }, 0);
+  }, 0);
+  return `
+    <div class="smeta-head"><h2>Итоговая смета</h2></div>
+    ${renderSmetaTable(proj)}
+    <div class="smeta-total">
+      <span class="label">Итого по проекту</span>
+      <span class="value">${fmtMoney(grandTotal)}</span>
+    </div>`;
+}
+
+function renderProjectView(proj){
+  const roomsHtml = proj.rooms.map(r=>renderRoom(r)).join('');
+
+  return `
+    <div class="proj-header">
+      <div>
+        <input class="proj-title-input" id="projName" value="${escapeAttr(proj.name)}" placeholder="Название проекта">
+        <div class="proj-meta">${proj.rooms.length} помещ. · создан ${new Date(proj.createdAt).toLocaleDateString('ru-RU')}</div>
+      </div>
+      <div class="header-actions no-print">
+        <button class="btn btn-outline" id="duplicateProject">Дублировать</button>
+        <button class="btn btn-outline" id="exportProject">Печать / PDF</button>
+      </div>
+    </div>
+
+    ${renderCustomerBlock(proj)}
+
+    ${roomsHtml}
+    <button class="add-room-btn no-print" id="addRoom">+ Добавить помещение</button>
+
+    <div class="smeta-wrap" id="smetaBlock" style="margin-top:32px;">${renderSmetaBlock(proj)}</div>
+
+    <div class="docs-block no-print">
+      <div class="docs-title">Документы</div>
+      <div class="docs-row">
+        <span class="docs-name">Смета</span>
+        <div class="docs-btns">
+          <button class="btn btn-outline" data-doc="smeta|pdf|share">Поделиться PDF</button>
+          <button class="btn btn-outline" data-doc="smeta|pdf|download">Скачать PDF</button>
+          <button class="btn btn-outline" data-doc="smeta|xlsx|share">Поделиться Excel</button>
+          <button class="btn btn-outline" data-doc="smeta|xlsx|download">Скачать Excel</button>
+        </div>
+      </div>
+      <div class="docs-row">
+        <span class="docs-name">Договор</span>
+        <div class="docs-btns">
+          <button class="btn btn-outline" data-doc="dogovor|pdf|share">Поделиться PDF</button>
+          <button class="btn btn-outline" data-doc="dogovor|pdf|download">Скачать PDF</button>
+          <button class="btn btn-outline" data-doc="dogovor|doc|share">Поделиться Word</button>
+          <button class="btn btn-outline" data-doc="dogovor|doc|download">Скачать Word</button>
+        </div>
+      </div>
+      <div class="docs-row">
+        <span class="docs-name">Расписка</span>
+        <div class="docs-btns">
+          <button class="btn btn-outline" data-doc="raspiska|pdf|share">Поделиться PDF</button>
+          <button class="btn btn-outline" data-doc="raspiska|pdf|download">Скачать PDF</button>
+          <button class="btn btn-outline" data-doc="raspiska|doc|share">Поделиться Word</button>
+          <button class="btn btn-outline" data-doc="raspiska|doc|download">Скачать Word</button>
+        </div>
+      </div>
+      <div class="docs-row">
+        <span class="docs-name">Акт</span>
+        <div class="docs-btns">
+          <button class="btn btn-outline" data-doc="akt|pdf|share">Поделиться PDF</button>
+          <button class="btn btn-outline" data-doc="akt|pdf|download">Скачать PDF</button>
+          <button class="btn btn-outline" data-doc="akt|doc|share">Поделиться Word</button>
+          <button class="btn btn-outline" data-doc="akt|doc|download">Скачать Word</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderCustomerBlock(proj){
+  const c = proj.customer || {};
+  const open = !!uiCustomerOpen[proj.id];
+  const total = projectTotal(proj);
+  const field = (key,label,ph,type)=>{
+    const err = validateCustomer(key, c[key]);
+    return `<div class="cust-field">
+      <label>${label}</label>
+      <input type="${type||'text'}" ${key==='advance'?'inputmode="decimal"':''} placeholder="${ph||''}" value="${escapeAttr(c[key]||'')}" data-cust="${proj.id}|${key}">
+      <div class="cust-err" data-cust-err="${proj.id}|${key}">${err}</div>
+    </div>`;
+  };
+  return `
+  <div class="cust-acc ${open?'open':''}" data-cust-acc="${proj.id}">
+    <button type="button" class="cust-head no-print" data-cust-toggle="${proj.id}" aria-expanded="${open}">
+      <span>📄 Данные для договора</span><span class="chev">▾</span>
+    </button>
+    <div class="cust-body">
+      <div class="cust-group">
+        <div class="cust-group-title">Договор</div>
+        <div class="cust-grid">
+          ${field('contractNo','Договор №','напр. 12')}
+          ${field('date','Дата договора','','date')}
+        </div>
+      </div>
+      <div class="cust-group">
+        <div class="cust-group-title">Объект</div>
+        <div class="cust-field">
+          <label>Адрес объекта</label>
+          <textarea rows="2" placeholder="город, улица, дом" data-cust="${proj.id}|address">${escapeHtml(c.address||'')}</textarea>
+        </div>
+      </div>
+      <div class="cust-group">
+        <div class="cust-group-title">Заказчик</div>
+        <div class="cust-field">
+          <label>ФИО заказчика</label>
+          <input type="text" placeholder="Иванов Иван Иванович" value="${escapeAttr(c.fio||'')}" data-cust="${proj.id}|fio">
+        </div>
+        <div class="cust-grid">
+          ${field('passSeries','Паспорт: серия','1234')}
+          ${field('passNumber','Паспорт: номер','567890')}
+        </div>
+        <div class="cust-field">
+          <label>Кем и когда выдан</label>
+          <input type="text" placeholder="кем выдан, дата" value="${escapeAttr(c.passIssuedBy||'')}" data-cust="${proj.id}|passIssuedBy">
+        </div>
+        <div class="cust-grid">
+          ${field('phone','Телефон','+7 ...')}
+          ${field('email','E-mail','you@mail.ru')}
+        </div>
+      </div>
+      <div class="cust-group">
+        <div class="cust-group-title">Условия</div>
+        <div class="cust-field">
+          <label>Стоимость работ (из сметы)</label>
+          <div class="cust-readonly"><b data-cust-total="${proj.id}">${fmtMoney(total)}</b></div>
+          <div class="cust-words" data-cust-total-words="${proj.id}">${rublesToWords(total)}</div>
+        </div>
+        <div class="cust-field">
+          <label>Аванс, ₽</label>
+          <input type="text" inputmode="decimal" placeholder="0" value="${escapeAttr(c.advance||'')}" data-cust="${proj.id}|advance">
+          <div class="cust-words" data-cust-adv-words="${proj.id}">${c.advance?rublesToWords(num(c.advance)):''}</div>
+        </div>
+        ${field('termDays','Срок, рабочих дней','напр. 30')}
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderRoom(room){
+  const g = calcRoomGeometry(room);
+  const worksHtml = state.catalog.map(work=>{
+    const rw = (room.works||[]).find(w=>w.workId===work.id);
+    const checked = !!rw;
+    const line = checked ? calcWorkLine(room, rw, work) : {qty:0,sum:0};
+    const manual = work.unit==='pcs' || work.unit==='m3';
+    return `
+      <div class="work-row ${checked?'checked':''}">
+        <input type="checkbox" data-toggle-work="${room.id}|${work.id}" ${checked?'checked':''}>
+        <span class="wname">${escapeHtml(work.name)}</span>
+        <span class="wmeta">${fmtMoney(work.price)}/${UNIT_LABEL[work.unit]} · ${APPLIES_LABEL[work.appliesTo]}</span>
+        ${checked && manual ? `<input class="manual-qty" type="text" inputmode="decimal" placeholder="${work.unit==='pcs'?'кол-во':'м³'}" value="${escapeAttr(rw.manualQty||'')}" data-manual-qty="${room.id}|${work.id}">` : ''}
+        ${checked ? `<span class="wsum" data-wsum="${room.id}|${work.id}">${fmt(line.qty)} ${UNIT_LABEL[work.unit]} · ${fmtMoney(line.sum)}</span>` : `<span class="wsum" style="color:#B7BEC2;">—</span>`}
+      </div>
+    `;
+  }).join('');
+
+  const worksOpen = !!uiWorksOpen[room.id];
+  return `
+    <div class="room" data-room="${room.id}">
+      <div class="room-head">
+        <input class="room-name" value="${escapeAttr(room.name)}" data-room-name="${room.id}" placeholder="Название помещения">
+        <span class="room-tag no-print">${state.catalog.length ? '' : ''}</span>
+        <button class="btn-icon no-print" data-del-room="${room.id}" title="Удалить помещение">✕</button>
+      </div>
+      <div class="room-body">
+        ${renderGeometryBlock(room)}
+
+        <div class="subsection">
+          <div class="subsection-title">Окна</div>
+          ${(room.windows||[]).map((o,i)=>renderOpeningRow(room.id,'windows',i,o)).join('')}
+          <button class="add-link" data-add-opening="${room.id}|windows">+ добавить окно</button>
+        </div>
+
+        <div class="subsection">
+          <div class="subsection-title">Двери</div>
+          ${(room.doors||[]).map((o,i)=>renderOpeningRow(room.id,'doors',i,o)).join('')}
+          <button class="add-link" data-add-opening="${room.id}|doors">+ добавить дверь</button>
+        </div>
+
+        <div class="subsection works-acc ${worksOpen?'open':''}" data-works-acc="${room.id}">
+          <button class="works-acc-head" type="button" data-works-toggle="${room.id}" aria-expanded="${worksOpen}">
+            <span>Виды работ</span><span class="chev">▾</span>
+          </button>
+          <div class="works-acc-body">
+            <div class="work-list">${worksHtml}</div>
+          </div>
+        </div>
+
+        <div class="room-summary">
+          <div class="badge">Периметр: <b data-out="perimeter">${fmt(g.perimeter)} м.п.</b></div>
+          <div class="badge">Площадь стен (с вычетом проёмов): <b data-out="wallArea">${fmt(g.wallArea)} м²</b></div>
+          <div class="badge">Площадь пола: <b data-out="floorArea">${fmt(g.floorArea)} м²</b></div>
+          <div class="badge">Площадь потолка: <b data-out="ceilingArea">${fmt(g.ceilingArea)} м²</b></div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderGeometryBlock(room){
+  let mode = room.calcMode;
+  if(mode !== 'dims' && mode !== 'walls'){
+    if(room.length || room.width || room.height || (room.dims && Object.values(room.dims).some(v=>v))) mode = 'dims';
+    else if((room.walls||[]).length || (room.floorSections||[]).length) mode = 'walls';
+    else mode = '';
+  }
+  const seg = `
+    <div class="calc-mode no-print">
+      <button type="button" class="calc-mode-btn ${mode==='dims'?'active':''}" data-calc-mode="${room.id}|dims">📐 Размеры помещения</button>
+      <button type="button" class="calc-mode-btn ${mode==='walls'?'active':''}" data-calc-mode="${room.id}|walls">🧱 Размеры стен</button>
+    </div>`;
+  let body;
+  if(mode === 'dims'){
+    body = renderDimsBlock(room);
+  } else if(mode === 'walls'){
+    body = renderWallsSection(room) + renderFloorSections(room);
+  } else {
+    body = `<div class="calc-mode-hint">Выберите способ расчёта: по размерам помещения или по размерам стен.</div>`;
+  }
+  return `<div class="geometry-block">${seg}${body}</div>`;
+}
+
+function renderDimsBlock(room){
+  const shape = room.shape || 'rect';
+  const def = ROOM_SHAPES[shape] || ROOM_SHAPES.rect;
+  const d = room.dims || {};
+  const opts = Object.keys(ROOM_SHAPES).map(k=>
+    `<option value="${k}" ${k===shape?'selected':''}>${ROOM_SHAPES[k].label}</option>`).join('');
+  const fields = shapeFields(shape).map(([key,label])=>`
+    <div class="dim">
+      <label>${label}${key==='h'?'':' <span class="unit">(м)</span>'}</label>
+      <input type="text" inputmode="decimal" placeholder="0" value="${escapeAttr(d[key]||'')}" data-shapedim="${room.id}|${key}">
+    </div>`).join('');
+  const closure = shapeClosure(shape, d);
+  const closureWarn = (!def.simple && closure > 0.05)
+    ? `Контур не замыкается (расхождение ${fmt(closure)} м) — проверьте длины стен.` : '';
+  const hint = def.simple ? '' : '<div class="dims-hint">Введите длину каждой стены по схеме — площадь считается по контуру.</div>';
+  return `
+    <div class="wall-field" style="margin-bottom:12px;">
+      <label>Форма помещения</label>
+      <select data-room-shape="${room.id}">${opts}</select>
+    </div>
+    <div class="wall-diagram">${roomShapeSVG(shape)}</div>
+    ${hint}
+    <div class="dims-row">${fields}</div>
+    <div class="dims-warn" data-dimwarn="${room.id}">${closureWarn}</div>
+    <div class="floor-total">Площадь пола: <b data-dimarea="${room.id}">${fmt(shapeArea(shape, d))}</b> м² · Периметр: <b data-dimperim="${room.id}">${fmt(shapePerimeter(shape, d))}</b> м.п.</div>`;
+}
+
+function renderFloorSections(room){
+  const secs = room.floorSections||[];
+  const rows = secs.map((f,i)=>`
+    <div class="floor-row">
+      <span>участок ${i+1}</span>
+      <input type="text" inputmode="decimal" placeholder="длина" value="${escapeAttr(f.l)}" data-floor="${room.id}|${i}|l">
+      <input type="text" inputmode="decimal" placeholder="ширина" value="${escapeAttr(f.w)}" data-floor="${room.id}|${i}|w">
+      <span class="floor-area" data-floor-area="${room.id}|${i}">${fmt(num(f.l)*num(f.w))} м²</span>
+      <button class="btn-icon" data-del-floor="${room.id}|${i}" title="Удалить">✕</button>
+    </div>`).join('');
+  const total = secs.reduce((s,f)=> s + num(f.l)*num(f.w), 0);
+  return `
+    <div class="subsection">
+      <div class="subsection-title">Пол и потолок <span class="hint-inline">разбейте на прямоугольные участки</span></div>
+      ${rows || `<div class="wall-empty">Участки пола не заданы — площадь пола 0. Добавьте участки (напр. Т-образная комната — 2 прямоугольника).</div>`}
+      <button class="add-link" data-add-floor="${room.id}">+ Добавить участок</button>
+      <div class="floor-total">Площадь пола: <b data-floor-total="${room.id}">${fmt(total)}</b> м²</div>
+    </div>`;
+}
+
+function renderWallsSection(room){
+  const draft = wallDraft(room.id);
+  const shape = draft.shape || 'rect';
+  const cfg = WALL_SHAPES[shape] || WALL_SHAPES.rect;
+  const wallsList = (room.walls||[]).map((w,i)=>{
+    const label = WALL_SHAPES[w.shape] ? WALL_SHAPES[w.shape].label : 'Стена';
+    return `
+      <div class="wall-row">
+        <span class="wall-label">${escapeHtml(label)}</span>
+        <span class="wall-area">${fmt(computeWallArea(w))} м²</span>
+        <button class="btn-icon" data-del-wall="${room.id}|${i}" title="Удалить">✕</button>
+      </div>`;
+  }).join('');
+  const fieldsHtml = cfg.fields.map(([key,label])=>`
+    <div class="wall-field">
+      <label>${label}</label>
+      <input type="text" inputmode="decimal" placeholder="0" value="${escapeAttr(draft[key]||'')}" data-wall-draft="${room.id}|${key}">
+    </div>`).join('');
+  const optionsHtml = Object.keys(WALL_SHAPES).map(k=>
+    `<option value="${k}" ${k===shape?'selected':''}>${WALL_SHAPES[k].label}</option>`).join('');
+  return `
+    <div class="subsection">
+      <div class="subsection-title">Стены</div>
+      ${wallsList ? `<div class="wall-list">${wallsList}</div>`
+        : `<div class="wall-empty">Стены пока не добавлены — площадь стен равна 0. Добавьте хотя бы одну.</div>`}
+      <div class="wall-builder">
+        <div class="wall-field">
+          <label>Тип стены</label>
+          <select data-wall-shape="${room.id}">${optionsHtml}</select>
+        </div>
+        <div class="wall-diagram">${wallShapeSVG(shape)}</div>
+        <div class="wall-fields" data-wall-fields="${room.id}">${fieldsHtml}</div>
+        <div class="wall-preview-row">
+          <span class="wall-preview">S = <b data-wall-preview="${room.id}">${fmt(computeWallArea(draft))}</b> м²</span>
+          <button class="add-link" data-add-wall="${room.id}">+ Добавить стену</button>
+        </div>
+        <div class="wall-error" data-wall-error="${room.id}"></div>
+      </div>
+    </div>`;
+}
+
+// Схемы форм помещения (вид сверху) с подписями сторон
+function roomShapeSVG(shape){
+  const st = 'fill:#EAF0F2;stroke:#1F2A30;stroke-width:2;stroke-linejoin:round;';
+  const t = 'font-family:JetBrains Mono,monospace;font-size:13px;fill:#1F2A30;';
+  const lbl = (x,y,s)=>`<text x="${x}" y="${y}" text-anchor="middle" style="${t}">${s}</text>`;
+  let path='', labels='';
+  switch(shape){
+    case 'rect':
+      path = `<rect x="40" y="30" width="140" height="100" style="${st}"/>`;
+      labels = lbl(110,150,'a') + `<text x="190" y="84" style="${t}">b</text>`;
+      break;
+    case 'lshape':
+      path = `<path d="M40 140 L170 140 L170 90 L110 90 L110 40 L40 40 Z" style="${st}"/>`;
+      labels = lbl(105,156,'a')+lbl(180,118,'b')+lbl(140,84,'c')+lbl(120,68,'d')+lbl(75,34,'e')+lbl(32,95,'f');
+      break;
+    case 'tshape':
+      path = `<path d="M90 140 L130 140 L130 80 L180 80 L180 40 L40 40 L40 80 L90 80 Z" style="${st}"/>`;
+      labels = lbl(110,156,'a')+lbl(138,112,'b')+lbl(155,74,'c')+lbl(190,62,'d')+lbl(110,34,'e')+lbl(32,62,'f')+lbl(65,74,'g')+lbl(82,112,'h');
+      break;
+    case 'ushape':
+      path = `<path d="M40 140 L180 140 L180 40 L130 40 L130 90 L90 90 L90 40 L40 40 Z" style="${st}"/>`;
+      labels = lbl(110,156,'a')+lbl(190,90,'b')+lbl(155,34,'c')+lbl(138,68,'d')+lbl(110,104,'e')+lbl(82,68,'f')+lbl(65,34,'g')+lbl(32,90,'h');
+      break;
+    default: path='';
+  }
+  return `<svg viewBox="0 0 220 165" width="100%" style="max-width:260px;">${path}${labels}</svg>`;
+}
+
+// Схемы фигур с подписанными сторонами (буквы совпадают с полями)
+function wallShapeSVG(shape){
+  const st = 'fill:none;stroke:#1F2A30;stroke-width:2;stroke-linejoin:round;';
+  const dash = 'fill:none;stroke:#7C8B93;stroke-width:1.2;stroke-dasharray:4 3;';
+  const t = 'font-family:JetBrains Mono,monospace;font-size:13px;fill:#1F2A30;';
+  const tm = 'font-family:JetBrains Mono,monospace;font-size:13px;fill:#7C8B93;';
+  let inner = '';
+  switch(shape){
+    case 'rect':
+      inner = `<rect x="40" y="20" width="140" height="90" style="${st}"/>
+        <text x="110" y="128" text-anchor="middle" style="${t}">a</text>
+        <text x="190" y="70" style="${t}">h</text>`;
+      break;
+    case 'trap':
+      inner = `<path d="M40 110 L180 110 L150 20 L70 20 Z" style="${st}"/>
+        <text x="110" y="128" text-anchor="middle" style="${t}">a</text>
+        <text x="110" y="14" text-anchor="middle" style="${t}">b</text>
+        <line x1="110" y1="20" x2="110" y2="110" style="${dash}"/>
+        <text x="118" y="68" style="${tm}">h</text>`;
+      break;
+    case 'rtrap':
+      inner = `<path d="M40 110 L180 110 L180 20 L40 20 L40 110 Z" style="${st}" opacity="0"/>
+        <path d="M40 110 L180 110 L180 40 L40 20 Z" style="${st}"/>
+        <text x="110" y="128" text-anchor="middle" style="${t}">a</text>
+        <text x="110" y="14" text-anchor="middle" style="${t}">b</text>
+        <text x="188" y="78" style="${tm}">h</text>`;
+      break;
+    case 'tri':
+      inner = `<path d="M40 110 L180 110 L110 20 Z" style="${st}"/>
+        <text x="110" y="128" text-anchor="middle" style="${t}">a</text>
+        <line x1="110" y1="20" x2="110" y2="110" style="${dash}"/>
+        <text x="118" y="68" style="${tm}">h</text>`;
+      break;
+    case 'rtri':
+      inner = `<path d="M40 110 L180 110 L40 20 Z" style="${st}"/>
+        <text x="110" y="128" text-anchor="middle" style="${t}">a</text>
+        <text x="24" y="70" style="${t}">b</text>`;
+      break;
+    case 'recttrap':
+      inner = `<path d="M40 110 L180 110 L180 60 L40 60 Z" style="${st}"/>
+        <path d="M40 60 L180 60 L145 20 L75 20 Z" style="${st}"/>
+        <text x="110" y="128" text-anchor="middle" style="${t}">w</text>
+        <text x="190" y="90" style="${t}">h₁</text>
+        <text x="110" y="14" text-anchor="middle" style="${t}">b</text>
+        <text x="150" y="46" style="${tm}">h₂</text>`;
+      break;
+    case 'rectrtrap':
+      inner = `<path d="M40 110 L180 110 L180 60 L40 60 Z" style="${st}"/>
+        <path d="M40 60 L180 60 L180 20 L75 20 Z" style="${st}"/>
+        <text x="110" y="128" text-anchor="middle" style="${t}">w</text>
+        <text x="190" y="90" style="${t}">h₁</text>
+        <text x="120" y="14" text-anchor="middle" style="${t}">b</text>
+        <text x="150" y="46" style="${tm}">h₂</text>`;
+      break;
+    default:
+      inner = '';
+  }
+  return `<svg viewBox="0 0 220 140" width="100%" style="max-width:240px;">${inner}</svg>`;
+}
+
+function renderOpeningRow(roomId, kind, idx, o){
+  return `
+    <div class="opening-row">
+      <span>${kind==='windows'?'окно':'дверь'} ${idx+1}</span>
+      <input type="text" inputmode="decimal" placeholder="ширина" value="${escapeAttr(o.w)}" data-opening="${roomId}|${kind}|${idx}|w">
+      <input type="text" inputmode="decimal" placeholder="высота" value="${escapeAttr(o.h)}" data-opening="${roomId}|${kind}|${idx}|h">
+      <input type="text" inputmode="numeric" placeholder="кол-во" value="${escapeAttr(o.qty)}" data-opening="${roomId}|${kind}|${idx}|qty">
+      <button class="btn-icon" data-del-opening="${roomId}|${kind}|${idx}" title="Удалить">✕</button>
+    </div>
+  `;
+}
+
+function renderSmetaTable(proj){
+  const rowsHtml = [];
+  let hasAny = false;
+  proj.rooms.forEach(room=>{
+    const roomWorks = (room.works||[]).map(rw=>{
+      const work = state.catalog.find(w=>w.id===rw.workId);
+      if(!work) return null;
+      const line = calcWorkLine(room, rw, work);
+      if(line.qty<=0) return null;
+      return {work, line};
+    }).filter(Boolean);
+    if(roomWorks.length===0) return;
+    hasAny = true;
+    rowsHtml.push(`<tr class="room-divider"><td colspan="5">${escapeHtml(room.name)}</td></tr>`);
+    roomWorks.forEach(({work,line})=>{
+      rowsHtml.push(`
+        <tr>
+          <td>${escapeHtml(work.name)}</td>
+          <td class="num">${UNIT_LABEL[work.unit]}</td>
+          <td class="num">${fmt(line.qty)}</td>
+          <td class="num">${fmtMoney(work.price)}</td>
+          <td class="num"><b>${fmtMoney(line.sum)}</b></td>
+        </tr>
+      `);
+    });
+  });
+  if(!hasAny){
+    return `<div class="empty-hint">Добавьте помещения и отметьте виды работ — позиции появятся здесь.</div>`;
+  }
+  return `
+    <div class="smeta-scroll">
+      <table class="smeta">
+        <thead><tr><th>Вид работ</th><th>Ед.</th><th>Кол-во</th><th>Цена</th><th>Сумма</th></tr></thead>
+        <tbody>${rowsHtml.join('')}</tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderCatalogView(){
+  const rows = state.catalog.map(w=>`
+    <tr data-work-row="${w.id}">
+      <td><input type="text" value="${escapeAttr(w.name)}" placeholder="Название работы" data-cat-field="${w.id}|name"></td>
+      <td>
+        <select data-cat-field="${w.id}|unit">
+          <option value="m2" ${w.unit==='m2'?'selected':''}>м² (площадь)</option>
+          <option value="ml" ${w.unit==='ml'?'selected':''}>м.п. (погонный метр)</option>
+          <option value="m3" ${w.unit==='m3'?'selected':''}>м³ (объём)</option>
+          <option value="pcs" ${w.unit==='pcs'?'selected':''}>шт. (количество)</option>
+        </select>
+      </td>
+      <td>
+        <select data-cat-field="${w.id}|appliesTo">
+          <option value="walls" ${w.appliesTo==='walls'?'selected':''}>стены</option>
+          <option value="floor" ${w.appliesTo==='floor'?'selected':''}>пол</option>
+          <option value="ceiling" ${w.appliesTo==='ceiling'?'selected':''}>потолок</option>
+          <option value="perimeter" ${w.appliesTo==='perimeter'?'selected':''}>периметр</option>
+          <option value="manual" ${w.appliesTo==='manual'?'selected':''}>вручную</option>
+        </select>
+      </td>
+      <td><input type="text" inputmode="decimal" value="${escapeAttr(w.price)}" data-cat-field="${w.id}|price"></td>
+      <td><button class="btn-icon" data-del-work="${w.id}" title="Удалить">✕</button></td>
+    </tr>
+  `).join('');
+
+  return `
+    <div class="proj-header">
+      <div>
+        <div style="font-family:'Space Grotesk',sans-serif;font-size:28px;font-weight:700;">Виды работ</div>
+        <div class="proj-meta">справочник для расчёта смет · ${state.catalog.length} позиций</div>
+      </div>
+      <div class="header-actions">
+        <button class="btn btn-primary" id="addWork">+ Добавить вид работ</button>
+      </div>
+    </div>
+    <table class="catalog-table">
+      <thead><tr><th>Название</th><th>Единица</th><th>Применяется к</th><th>Цена, ₽</th><th></th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+}
+
+// ---------- HANDLERS ----------
+function attachHandlers(){
+  const main = document.getElementById('main');
+  const list = document.getElementById('projList');
+
+  document.getElementById('newProjectBtn').onclick = createProject;
+  document.getElementById('catalogBtn').onclick = ()=>{ state.view='catalog'; render(); };
+
+  list.querySelectorAll('[data-open]').forEach(el=>{
+    el.addEventListener('click', (e)=>{
+      if(e.target.closest('[data-del]')) return;
+      state.currentProjectId = el.getAttribute('data-open');
+      state.view = 'project';
+      render();
+    });
+  });
+  list.querySelectorAll('[data-del]').forEach(el=>{
+    el.addEventListener('click', (e)=>{
+      e.stopPropagation();
+      const id = el.getAttribute('data-del');
+      if(confirm('Удалить проект без возможности восстановления?')){
+        state.projects = state.projects.filter(p=>p.id!==id);
+        if(state.currentProjectId===id) state.currentProjectId = state.projects[0]?.id || null;
+        scheduleSave(); render();
+      }
+    });
+  });
+
+  const emptyBtn = document.getElementById('emptyNewProject');
+  if(emptyBtn) emptyBtn.onclick = createProject;
+
+  if(state.view==='catalog'){
+    document.getElementById('addWork').onclick = ()=>{
+      const w = {id:uid('w'), name:'', unit:'m2', price:'', appliesTo:'walls'};
+      state.catalog.push(w);
+      scheduleSave(); render();
+      const inp = document.querySelector(`[data-cat-field="${w.id}|name"]`);
+      if(inp){ inp.scrollIntoView({block:'center', behavior:'smooth'}); inp.focus(); }
+    };
+    main.querySelectorAll('[data-del-work]').forEach(el=>{
+      el.onclick = ()=>{
+        const id = el.getAttribute('data-del-work');
+        state.catalog = state.catalog.filter(w=>w.id!==id);
+        scheduleSave(); render();
+      };
+    });
+    main.querySelectorAll('[data-cat-field]').forEach(el=>{
+      el.addEventListener('input', ()=>{
+        const [id, field] = el.getAttribute('data-cat-field').split('|');
+        const w = state.catalog.find(x=>x.id===id);
+        if(!w) return;
+        w[field] = field==='price' ? el.value : el.value;
+        scheduleSave();
+        if(field!=='name' && field!=='price'){ render(); } // unit/appliesTo change affects other rows minimally
+      });
+      el.addEventListener('change', ()=>{
+        const [id, field] = el.getAttribute('data-cat-field').split('|');
+        if(field==='unit' || field==='appliesTo'){ scheduleSave(); render(); }
+      });
+    });
+    return;
+  }
+
+  const proj = currentProject();
+  if(!proj) return;
+
+  document.getElementById('projName').addEventListener('input', (e)=>{
+    proj.name = e.target.value; scheduleSave(); renderSidebar();
+    document.querySelectorAll('.proj-meta')[0] && (document.querySelectorAll('.proj-meta')[0].textContent = `${proj.rooms.length} помещ. · создан ${new Date(proj.createdAt).toLocaleDateString('ru-RU')}`);
+  });
+  document.getElementById('duplicateProject').onclick = ()=>{
+    const copy = JSON.parse(JSON.stringify(proj));
+    copy.id = uid('p'); copy.name = proj.name + ' (копия)'; copy.createdAt = Date.now();
+    copy.rooms.forEach(r=>r.id = uid('r'));
+    state.projects.push(copy);
+    state.currentProjectId = copy.id;
+    scheduleSave(); render();
+  };
+  document.getElementById('exportProject').onclick = ()=>window.print();
+  document.getElementById('addRoom').onclick = ()=>{
+    proj.rooms.push(emptyRoom());
+    scheduleSave(); render();
+  };
+
+  main.querySelectorAll('[data-del-room]').forEach(el=>{
+    el.onclick = ()=>{
+      const id = el.getAttribute('data-del-room');
+      if(proj.rooms.length<=1){ alert('В проекте должно остаться хотя бы одно помещение.'); return; }
+      proj.rooms = proj.rooms.filter(r=>r.id!==id);
+      scheduleSave(); render();
+    };
+  });
+
+  main.querySelectorAll('[data-room-name]').forEach(el=>{
+    el.addEventListener('input', ()=>{
+      const id = el.getAttribute('data-room-name');
+      const r = proj.rooms.find(x=>x.id===id);
+      if(r){ r.name = el.value; scheduleSave(); }
+    });
+  });
+
+  main.querySelectorAll('[data-dim]').forEach(el=>{
+    el.addEventListener('input', ()=>{
+      const [roomId, field] = el.getAttribute('data-dim').split('|');
+      const r = proj.rooms.find(x=>x.id===roomId);
+      if(r){ r[field] = el.value; scheduleSave(); updateDerived(proj); }
+    });
+  });
+
+  main.querySelectorAll('[data-add-opening]').forEach(el=>{
+    el.onclick = ()=>{
+      const [roomId, kind] = el.getAttribute('data-add-opening').split('|');
+      const r = proj.rooms.find(x=>x.id===roomId);
+      if(r){ r[kind] = r[kind]||[]; r[kind].push({w:'', h:'', qty:''}); scheduleSave(); render(); }
+    };
+  });
+  main.querySelectorAll('[data-del-opening]').forEach(el=>{
+    el.onclick = ()=>{
+      const [roomId, kind, idx] = el.getAttribute('data-del-opening').split('|');
+      const r = proj.rooms.find(x=>x.id===roomId);
+      if(r){ r[kind].splice(parseInt(idx),1); scheduleSave(); render(); }
+    };
+  });
+  main.querySelectorAll('[data-opening]').forEach(el=>{
+    el.addEventListener('input', ()=>{
+      const [roomId, kind, idx, field] = el.getAttribute('data-opening').split('|');
+      const r = proj.rooms.find(x=>x.id===roomId);
+      if(r){ r[kind][parseInt(idx)][field] = el.value; scheduleSave(); updateDerived(proj); }
+    });
+  });
+
+  // --- Документы ---
+  main.querySelectorAll('[data-doc]').forEach(el=>{
+    el.onclick = ()=>{
+      const [docType, format, action] = el.getAttribute('data-doc').split('|');
+      generateDoc(proj, docType, format, action, el);
+    };
+  });
+
+  // --- Данные для договора ---
+  main.querySelectorAll('[data-cust-toggle]').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      const pid = el.getAttribute('data-cust-toggle');
+      const open = !uiCustomerOpen[pid];
+      uiCustomerOpen[pid] = open;
+      const box = main.querySelector(`[data-cust-acc="${pid}"]`);
+      if(box) box.classList.toggle('open', open);
+      el.setAttribute('aria-expanded', open);
+    });
+  });
+  main.querySelectorAll('[data-cust]').forEach(el=>{
+    el.addEventListener('input', ()=>{
+      const [pid, key] = el.getAttribute('data-cust').split('|');
+      if(pid !== proj.id) return;
+      proj.customer = proj.customer || {};
+      proj.customer[key] = el.value;
+      const errBox = main.querySelector(`[data-cust-err="${pid}|${key}"]`);
+      if(errBox) errBox.textContent = validateCustomer(key, el.value);
+      if(key === 'advance'){
+        const w = main.querySelector(`[data-cust-adv-words="${pid}"]`);
+        if(w) w.textContent = el.value ? rublesToWords(num(el.value)) : '';
+      }
+      scheduleSave();
+    });
+  });
+
+  // --- Форма помещения (режим размеров) ---
+  main.querySelectorAll('[data-room-shape]').forEach(el=>{
+    el.addEventListener('change', ()=>{
+      const roomId = el.getAttribute('data-room-shape');
+      const r = proj.rooms.find(x=>x.id===roomId);
+      if(r){ r.shape = el.value; scheduleSave(); render(); }
+    });
+  });
+  main.querySelectorAll('[data-shapedim]').forEach(el=>{
+    el.addEventListener('input', ()=>{
+      const [roomId, key] = el.getAttribute('data-shapedim').split('|');
+      const r = proj.rooms.find(x=>x.id===roomId);
+      if(!r) return;
+      r.dims = r.dims || {};
+      r.dims[key] = el.value;
+      const shape = r.shape || 'rect';
+      const a = main.querySelector(`[data-dimarea="${roomId}"]`);
+      const p = main.querySelector(`[data-dimperim="${roomId}"]`);
+      const wn = main.querySelector(`[data-dimwarn="${roomId}"]`);
+      if(a) a.textContent = fmt(shapeArea(shape, r.dims));
+      if(p) p.textContent = fmt(shapePerimeter(shape, r.dims));
+      if(wn){
+        const cl = shapeClosure(shape, r.dims);
+        wn.textContent = (cl > 0.05) ? `Контур не замыкается (расхождение ${fmt(cl)} м) — проверьте длины стен.` : '';
+      }
+      scheduleSave(); updateDerived(proj);
+    });
+  });
+
+  // --- Участки пола ---
+  main.querySelectorAll('[data-add-floor]').forEach(el=>{
+    el.onclick = ()=>{
+      const roomId = el.getAttribute('data-add-floor');
+      const r = proj.rooms.find(x=>x.id===roomId);
+      if(r){ r.floorSections = r.floorSections||[]; r.floorSections.push({l:'', w:''}); scheduleSave(); render(); }
+    };
+  });
+  main.querySelectorAll('[data-del-floor]').forEach(el=>{
+    el.onclick = ()=>{
+      const [roomId, idx] = el.getAttribute('data-del-floor').split('|');
+      const r = proj.rooms.find(x=>x.id===roomId);
+      if(r && r.floorSections){ r.floorSections.splice(parseInt(idx),1); scheduleSave(); render(); }
+    };
+  });
+  main.querySelectorAll('[data-floor]').forEach(el=>{
+    el.addEventListener('input', ()=>{
+      const [roomId, idx, field] = el.getAttribute('data-floor').split('|');
+      const r = proj.rooms.find(x=>x.id===roomId);
+      if(!r || !r.floorSections || !r.floorSections[idx]) return;
+      r.floorSections[idx][field] = el.value;
+      const f = r.floorSections[idx];
+      const areaEl = main.querySelector(`[data-floor-area="${roomId}|${idx}"]`);
+      if(areaEl) areaEl.textContent = fmt(num(f.l)*num(f.w)) + ' м²';
+      const totalEl = main.querySelector(`[data-floor-total="${roomId}"]`);
+      if(totalEl) totalEl.textContent = fmt((r.floorSections||[]).reduce((s,x)=> s + num(x.l)*num(x.w), 0));
+      scheduleSave(); updateDerived(proj);
+    });
+  });
+
+  // --- Режим расчёта помещения ---
+  main.querySelectorAll('[data-calc-mode]').forEach(el=>{
+    el.onclick = ()=>{
+      const [roomId, mode] = el.getAttribute('data-calc-mode').split('|');
+      const r = proj.rooms.find(x=>x.id===roomId);
+      if(r){ r.calcMode = mode; scheduleSave(); render(); }
+    };
+  });
+
+  // --- Стены ---
+  main.querySelectorAll('[data-wall-shape]').forEach(el=>{
+    el.addEventListener('change', ()=>{
+      const roomId = el.getAttribute('data-wall-shape');
+      uiWallDraft[roomId] = { shape: el.value };
+      render();
+    });
+  });
+  main.querySelectorAll('[data-wall-draft]').forEach(el=>{
+    el.addEventListener('input', ()=>{
+      const [roomId, field] = el.getAttribute('data-wall-draft').split('|');
+      const d = wallDraft(roomId);
+      d[field] = el.value;
+      const prev = main.querySelector(`[data-wall-preview="${roomId}"]`);
+      if(prev) prev.textContent = fmt(computeWallArea(d));
+      const err = main.querySelector(`[data-wall-error="${roomId}"]`);
+      if(err) err.textContent = '';
+    });
+  });
+  main.querySelectorAll('[data-add-wall]').forEach(el=>{
+    el.onclick = ()=>{
+      const roomId = el.getAttribute('data-add-wall');
+      const r = proj.rooms.find(x=>x.id===roomId);
+      const d = wallDraft(roomId);
+      const area = computeWallArea(d);
+      const err = main.querySelector(`[data-wall-error="${roomId}"]`);
+      if(!r) return;
+      if(!(area > 0)){ if(err) err.textContent = 'Заполните размеры стены (площадь должна быть больше 0).'; return; }
+      r.walls = r.walls || [];
+      r.walls.push({ ...d });
+      uiWallDraft[roomId] = { shape: d.shape };
+      scheduleSave(); render();
+    };
+  });
+  main.querySelectorAll('[data-del-wall]').forEach(el=>{
+    el.onclick = ()=>{
+      const [roomId, idx] = el.getAttribute('data-del-wall').split('|');
+      const r = proj.rooms.find(x=>x.id===roomId);
+      if(r && r.walls){ r.walls.splice(parseInt(idx),1); scheduleSave(); render(); }
+    };
+  });
+
+  main.querySelectorAll('[data-toggle-work]').forEach(el=>{
+    el.addEventListener('change', ()=>{
+      const [roomId, workId] = el.getAttribute('data-toggle-work').split('|');
+      const r = proj.rooms.find(x=>x.id===roomId);
+      if(!r) return;
+      r.works = r.works||[];
+      if(el.checked){
+        if(!r.works.find(w=>w.workId===workId)) r.works.push({workId, manualQty:''});
+      } else {
+        r.works = r.works.filter(w=>w.workId!==workId);
+      }
+      scheduleSave(); render();
+    });
+  });
+  main.querySelectorAll('[data-manual-qty]').forEach(el=>{
+    el.addEventListener('input', ()=>{
+      const [roomId, workId] = el.getAttribute('data-manual-qty').split('|');
+      const r = proj.rooms.find(x=>x.id===roomId);
+      if(!r) return;
+      const rw = r.works.find(w=>w.workId===workId);
+      if(rw){ rw.manualQty = el.value; scheduleSave(); updateDerived(proj); }
+    });
+  });
+
+  main.querySelectorAll('[data-works-toggle]').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      const roomId = el.getAttribute('data-works-toggle');
+      const open = !uiWorksOpen[roomId];
+      uiWorksOpen[roomId] = open;
+      const box = main.querySelector(`[data-works-acc="${roomId}"]`);
+      if(box) box.classList.toggle('open', open);
+      el.setAttribute('aria-expanded', open);
+    });
+  });
+}
+
+// Живой пересчёт итогов и площадей без перерисовки полей ввода
+function updateDerived(proj){
+  proj.rooms.forEach(room=>{
+    const roomEl = document.querySelector(`.room[data-room="${room.id}"]`);
+    if(!roomEl) return;
+    const g = calcRoomGeometry(room);
+    const setB = (k, txt)=>{ const b = roomEl.querySelector(`[data-out="${k}"]`); if(b) b.textContent = txt; };
+    setB('perimeter', fmt(g.perimeter)+' м.п.');
+    setB('wallArea', fmt(g.wallArea)+' м²');
+    setB('floorArea', fmt(g.floorArea)+' м²');
+    setB('ceilingArea', fmt(g.ceilingArea)+' м²');
+    (room.works||[]).forEach(rw=>{
+      const work = state.catalog.find(w=>w.id===rw.workId);
+      if(!work) return;
+      const line = calcWorkLine(room, rw, work);
+      const span = roomEl.querySelector(`[data-wsum="${room.id}|${rw.workId}"]`);
+      if(span) span.textContent = `${fmt(line.qty)} ${UNIT_LABEL[work.unit]} · ${fmtMoney(line.sum)}`;
+    });
+  });
+  const sm = document.getElementById('smetaBlock');
+  if(sm) sm.innerHTML = renderSmetaBlock(proj);
+  // стоимость в блоке договора
+  const total = projectTotal(proj);
+  const ct = document.querySelector(`[data-cust-total="${proj.id}"]`);
+  const ctw = document.querySelector(`[data-cust-total-words="${proj.id}"]`);
+  if(ct) ct.textContent = fmtMoney(total);
+  if(ctw) ctw.textContent = rublesToWords(total);
+}
+
+function createProject(){
+  const p = emptyProject();
+  state.projects.push(p);
+  state.currentProjectId = p.id;
+  state.view = 'project';
+  scheduleSave(); render();
+}
+
+function escapeHtml(s){
+  return String(s??'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function escapeAttr(s){ return escapeHtml(s); }
+
+// запуск приложения
+bootstrap();
+</script>
+</body>
+</html>
