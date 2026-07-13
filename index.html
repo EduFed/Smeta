@@ -147,6 +147,9 @@
   .proj-item .del:hover{color:var(--red);}
 
   .sidebar-footer{margin-top:auto;padding-top:16px;border-top:1px solid #2C3A42;flex-shrink:0;}
+  .sb-legal{margin:8px 0 10px;font-size:11px;line-height:1.4;}
+  .sb-legal a{color:#8FA0A8;text-decoration:none;border-bottom:1px solid #3A4A54;}
+  .sb-legal a:hover{color:#FFF;border-bottom-color:#8FA0A8;}
 
   /* MAIN */
   .main{padding:36px 44px;overflow-x:clip;transition:margin-left .25s ease;}
@@ -685,6 +688,11 @@
     max-width:360px;width:100%;padding:30px 28px;
   }
   .auth-card .sub{color:var(--ink-soft);font-size:11px;margin-bottom:22px;font-family:'JetBrains Mono',monospace;text-transform:uppercase;letter-spacing:0.1em;text-align:center;}
+  .auth-legal{
+    margin-top:18px;text-align:center;font-size:11px;line-height:1.5;color:var(--ink-soft);
+  }
+  .auth-legal a{color:var(--ink-soft);text-decoration:underline;}
+  .auth-legal a:hover{color:var(--ink);}
   .auth-field{display:flex;flex-direction:column;gap:6px;margin-bottom:14px;}
   .auth-field label{font-family:'JetBrains Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:var(--ink-soft);}
   .auth-field input{font-family:'Inter',sans-serif;font-size:14px;border:1px solid var(--paper-line);border-radius:var(--radius);padding:10px 12px;background:var(--paper);color:var(--ink);}
@@ -1036,6 +1044,9 @@
       </div>
       <div class="build-ver" id="buildVer"></div>
       <div class="sync-status"><span class="sync-dot" id="syncDot"></span><span id="syncText">—</span></div>
+      <div class="sb-legal no-print">
+        <a href="privacy.html" target="_blank" rel="noopener">Политика конфиденциальности</a>
+      </div>
       <button class="btn btn-ghost" id="signOutBtn">Выйти</button>
     </div>
   </aside>
@@ -1232,6 +1243,11 @@
     </div>
 
     <div class="auth-msg" id="authMsg"></div>
+
+    <div class="auth-legal">
+      Входя, вы соглашаетесь с
+      <a href="privacy.html" target="_blank" rel="noopener">политикой конфиденциальности</a>.
+    </div>
   </div>
 </div>
 
@@ -1275,7 +1291,7 @@ const PASSWORD_LOGIN_ENABLED = false;
 // Пустая строка = капча выключена, приложение работает как раньше.
 const TURNSTILE_SITEKEY = '0x4AAAAAAD0t0bmbZT08N1U5';   // Cloudflare Turnstile, публичный ключ
 
-const APP_BUILD = '2026-07-13-07';   // версия сборки, меняется автоматически
+const APP_BUILD = '2026-07-13-08';   // версия сборки, меняется автоматически
 const APP_NAME = 'СМЕТА | РАСЧЁТ';
 const APP_URL  = 'edufed.github.io/smeta';   // адрес приложения (без https://)
 const APP_LOGO = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAALQAAAC0CAIAAACyr5FlAAAEp0lEQVR4nO3dQU7cTBCGYYiyZkcWIJETcA+OzD04AQs2LDlBFiONUPBnl7vL7arq99kl/zC2pt8p93hQ/tv7h6cbYMmvs08AcREHJOKARByQiAMScUAiDkjEAYk4IP0ecIy3l7sBR5nQ8+vXoc9/e9Dtc4IY7IhQ/OMgixP5JuIZB1kE4ZWITxxkEVB/Ig6fVigjpv516Z0cxjM4el89oQGvfHscmydHEMMctBaNcayfDVmcwn1RWuJYOQmyOJ3j6njePqeMCBxXYXccKkzKiEOtxd7PL/suK4vPThZhda7XjsnB/Ywa7OvYu+dgbETWuTrWOLigJLW4Rsbh0T45KCOL5pUyxcFuox7LmjZODsZGLm3rtR0HY6OqzZVtmRyMjYwaVo3fPodEHJA24mDDUdv6+u6eHGw48jrzK3sUQxyQiAMScUAiDkjEAYk4IBEHJOKARByQiAMScUAiDkjEAYk4IBEHpBH/SG18nx/v3//45/HvWWcSCpPj/zIW/2ZOU0+OlQgu/2nyETLv5LCMh8lHyIyTY9eSzzxCppscbcNgzhEyURyfH+89azxhH7PE4bK0nXmlM0UcxhU1bizm6aN4HPb3+qUM+viu8qeVtoFx+ePmz87wKabm5Ng7MOx///NAO04rm4Jx2LNYL8DeR9VEqsXhu/fcDGjvcXOpE0f/paTz8fX6KBKH16Vk5QeNp1EpkfRxHDcwfv74bCMkdxxHD4zFp7I8rMYIyRrHsIGx+ISTjJCUcYwfGItPbnlY6j7yxXHWwGg+RN5LTKY4TryUrByo8AhJE0eES8nKQS0PS9dHgi/e7K/piV+Dlfy6LvrkiDwwFk/D8rAsIyRuHAF3GBaVdqlB40hxKVHK7FKDxmER5FKiFOgjYhyW1ytyFlfZ+wj3aWXzlUqRxZXxU0xMESfHilxlXCU97UxxJH2JLzKefKY4MBhxQCIOSMQBiTggEQck4oBEHJCIA1K471a8DPs6I+OtT6Oak2PkF11Jv1SzKBjH+NWq2kfBOOClWhxV38SnqBYHHBEHJOKARByQyt4E+6n/btVsu10mByTigEQckIgDEnFAIg5IxAGJOCARByTigEQckIgDEnFAIg5IxAGJOCARByTigEQckIgDEnFACvfb5/3/91evM3F/8nT/WAOTAxJxQCIOSMQBiTggEQck4oBEHJCIAxJxQBp9+/zt5W7wEct4fv0afEQmByTigEQckIgDEnFAIg5IxAGJOCARB6TRd0jH3+ZDMyYHJOKAtDsOvjnLa+/abcTBFqG29fXlsgKJOCC1xMG2I6OGVduOg21HVZsr23hZYXjk0rZepjgYHvVY1rR9Q8rwyKJ5paxxLIZGH/EtrpHxUtD7UZY+IutcnR1xsPOowb6Ot/cPT7ueWsVIOqG4LNPuy4p6dq4vcXi9gT1vn9NHBI6rsPuyYjkDLjGncF+Uxjg2T6XtbNDmoLVoj+PCOMQIxd2AV743jhu2GoF1vicdNqRMhZj618VhclwxQoLwert6xnFBIifyneL+cVyQyGBHXNyPiuM7QjnI0bu9EXEgKX77HBJxQCIOSMQBiTggEQck4oBEHJD+AQDzqedRg0DlAAAAAElFTkSuQmCC';
