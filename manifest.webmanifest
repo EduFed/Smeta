@@ -1,0 +1,32 @@
+{
+  "name": "СМЕТА | РАСЧЁТ — расчёт ремонтных работ",
+  "short_name": "СМЕТА",
+  "description": "Расчёт площадей и смет на ремонтно-отделочные работы. Договор, акты, экспорт в PDF.",
+  "lang": "ru",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#1A2228",
+  "theme_color": "#1A2228",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
