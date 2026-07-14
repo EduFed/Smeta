@@ -9,7 +9,7 @@
    людям старый index.html из кэша.
    ============================================================ */
 
-const CACHE_VERSION = '2026-07-13-18';
+const CACHE_VERSION = '2026-07-13-19';
 const CACHE_APP = 'smeta-app-' + CACHE_VERSION;   // сам файл приложения
 const CACHE_LIB = 'smeta-lib-' + CACHE_VERSION;   // библиотеки и шрифты с CDN
 
