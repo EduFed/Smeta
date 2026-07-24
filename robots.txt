@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+
+# Служебные файлы приложения индексировать незачем
+Disallow: /sw.js
+Disallow: /manifest.webmanifest
+
+Sitemap: https://smetaraschet.ru/sitemap.xml
