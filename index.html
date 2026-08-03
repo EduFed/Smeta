@@ -600,6 +600,13 @@
   .team-role{font-size:12px;opacity:.65;margin-top:2px;}
   .team-me,.team-wait{font-size:12px;opacity:.6;}
   .team-act{display:flex;align-items:center;gap:8px;flex:0 0 auto;}
+  /* строка «скрыть данные заказчика» — своя на каждого мастера */
+  .team-sub{display:flex;align-items:center;justify-content:space-between;gap:10px;
+            padding:0 0 10px 0;margin-top:-8px;border-bottom:1px solid var(--paper-line);}
+  .team-sub span{font-size:13px;color:var(--ink-soft, #6b6b6b);}
+  .team-sub .ref-toggle{width:40px;height:23px;border-radius:12px;}
+  .team-sub .ref-toggle .ref-knob{width:17px;height:17px;}
+  .team-sub .ref-toggle.on .ref-knob{transform:translateX(17px);}
   .team-x{border:0;background:none;cursor:pointer;font-size:16px;opacity:.55;padding:4px 6px;}
   .team-x:hover{opacity:1;}
   .team-copy{border:1px solid var(--paper-line);background:none;border-radius:8px;padding:6px 10px;cursor:pointer;font-size:13px;}
@@ -1238,6 +1245,20 @@
     cursor:pointer;
   }
   .btn-locked:hover{ opacity:.8; filter:none; }
+
+  /* ---------- ВЫКЛЮЧЕННЫЙ ЭЛЕМЕНТ ---------- */
+  /* Раньше выключенная кнопка выглядела как обычная: человек нажимал,
+     ничего не происходило, и это читалось как поломка приложения.
+     Теперь видно сразу, что элемент не работает. */
+  button[disabled], button[aria-disabled="true"]{
+    opacity:.42; filter:saturate(.35); cursor:not-allowed;
+  }
+  button[disabled]:hover, button[aria-disabled="true"]:hover{
+    opacity:.42; filter:saturate(.35);
+  }
+  select[disabled], input[disabled], textarea[disabled]{
+    opacity:.6; cursor:not-allowed; background:var(--bg-soft, transparent);
+  }
 
   /* ---------- ТАРИФ: кнопка в сайдбаре ---------- */
   .plan-btn{
@@ -2189,7 +2210,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-02-13';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-03-01';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -2959,11 +2980,17 @@ async function loadPlan(){
   }
 }
 
+// Платные тарифы. В базе есть не только 'pro', но и 'brigada' — сравнение
+// с одной строкой отсекало владельца бригадного тарифа, и он видел
+// бесплатные правила в собственном проекте. Список держать в паре
+// с функцией effective_plan на сервере.
+const PAID_PLANS = ['pro', 'brigada'];
+
 // есть ли сейчас полный доступ (оплачен или идёт пробный период)?
 function isPro(){
   if(!userPlan) return false;
   const now = Date.now();
-  const paid  = userPlan.plan === 'pro' &&
+  const paid  = PAID_PLANS.includes(userPlan.plan) &&
                 userPlan.plan_until && new Date(userPlan.plan_until).getTime() > now;
   const trial = userPlan.trial_until && new Date(userPlan.trial_until).getTime() > now;
   return !!(paid || trial);
@@ -2976,9 +3003,22 @@ function trialDaysLeft(){
   return ms > 0 ? Math.ceil(ms / 86400000) : 0;
 }
 
+// ---------- ТАРИФ В КОНКРЕТНОМ ПРОЕКТЕ ----------
+// Главное правило совместной работы: ПЛАТИТ ВЛАДЕЛЕЦ ПРОЕКТА.
+// В чужом проекте участник работает по тарифу того, кто проект создал:
+// экспорт, договор и документы ему доступны, даже если у него самого Free.
+// В своих проектах — по своему тарифу.
+// Флаг owner_pro приходит с сервера (функция projects_owner_pro): тариф
+// чужого человека клиент прочитать не может и не должен.
+function isProAt(proj){
+  const p = proj || (typeof currentProject === 'function' ? currentProject() : null);
+  if(p && p.ownerId && currentUser && p.ownerId !== currentUser.id) return !!p.ownerPro;
+  return isPro();
+}
+
 // оплаченная подписка (а не триал) — понадобится для плашек
 function isPaid(){
-  return !!(userPlan && userPlan.plan === 'pro' &&
+  return !!(userPlan && PAID_PLANS.includes(userPlan.plan) &&
             userPlan.plan_until && new Date(userPlan.plan_until).getTime() > Date.now());
 }
 
@@ -3131,8 +3171,11 @@ const FREE_LIMITS = { projects: 1, rooms: 3, catalog: 10, materials: 5 };
 
 // проверка перед действием. true — можно; false — показали окно тарифов
 function allow(what){
-  if(isPro()) return true;
   const p = currentProject();
+  // Проект, каталог и справочник материалов — это СВОЁ: тариф свой.
+  // Помещения добавляются внутрь открытого проекта, а в чужом проекте
+  // правила задаёт владелец — он и платит.
+  if(what === 'room' ? isProAt(p) : isPro()) return true;
   if(what === 'project' && state.projects.length >= FREE_LIMITS.projects){
     showLimit('На бесплатном тарифе доступен один проект.',
               'Оформите подписку, чтобы вести несколько объектов одновременно.');
@@ -3207,8 +3250,9 @@ function applyLocks(){
   const pro = isPro();
   const p = currentProject();
 
-  // метка на печати (Печать / PDF через браузер) — только на бесплатном тарифе
-  document.body.classList.toggle('free-plan', !pro);
+  // метка на печати (Печать / PDF через браузер) — только на бесплатном тарифе.
+  // В чужом проекте считаем по тарифу владельца: платит он.
+  document.body.classList.toggle('free-plan', !isProAt(p));
   fillPrintWatermark();
 
   const mark = (el, locked, baseText)=>{
@@ -3227,7 +3271,7 @@ function applyLocks(){
        'Дублировать');
 
   mark(document.getElementById('addRoom'),
-       !pro && p && p.rooms.length >= FREE_LIMITS.rooms,
+       !isProAt(p) && p && p.rooms.length >= FREE_LIMITS.rooms,
        '+ Добавить помещение');
 
   mark(document.getElementById('addWork'),
@@ -3751,7 +3795,16 @@ function teamAccHtml(proj){
           </select>
           <button type="button" class="team-x" data-team-del="${proj.id}|${m.user_id}" title="Убрать из проекта">✕</button>
         </div>` : ''}
-      </div>`;
+      </div>
+      ${canTouch ? `<div class="team-sub">
+        <span>Скрыть от него данные заказчика</span>
+        <button type="button" class="ref-toggle sm ${m.hide_personal?'on':''}"
+                data-team-pers="${proj.id}|${m.user_id}" role="switch"
+                aria-checked="${!!m.hide_personal}"
+                title="${m.hide_personal?'Показать этому мастеру':'Скрыть от этого мастера'}">
+          <span class="ref-knob"></span>
+        </button>
+      </div>` : ''}`;
     }).join('');
 
     const invites = (t.invites || []).map(i=>`
@@ -3793,8 +3846,9 @@ function teamAccHtml(proj){
     const guard = owner ? `
       <div class="ref-switch" style="margin:16px 0 4px;">
         <div class="ref-switch-txt">
-          <b>Скрыть данные заказчика от бригады</b>
-          <span>Мастера увидят смету, но не паспорт и телефон — ни в приложении, ни в документах</span>
+          <b>Скрыть данные заказчика от всей бригады</b>
+          <span>Общий рубильник. Мастера увидят смету, но не паспорт и телефон — ни в приложении,
+                ни в документах. Кого-то одного можно закрыть тумблером в его строке выше</span>
         </div>
         <button type="button" class="ref-toggle ${proj.hidePersonal?'on':''}"
                 data-hidepers="${proj.id}" role="switch"
@@ -3920,10 +3974,18 @@ function applyViewerMode(){
   main.classList.toggle('viewer-mode', ro);
   if(!ro) return;
 
-  // Все поля ввода — только чтение
+  // Все поля ввода — только чтение.
+  // Исключение — поля панели документов: тип документа, дата составления,
+  // номер этапа и сумма нигде не сохраняются, это настройки предпросмотра.
+  // Если их выключить, роль «смотрит» видит только «Договор» и не может
+  // посмотреть акт или расписку — именно так это и выглядело.
+  const PREVIEW_FIELDS = ['data-contract-type','data-contract-date','data-contract-days',
+                          'data-stageno','data-settlement'];
   main.querySelectorAll('input, textarea, select').forEach(el=>{
     if(el.hasAttribute('data-team-role') || el.hasAttribute('data-team-email')) return;
+    if(PREVIEW_FIELDS.some(a=> el.hasAttribute(a))) return;
     el.disabled = true;
+    el.title = 'Только просмотр — права выдаёт владелец проекта';
   });
 
   // Кнопки: запрещаем ВСЁ, кроме белого списка. Так надёжнее, чем перечислять
@@ -3946,6 +4008,14 @@ function applyViewerMode(){
     if(!keep){
       btn.disabled = true;
       btn.setAttribute('aria-disabled', 'true');
+      btn.title = 'Только просмотр — права выдаёт владелец проекта';
+      // замок прямо в подписи: выключенная кнопка без пояснения читается
+      // как сломанная. Значок вешаем только на текстовые кнопки —
+      // у значковых (✕, ▾) внутри разметка, её ломать нельзя.
+      const txt = (btn.textContent || '').trim();
+      if(txt && txt.length > 2 && !btn.querySelector('svg, span') && txt.indexOf('🔒') < 0){
+        btn.textContent = txt + ' 🔒';
+      }
     }
   });
 
@@ -3976,12 +4046,18 @@ function realtimeWatch(projectId){
   rtProjectId = projectId;
   try{
     rtChannel = sb.channel('smeta-' + projectId);
-    ['room_works','rooms','projects','room_openings','project_extra_works','project_materials']
+    ['room_works','rooms','room_openings','project_extra_works','project_materials','project_customers']
       .forEach(table=>{
         rtChannel.on('postgres_changes',
           { event:'*', schema:'public', table: table, filter: 'project_id=eq.' + projectId },
           onRemoteChange);
       });
+    // У самой таблицы projects колонки project_id нет — ключ называется id.
+    // Со старым фильтром подписка на проект молча не работала, и правки
+    // владельца доезжали до бригады только после перезагрузки страницы.
+    rtChannel.on('postgres_changes',
+      { event:'*', schema:'public', table:'projects', filter:'id=eq.' + projectId },
+      onRemoteChange);
     rtChannel.subscribe();
   }catch(_){ rtChannel = null; }
 }
@@ -4008,7 +4084,9 @@ function onRemoteChange(payload){
     await loadFromCloud();
     render();
     setSync('saved', 'смету обновил напарник');
-  }, 1200);
+    // 1,2 с ожидания заметны на глаз. 350 мс всё ещё склеивают пачку
+    // изменений в один запрос, но правка напарника приезжает почти сразу.
+  }, 350);
 }
 
 async function teamLoad(projectId){
@@ -4067,9 +4145,9 @@ const DB = {
   async loadAll(){
     const uid_ = currentUser.id;
 
-    const [projRes, catRes, matRes, execRes, setRes, memRes] = await Promise.all([
+    const [projRes, catRes, matRes, execRes, setRes, memRes, proRes] = await Promise.all([
       sb.from('projects').select(
-        'id,owner_id,seq,name,status,archived,pinned,occupied,small_area,created_at,updated_at,' +
+        'id,owner_id,seq,name,status,archived,pinned,occupied,small_area,hide_personal,created_at,updated_at,' +
         'project_customers(*),' +
         'project_extra_works(*),' +
         'project_materials(*),' +
@@ -4083,7 +4161,11 @@ const DB = {
       // моя роль в каждом проекте: в чужом проекте она может быть «смотрит»,
       // и тогда правки сервер не примет — приложение должно это показывать,
       // а не делать вид, что сохраняет
-      sb.from('project_members').select('project_id, role').eq('user_id', uid_)
+      sb.from('project_members').select('project_id, role').eq('user_id', uid_),
+      // Что мне доступно в каждом проекте: оплачен ли тариф ВЛАДЕЛЬЦА
+      // и закрыты ли лично от меня персональные данные заказчика.
+      // Чужой тариф клиенту читать нельзя, поэтому сервер отдаёт «да/нет».
+      sb.rpc('my_projects_access')
     ]);
 
     for(const r of [projRes, catRes, matRes, execRes, setRes]){
@@ -4096,7 +4178,10 @@ const DB = {
       materials: matRes.data || [],
       executor: execRes.data || null,
       settings: setRes.data  || null,
-      roles: (memRes && !memRes.error) ? (memRes.data || []) : []
+      roles: (memRes && !memRes.error) ? (memRes.data || []) : [],
+      // функции ещё нет на сервере — вернём пустой список, тогда чужие проекты
+      // останутся на бесплатных правилах (как было), а не откроются всем
+      access: (proRes && !proRes.error) ? (proRes.data || []) : []
     };
   },
 
@@ -4131,14 +4216,18 @@ const DB = {
     state.ui  = (rows.settings && rows.settings.ui)  ? rows.settings.ui  : {};
 
     const myRoles = new Map((rows.roles || []).map(r=>[r.project_id, r.role]));
+    const access = new Map((rows.access || []).map(r=>[r.project_id, r]));
 
     state.projects = (rows.projects || []).map(p=>{
       const cu = (p.project_customers && p.project_customers[0]) || p.project_customers || {};
       const iAmOwner = (p.owner_id === currentUser.id);
+      const acc = access.get(p.id) || {};
       // Владелец закрыл данные заказчика: сервер их просто не отдаёт участникам.
       // Показываем маску, чтобы человек понимал — данные есть, но скрыты,
       // а не потеряны. Маска попадает и в документы.
-      const masked = !!p.hide_personal && !iAmOwner;
+      // Закрыть можно на весь проект (hide_personal) или лично на участника
+      // (флаг в project_members) — решение принимает сервер, здесь только показ.
+      const masked = !iAmOwner && (!!p.hide_personal || !!acc.personal_hidden);
       const MASK = 'ХХХХХХ';
       const mv = (v)=> masked ? MASK : (v || '');
 
@@ -4171,7 +4260,20 @@ const DB = {
         ownerId: p.owner_id || null,     // чужой проект (пригласили) — владелец другой
         hidePersonal: !!p.hide_personal, // владелец скрыл данные заказчика от бригады
         customerMasked: masked,          // мы видим маску, а не настоящие данные
-        myRole: myRoles.get(p.id) || (p.owner_id === currentUser.id ? 'owner' : 'editor'),
+        // у владельца проекта оплачен полный доступ — значит он есть
+        // и у приглашённых внутри этого проекта
+        ownerPro: iAmOwner ? isPro() : !!acc.owner_pro,
+        // РОЛЬ. Источник истины — сервер (my_projects_access), потому что
+        // свою строку в project_members клиент может и не прочитать: политика
+        // молча отдаёт пустой список, ошибки при этом нет.
+        // Раньше в таком случае подставлялось 'editor' — и приложение честно
+        // писало «вы в бригаде как правит», пока сервер отбивал каждую правку
+        // и не отдавал данные заказчика. Расхождение было не видно никому.
+        // Теперь неизвестная роль в ЧУЖОМ проекте — это 'viewer': ошибаться
+        // надо в сторону меньших прав, иначе человек снова увидит живой
+        // интерфейс, который ничего не сохраняет.
+        myRole: acc.my_role || myRoles.get(p.id) ||
+                (p.owner_id === currentUser.id ? 'owner' : 'viewer'),
         archived: !!p.archived, pinned: !!p.pinned,
         createdAt: p.created_at ? Date.parse(p.created_at) : Date.now(),
         conds: { occupied: !!p.occupied, smallArea: !!p.small_area },
@@ -4552,6 +4654,17 @@ const DB = {
       .select('user_id');
     if(error) throw error;
     if(!data || !data.length) throw new Error('Не удалось изменить роль: недостаточно прав.');
+  },
+
+  // Закрыть персональные данные заказчика лично от одного мастера.
+  // Пишется в его строку участника; сервер после этого просто не отдаёт
+  // ему project_customers — маска подставляется и в приложении, и в документах.
+  async setMemberHidePersonal(projectId, userId, hide){
+    const { data, error } = await sb.from('project_members')
+      .update({ hide_personal: !!hide }).eq('project_id', projectId).eq('user_id', userId)
+      .select('user_id');
+    if(error) throw error;
+    if(!data || !data.length) throw new Error('Не удалось изменить: недостаточно прав.');
   },
 
   // Выйти из чужого проекта. Разрешено намеренно: свою строку участник
@@ -6855,7 +6968,8 @@ async function docBlocksToPdfBlob(blocks){
 // на PRO документ выходит чистым, на Free — метка по диагонали,
 // а в подвале логотип + название + адрес приложения
 function withWatermark(def){
-  if(isPro()) return def;
+  // документ по чужому проекту выходит чистым, если платит владелец
+  if(isProAt()) return def;
   const d = Object.assign({}, def);
 
   // диагональная метка: название и адрес
@@ -7249,8 +7363,8 @@ async function generateDoc(proj, docType, format, action, btn){
     return;
   }
 
-  // Excel и Word — только в полном тарифе
-  if(!isPro() && format !== 'pdf'){
+  // Excel и Word — только в полном тарифе (в чужом проекте — тарифе владельца)
+  if(!isProAt(proj) && format !== 'pdf'){
     const what = format === 'xlsx' ? 'Excel' : 'Word';
     showLimit('Экспорт в ' + what + ' доступен в полном тарифе.',
               'На бесплатном тарифе документ можно сохранить в PDF — он будет с водяным знаком.');
@@ -8341,10 +8455,12 @@ function renderProjectView(proj){
 }
 
 function docBtns(type, fmt2, fmt2label){
-  // на бесплатном тарифе второй формат (Excel/Word) под замком
-  const lk    = isPro() ? '' : ' btn-locked';
-  const lbl2  = isPro() ? fmt2label : fmt2label + ' 🔒';
-  const tip   = isPro() ? '' : ' title="Доступно в полном тарифе"';
+  // на бесплатном тарифе второй формат (Excel/Word) под замком.
+  // В чужом проекте смотрим на тариф владельца — платит он.
+  const pro   = isProAt();
+  const lk    = pro ? '' : ' btn-locked';
+  const lbl2  = pro ? fmt2label : fmt2label + ' 🔒';
+  const tip   = pro ? '' : ' title="Доступно в полном тарифе"';
   // смету можно отправить и просто текстом — сообщением в мессенджер
   const txtBtn = type === 'smeta'
     ? `<button class="btn btn-outline btn-sm" data-doc="smeta|text|share" title="Отправить сообщением">Текст</button>`
@@ -8470,10 +8586,14 @@ function renderCustomerBlock(proj){
       <div class="cust-err" data-cust-err="${proj.id}|${key}">${err}</div>
     </div>`;
   };
+  // Плашка роли. Раньше здесь стояло «правит» жёстко в тексте — и человек
+  // с ролью «смотрит» читал, что он правит, пока приложение молча отказывало.
+  // Пишем ту роль, которая есть на самом деле.
+  const foreign = proj.ownerId && currentUser && proj.ownerId !== currentUser.id;
   const roleNote = (proj.myRole === 'viewer')
     ? `<div class="role-note">👁 Вы в этом проекте как «смотрит» — смету видно, но менять её нельзя. Права выдаёт владелец.</div>`
-    : (proj.ownerId && currentUser && proj.ownerId !== currentUser.id
-        ? `<div class="role-note">👷 Чужой проект — вы в бригаде как «правит».</div>` : '');
+    : (foreign
+        ? `<div class="role-note">👷 Чужой проект — вы в бригаде как «${escapeHtml(ROLE_NAME[proj.myRole] || proj.myRole)}». Тариф действует владельца проекта.</div>` : '');
 
   return roleNote + teamAccHtml(proj) + `
   <div class="cust-acc ${open?'open':''}" data-cust-acc="${proj.id}">
@@ -9561,6 +9681,25 @@ function attachHandlers(){
       const [pid, uidv] = el.getAttribute('data-team-role').split('|');
       try{ await DB.setRole(pid, uidv, el.value); await teamLoad(pid); }
       catch(e){ alert((e && e.message) || 'Не удалось изменить роль.'); }
+    });
+  });
+
+  // тумблер «скрыть данные заказчика» на конкретного мастера — только у владельца
+  main.querySelectorAll('[data-team-pers]').forEach(el=>{
+    el.addEventListener('click', async ()=>{
+      const [pid, uidv] = el.getAttribute('data-team-pers').split('|');
+      const t = teamCache[pid];
+      const m = t && (t.members || []).find(x=> x.user_id === uidv);
+      if(!m) return;
+      const next = !m.hide_personal;
+      m.hide_personal = next;                 // отзываемся сразу, не дожидаясь сервера
+      el.classList.toggle('on', next);
+      try{ await DB.setMemberHidePersonal(pid, uidv, next); }
+      catch(e){
+        m.hide_personal = !next;
+        el.classList.toggle('on', !next);
+        alert((e && e.message) || 'Не удалось изменить.');
+      }
     });
   });
 
