@@ -2240,7 +2240,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-04-06';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-04-07';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -3342,6 +3342,7 @@ function applyLocks(){
 }
 let lastAuthUid = null;     // id последнего вошедшего — защита от повторного afterLogin
 let pendingSave = false;    // есть несохранённые изменения
+let lastSaveError = '';     // почему сервер отказал — держим до первого успеха
 
 // Ограничение времени ожидания ответа от облака.
 // Смысл ограничения — НЕ «объявить офлайн», а не дать залипнуть экрану.
@@ -3434,9 +3435,14 @@ function renderPending(){
   if(dirty && txt){
     const when = local.savedAt ? new Date(local.savedAt).toLocaleString('ru-RU',
                   { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' }) : '';
-    txt.textContent = navigator.onLine
-      ? 'Изменения не отправлены в облако' + (when ? ' (с ' + when + ')' : '')
-      : 'Офлайн. Изменения сохранены на устройстве' + (when ? ' (с ' + when + ')' : '');
+    // Причина отказа висит здесь, а не в мигающей строке состояния:
+    // прочитать её там невозможно, она сменяется через секунду.
+    txt.textContent = lastSaveError
+      ? ('Изменения не отправлены' + (when ? ' (с ' + when + ')' : '') +
+         '. ' + lastSaveError)
+      : (navigator.onLine
+          ? 'Изменения не отправлены в облако' + (when ? ' (с ' + when + ')' : '')
+          : 'Офлайн. Изменения сохранены на устройстве' + (when ? ' (с ' + when + ')' : ''));
   }
 }
 
@@ -5006,6 +5012,7 @@ async function persist(){
     cloudBase = stamp;
     saveLocal(payload, false);
     syncOffline = false;
+    lastSaveError = '';        // получилось — прошлая причина больше не нужна
     setSync('saved', 'сохранено в облаке');
   };
 
@@ -5062,10 +5069,15 @@ async function persist(){
       const hint = HINTS[String(code)] || '';
       // Текст сервера показываем прямо в приложении: на планшете консоль
       // не открыть, а без него код ошибки часто ни о чём не говорит.
-      const raw = String((e && (e.message || e.details)) || '').slice(0, 120);
-      setSync('error', 'сервер отклонил запись' + (hint ? ' — ' + hint : '') +
-                       ' (код ' + code + ')' + (raw ? ': ' + raw : ''));
+      const raw = String((e && (e.message || e.details)) || '').slice(0, 160);
+      // Причину запоминаем НАВСЕГДА до следующего успеха: строка состояния
+      // мигает каждые несколько секунд, и человек физически не успевает
+      // прочитать текст ошибки — 4 августа искали её полдня именно поэтому.
+      lastSaveError = 'Сервер отклонил запись' + (hint ? ' — ' + hint : '') +
+                      ' (код ' + code + ')' + (raw ? ': ' + raw : '');
+      setSync('error', 'сервер отклонил запись (код ' + code + ')');
       syncOffline = false;   // связь есть, дело не в ней
+      renderPending();
       return;
     }
 
