@@ -1321,7 +1321,8 @@
     font-size:13px;color:var(--ink);line-height:1.5;
   }
 
-  .plan-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+  .plan-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;}
+  @media (max-width:1100px){ .plan-grid{grid-template-columns:1fr 1fr;} }
   @media (max-width:640px){ .plan-grid{grid-template-columns:1fr;} }
   .plan-col{
     border:1px solid var(--paper-line);border-radius:var(--radius);
@@ -1842,9 +1843,9 @@
   "inLanguage": "ru-RU",
   "offers": {
     "@type": "Offer",
-    "price": "400",
+    "price": "890",
     "priceCurrency": "RUB",
-    "description": "Полный тариф, 400 ₽ в месяц или 4200 ₽ в год. Есть бесплатный тариф."
+    "description": "Полный доступ — 890 ₽ в месяц или 8900 ₽ в год. Тариф «Бригада» на пять мастеров — 1790 ₽ в месяц. Есть бесплатный тариф."
   }
 }
 </script>
@@ -2049,7 +2050,7 @@
     <div class="plan-modal-head">
       <div>
         <div class="plan-modal-title">Тарифы</div>
-        <div class="plan-modal-sub">Бесплатно или полный доступ</div>
+        <div class="plan-modal-sub">Бесплатно, в одиночку или бригадой</div>
       </div>
       <button class="plan-close" id="planClose" aria-label="Закрыть">✕</button>
     </div>
@@ -2064,10 +2065,12 @@
         <ul class="plan-feats">
           <li class="yes"><span class="ic"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>Расчёт площадей: стены, пол, потолок, периметр</span></li>
           <li class="yes"><span class="ic"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>Облачное хранение и синхронизация между устройствами</span></li>
-          <li class="lim"><span class="ic">2</span><span>До двух устройств: телефон и компьютер</span></li>
+          <li class="yes"><span class="ic"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>Сколько угодно устройств: телефон, планшет, компьютер</span></li>
           <li class="lim"><span class="ic">1</span><span>Один активный проект</span></li>
           <li class="lim"><span class="ic">3</span><span>До трёх помещений в проекте</span></li>
-          <li class="lim"><span class="ic">15</span><span>До 15 позиций в своём каталоге расценок</span></li>
+          <li class="lim"><span class="ic">10</span><span>До 10 позиций в своём прайсе</span></li>
+          <li class="lim"><span class="ic">5</span><span>До 5 материалов в справочнике</span></li>
+          <li class="no"><span class="ic"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M7 7l10 10M17 7L7 17" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>Раскладка плитки недоступна</span></li>
           <li class="no"><span class="ic"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M7 7l10 10M17 7L7 17" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>PDF с водяным знаком, без вашего логотипа</span></li>
           <li class="no"><span class="ic"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M7 7l10 10M17 7L7 17" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>Экспорт в Excel и Word недоступен</span></li>
         </ul>
@@ -2077,13 +2080,13 @@
       <div class="plan-col pro" id="planColPro">
         <span class="plan-col-badge">Рекомендуем</span>
         <div class="plan-name"><svg class="plan-logo" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><rect x="6" y="6" width="88" height="88" rx="18" fill="none" stroke="var(--orange)" stroke-width="5"/><path d="M30 64 L30 42 L50 28 L70 42 L70 64" fill="none" stroke="var(--orange)" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/><path d="M43 64 L43 51 L57 51 L57 64" fill="none" stroke="var(--orange)" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/></svg>Полный доступ</div>
-        <div class="plan-price">400 ₽ <small>/ месяц</small></div>
-        <div class="plan-price-note">или 4 200 ₽ в год — полтора месяца бесплатно</div>
+        <div class="plan-price">890 ₽ <small>/ месяц</small></div>
+        <div class="plan-price-note">или 8 900 ₽ в год — два месяца в подарок</div>
         <ul class="plan-feats">
           <li class="yes"><span class="ic"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>Всё из бесплатного тарифа</span></li>
-          <li class="yes"><span class="ic"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>Любое количество устройств: телефон, планшет, компьютер</span></li>
           <li class="yes"><span class="ic"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>Неограниченное число проектов и помещений</span></li>
-          <li class="yes"><span class="ic"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>Каталог расценок без ограничений</span></li>
+          <li class="yes"><span class="ic"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>Свой прайс и справочник материалов без ограничений</span></li>
+          <li class="yes"><span class="ic"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>Справочник плиточника: ~70 параметров расчёта</span></li>
           <li class="yes"><span class="ic"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>Чистый PDF с вашим логотипом и реквизитами</span></li>
           <li class="yes"><span class="ic"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>Экспорт сметы в Excel и Word</span></li>
           <li class="yes"><span class="ic"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>Раскладка плитки: точный расчёт на помещение</span></li>
@@ -2092,22 +2095,38 @@
         </ul>
         <button class="btn btn-primary" id="planProCta">Оформить подписку</button>
       </div>
+
+      <div class="plan-col" id="planColTeam">
+        <div class="plan-name"><svg class="plan-logo" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><rect x="6" y="6" width="88" height="88" rx="18" fill="none" stroke="var(--ink-soft)" stroke-width="5"/><path d="M30 64 L30 42 L50 28 L70 42 L70 64" fill="none" stroke="var(--ink-soft)" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/><path d="M43 64 L43 51 L57 51 L57 64" fill="none" stroke="var(--ink-soft)" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/></svg>Бригада</div>
+        <div class="plan-price">1 790 ₽ <small>/ месяц</small></div>
+        <div class="plan-price-note">или 17 900 ₽ в год — два месяца в подарок<br>цена двух подписок, а мест пять</div>
+        <ul class="plan-feats">
+          <li class="yes"><span class="ic"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>Всё из полного доступа</span></li>
+          <li class="lim"><span class="ic">5</span><span>Пять мест: вы и ещё четверо мастеров</span></li>
+          <li class="yes"><span class="ic"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>Приглашённым подписка не нужна — платит владелец проекта</span></li>
+          <li class="yes"><span class="ic"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>Правки видны напарнику сразу, без пересылки файлов</span></li>
+          <li class="yes"><span class="ic"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>Роли «правит» и «смотрит» — вторую можно дать заказчику</span></li>
+          <li class="yes"><span class="ic"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>Данные заказчика можно скрыть от бригады — целиком или от одного мастера</span></li>
+        </ul>
+        <button class="btn btn-outline" id="planTeamCta">Оформить «Бригаду»</button>
+      </div>
     </div>
 
     <div class="plan-lead" id="planLead" style="display:none;">
       <div class="plan-lead-title">Оплата ещё не запущена</div>
       <div class="plan-lead-text">
-        Мы дорабатываем приём платежей. Оставьте заявку — напишем вам первым в день запуска
-        и дадим скидку на первый месяц.
+        Мы дорабатываем приём платежей. Оставьте заявку — напишем вам первым в день запуска.
+        <b>Первым десяти — год полного доступа за 890 ₽ вместо 8 900 ₽.</b>
+        Только первый год, дальше обычная цена.
       </div>
       <div class="plan-lead-field">
-        <label>Какая цена в месяц кажется вам нормальной?</label>
+        <label>Что вам ближе?</label>
         <select id="leadPrice">
           <option value="">— выберите —</option>
-          <option value="400">около 400 ₽ — нормально</option>
-          <option value="600">заплатил бы и 600 ₽</option>
-          <option value="expensive">400 ₽ в месяц — дороговато</option>
-          <option value="year">платил бы только за год сразу</option>
+          <option value="pro_month">Полный доступ помесячно, 890 ₽</option>
+          <option value="pro_year">Полный доступ на год, 8 900 ₽</option>
+          <option value="team">«Бригада» — работаю не один</option>
+          <option value="expensive">Пока дороговато</option>
         </select>
       </div>
       <div class="plan-lead-field">
@@ -2221,7 +2240,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-04-03';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-04-04';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -3077,24 +3096,33 @@ function renderPlanModal(){
   const banner  = document.getElementById('planBanner');
   const colFree = document.getElementById('planColFree');
   const colPro  = document.getElementById('planColPro');
+  const colTeam = document.getElementById('planColTeam');
   const freeCta = document.getElementById('planFreeCta');
   const proCta  = document.getElementById('planProCta');
   if(!banner) return;
 
   // форма заявки скрыта, пока не нажали «Оформить подписку»
   const lead = document.getElementById('planLead');
-  if(lead && lead.style.display !== 'block'){ proCta.style.display = ''; }
+  const teamCta = document.getElementById('planTeamCta');
+  if(lead && lead.style.display !== 'block'){
+    proCta.style.display = '';
+    if(teamCta) teamCta.style.display = '';
+  }
 
   const days = trialDaysLeft();
   colFree.classList.remove('current');
   colPro.classList.remove('current');
+  if(colTeam) colTeam.classList.remove('current');
+
+  // какой именно тариф оплачен — «Бригада» или обычный полный доступ
+  const onTeam = isPaid() && userPlan && userPlan.plan === 'brigada';
 
   if(isPaid()){
     banner.innerHTML = '<b>Подписка активна</b> до ' + fmtDate(userPlan.plan_until) +
                        '. Спасибо, что поддерживаете проект.';
-    colPro.classList.add('current');
+    (onTeam && colTeam ? colTeam : colPro).classList.add('current');
     freeCta.textContent = 'Доступен всегда';
-    proCta.textContent = 'Продлить подписку';
+    proCta.textContent = onTeam ? 'Перейти на «Полный доступ»' : 'Продлить подписку';
   } else if(days > 0){
     banner.innerHTML = '<b>Идёт пробный период:</b> ' + days + ' ' +
                        plural(days, 'день', 'дня', 'дней') + ' полного доступа, до ' +
@@ -3135,10 +3163,27 @@ async function track(event, detail){
 // клик по «Оформить подписку» — показываем форму заявки вместо оплаты
 function startCheckout(){
   track('click_pro');
+  openLeadForm('pro_month');
+}
+
+// Кнопка «Бригады» ведёт в ту же форму заявки — оплата ещё не подключена,
+// но какой тариф человек выбрал, знать надо: это единственный источник
+// сведений о спросе до запуска платежей.
+function startTeamCheckout(){
+  track('click_team');
+  openLeadForm('team');
+}
+
+function openLeadForm(preset){
   const lead = document.getElementById('planLead');
   if(!lead) return;
+  const sel = document.getElementById('leadPrice');
+  if(sel && preset) sel.value = preset;
   lead.style.display = 'block';
-  document.getElementById('planProCta').style.display = 'none';
+  const proCta = document.getElementById('planProCta');
+  const teamCta = document.getElementById('planTeamCta');
+  if(proCta)  proCta.style.display = 'none';
+  if(teamCta) teamCta.style.display = 'none';
   lead.scrollIntoView({ block:'nearest', behavior:'smooth' });
 }
 
@@ -5623,6 +5668,7 @@ async function bootstrapLocal(){
   on('planBtn', openPlans);
   on('planClose', closePlans);
   on('planProCta', startCheckout);
+  on('planTeamCta', startTeamCheckout);
   on('leadSend', sendLead);
   const pOv = document.getElementById('planOverlay');
   if(pOv) pOv.onclick = (e)=>{ if(e.target.id === 'planOverlay') closePlans(); };
@@ -5719,6 +5765,8 @@ async function bootstrap(){
   document.getElementById('planBtn').onclick    = openPlans;
   document.getElementById('planClose').onclick  = closePlans;
   document.getElementById('planProCta').onclick = startCheckout;
+  const teamCtaBtn = document.getElementById('planTeamCta');
+  if(teamCtaBtn) teamCtaBtn.onclick = startTeamCheckout;
   document.getElementById('leadSend').onclick   = sendLead;
   document.getElementById('planOverlay').onclick = e=>{
     if(e.target.id === 'planOverlay') closePlans();   // клик по фону закрывает
