@@ -246,6 +246,17 @@
   .btn-icon:hover{color:var(--red);}
 
   .proj-list{display:flex;flex-direction:column;gap:4px;max-height:38vh;overflow-y:auto;}
+  /* заголовок раздела «Работаю в бригаде» в списке проектов */
+  .proj-group{
+    display:block;padding:14px 10px 6px;margin-top:6px;
+    border-top:1px solid rgba(255,255,255,.10);
+    font-size:11px;letter-spacing:.06em;text-transform:uppercase;
+    color:var(--sb-muted);
+  }
+  .proj-group i{
+    display:block;margin-top:3px;font-style:normal;
+    font-size:10px;letter-spacing:0;text-transform:none;opacity:.7;
+  }
   .proj-item{
     display:flex;justify-content:space-between;align-items:center;
     padding:9px 10px;border-radius:var(--radius);cursor:pointer;
@@ -2210,7 +2221,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-04-01';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-04-02';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -3822,7 +3833,21 @@ function teamAccHtml(proj){
     const noList = t.canList ? '' :
       `<div class="team-note">список участников появится после обновления сервера</div>`;
 
-    const form = owner ? `
+    // Совместная работа — тариф «Бригада». На Pro и бесплатном приглашать
+    // нельзя: это и есть то, чем «Бригада» отличается от Pro.
+    // Пробный период даёт полный доступ — значит и совместную работу тоже:
+    // иначе главную функцию тарифа нельзя попробовать до покупки.
+    const canInvite = owner && (proj.ownerPlan === 'brigada' || trialDaysLeft() > 0);
+
+    const form = owner ? (!canInvite ? `
+      <div class="team-note">
+        <b>Приглашать мастеров можно на тарифе «Бригада».</b><br>
+        Пять мест: вы и ещё четверо. Смета, раскладка и документы
+        у каждого свои, объект — общий.
+      </div>
+      <div class="team-form">
+        <button type="button" class="team-add" data-go-plan="1">Посмотреть тариф «Бригада»</button>
+      </div>` : `
       <div class="team-form">
         <input type="email" placeholder="почта мастера" data-team-email="${proj.id}">
         <select data-team-newrole="${proj.id}">
@@ -3835,7 +3860,7 @@ function teamAccHtml(proj){
         Если мастер уже пользуется приложением, приглашение появится у него само —
         отправлять ничего не надо. Если он ещё не регистрировался, нажмите
         «Ссылка» и отправьте её в мессенджере: по ней он заведёт аккаунт
-        и сразу попадёт в бригаду.</div>` :
+        и сразу попадёт в бригаду.</div>`) :
       `<div class="team-note">Приглашать может только владелец проекта.</div>
        <div class="team-form">
          <button type="button" class="team-copy" data-team-leave="${proj.id}">Выйти из проекта</button>
@@ -4146,6 +4171,22 @@ function newUuid(){
     return v.toString(16);
   });
 }
+// Данные исполнителя по чужому проекту, как их отдал сервер.
+// Закрыты тумблером — подставляем маску, а не пустоту: пустое поле человек
+// читает как «данные потерялись», иксы — как «данные есть, но закрыты».
+function execFromRow(r, masked){
+  if(!r) return null;
+  const MASK = 'ХХХХХХ';
+  const v = (x)=> (r.masked || masked) ? MASK : (x || '');
+  return {
+    fio: v(r.fio), birth: v(r.birth), email: v(r.email), phone: v(r.phone),
+    passSeries: v(r.pass_series), passNumber: v(r.pass_number),
+    passDate: v(r.pass_date), passCode: v(r.pass_code),
+    passIssuedBy: v(r.pass_issued_by),
+    masked: !!(r.masked || masked)
+  };
+}
+
 // числовые поля таблиц: пустая строка должна стать NULL, а не нулём
 function num(v){
   if(v === '' || v === null || v === undefined) return null;
@@ -4162,9 +4203,9 @@ const DB = {
   async loadAll(){
     const uid_ = currentUser.id;
 
-    const [projRes, catRes, matRes, execRes, setRes, memRes, proRes] = await Promise.all([
+    const [projRes, catRes, matRes, execRes, setRes, memRes, proRes, exeRes] = await Promise.all([
       sb.from('projects').select(
-        'id,owner_id,seq,name,status,archived,pinned,occupied,small_area,hide_personal,created_at,updated_at,' +
+        'id,owner_id,seq,name,status,archived,pinned,occupied,small_area,conds,hide_personal,created_at,updated_at,' +
         'project_customers(*),' +
         'project_extra_works(*),' +
         'project_materials(*),' +
@@ -4182,7 +4223,11 @@ const DB = {
       // Что мне доступно в каждом проекте: оплачен ли тариф ВЛАДЕЛЬЦА
       // и закрыты ли лично от меня персональные данные заказчика.
       // Чужой тариф клиенту читать нельзя, поэтому сервер отдаёт «да/нет».
-      sb.rpc('my_projects_access')
+      sb.rpc('my_projects_access'),
+      // Данные исполнителя берём ВЛАДЕЛЬЦА проекта: договор заключает он,
+      // бригада на него работает. Раньше в чужой договор подставлялся
+      // паспорт того, кто нажал кнопку.
+      sb.rpc('my_projects_executors')
     ]);
 
     for(const r of [projRes, catRes, matRes, execRes, setRes]){
@@ -4198,7 +4243,8 @@ const DB = {
       roles: (memRes && !memRes.error) ? (memRes.data || []) : [],
       // функции ещё нет на сервере — вернём пустой список, тогда чужие проекты
       // останутся на бесплатных правилах (как было), а не откроются всем
-      access: (proRes && !proRes.error) ? (proRes.data || []) : []
+      access: (proRes && !proRes.error) ? (proRes.data || []) : [],
+      executors: (exeRes && !exeRes.error) ? (exeRes.data || []) : []
     };
   },
 
@@ -4234,6 +4280,7 @@ const DB = {
 
     const myRoles = new Map((rows.roles || []).map(r=>[r.project_id, r.role]));
     const access = new Map((rows.access || []).map(r=>[r.project_id, r]));
+    const execs  = new Map((rows.executors || []).map(r=>[r.project_id, r]));
 
     state.projects = (rows.projects || []).map(p=>{
       const cu = (p.project_customers && p.project_customers[0]) || p.project_customers || {};
@@ -4280,6 +4327,14 @@ const DB = {
         // у владельца проекта оплачен полный доступ — значит он есть
         // и у приглашённых внутри этого проекта
         ownerPro: iAmOwner ? isPro() : !!acc.owner_pro,
+        // Код тарифа владельца: приглашать можно только на «Бригаде».
+        // Берём с сервера и для своих проектов тоже — там effective_plan,
+        // а не сырое поле: во время пробного периода в profiles.plan лежит
+        // 'free', и сравнение с полем ошиблось бы.
+        ownerPlan: acc.owner_plan || (iAmOwner ? 'free' : 'free'),
+        // данные исполнителя по проекту — владельца, а не свои.
+        // В своём проекте берём из настроек как раньше.
+        executor: iAmOwner ? null : execFromRow(execs.get(p.id), masked),
         // РОЛЬ. Источник истины — сервер (my_projects_access), потому что
         // свою строку в project_members клиент может и не прочитать: политика
         // молча отдаёт пустой список, ошибки при этом нет.
@@ -4293,7 +4348,12 @@ const DB = {
                 (p.owner_id === currentUser.id ? 'owner' : 'viewer'),
         archived: !!p.archived, pinned: !!p.pinned,
         createdAt: p.created_at ? Date.parse(p.created_at) : Date.now(),
-        conds: { occupied: !!p.occupied, smallArea: !!p.small_area },
+        // Условия берём из conds целиком, а колонки occupied/small_area —
+        // запасной вариант: у проекта, записанного старой сборкой,
+        // conds ещё пустой.
+        conds: (p.conds && Object.keys(p.conds).length)
+                 ? p.conds
+                 : { occupied: !!p.occupied, smallArea: !!p.small_area },
         customer: customer,
         rooms: rooms,
         extraWorks: (p.project_extra_works || []).slice().sort(bySort).map(e=>({
@@ -4398,6 +4458,11 @@ const DB = {
           status: txt(p.status), archived: !!p.archived, pinned: !!p.pinned,
           occupied: !!(p.conds && p.conds.occupied),
           small_area: !!(p.conds && p.conds.smallArea),
+          // Условия целиком. Две колонки выше покрывают только два признака,
+          // а в conds лежит ещё галочка «надбавки внутри цен» и ручные
+          // проценты. Без этого поля они не сохранялись никуда и терялись
+          // при переустановке. Поймано 4 августа 2026.
+          conds: p.conds || {},
           // флаг шлём тем же значением, что прочитали: менять его вправе
           // только владелец, у остальных попытка изменить будет отбита
           hide_personal: !!p.hidePersonal,
@@ -6945,8 +7010,18 @@ function smetaText(proj){
 }
 
 // Данные исполнителя вводятся в «Настройки → Данные исполнителя»
-// и хранятся только в аккаунте пользователя (state.executor).
-function ex(){ return state.executor || {}; }
+// и хранятся в аккаунте пользователя (state.executor).
+//
+// НО в чужом проекте Подрядчик — не тот, кто нажал кнопку, а ВЛАДЕЛЕЦ
+// проекта: договор заключает он, бригада работает на него. Иначе мастер
+// получал договор, где Подрядчиком стоит он сам со своим паспортом.
+// Данные владельца приходят с сервера и закрыты тем же тумблером,
+// что и данные заказчика.
+function ex(proj){
+  const p = proj || (typeof currentProject === 'function' ? currentProject() : null);
+  if(p && p.executor) return p.executor;
+  return state.executor || {};
+}
 function execFioD(){ return _or(ex().fio); }
 // строки реквизитов Подрядчика (левая колонка)
 function execReqCol(){
@@ -8246,7 +8321,7 @@ function renderSidebar(){
     return;
   }
 
-  list.innerHTML = ordered.map(p=>{
+  const row = (p)=>{
     const col = projStatusColor(p);
     return `
     <div class="pi-wrap" data-row="${p.id}">
@@ -8261,7 +8336,22 @@ function renderSidebar(){
         <button class="proj-more" data-more="${p.id}" title="Действия" aria-label="Действия с проектом">⋯</button>
       </div>
     </div>`;
-  }).join('');
+  };
+
+  // Свои и чужие проекты — разными разделами. В одном списке человек
+  // не отличает объект, который ведёт сам, от того, куда его позвали:
+  // а правила там разные — и тариф, и права, и лимит проектов
+  // считается только по своим.
+  const isForeign = (p)=> !!(p.ownerId && currentUser && p.ownerId !== currentUser.id);
+  const own     = ordered.filter(p=> !isForeign(p));
+  const foreign = ordered.filter(isForeign);
+
+  list.innerHTML =
+      (foreign.length ? own.map(row).join('') : ordered.map(row).join(''))
+    + (foreign.length
+        ? `<div class="proj-group">👷 Работаю в бригаде<i>чужие проекты — тариф и права задаёт владелец</i></div>`
+          + foreign.map(row).join('')
+        : '');
   // ВАЖНО: innerHTML уничтожает старые элементы вместе с их обработчиками,
   // поэтому клики навешиваем здесь же — при любой перерисовке сайдбара.
   // Раньше это делалось только в attachHandlers(), и после правки названия
@@ -9750,6 +9840,14 @@ function attachHandlers(){
         await teamLoad(pid);
       }
       catch(e){ alert((e && e.message) || 'Не удалось изменить роль.'); }
+    });
+  });
+
+  // «Посмотреть тариф Бригада» из блока бригады
+  main.querySelectorAll('[data-go-plan]').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      showLimit('Совместная работа — в тарифе «Бригада».',
+                'Пять мест: вы и ещё четверо мастеров. Приглашённым подписка не нужна.');
     });
   });
 
