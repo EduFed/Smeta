@@ -2240,7 +2240,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-04-04';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-04-06';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -3077,8 +3077,12 @@ function renderPlanBtn(){
   if(!val || !tag) return;
   const days = trialDaysLeft();
   if(isPaid()){
+    // Метка называет тариф своим именем. Раньше на любой оплаченной
+    // подписке стояло «PRO» — это осталось со времён, когда тариф был
+    // один, и владелец «Бригады» не понимал, почему у него «Pro»,
+    // а совместная работа при этом доступна.
     val.textContent = 'до ' + fmtDate(userPlan.plan_until);
-    tag.textContent = 'PRO';
+    tag.textContent = (userPlan.plan === 'brigada') ? 'БРИГАДА' : 'PRO';
     tag.className = 'plan-tag pro';
   } else if(days > 0){
     val.textContent = days + ' ' + plural(days, 'день', 'дня', 'дней') + ' — полный доступ';
@@ -3118,7 +3122,9 @@ function renderPlanModal(){
   const onTeam = isPaid() && userPlan && userPlan.plan === 'brigada';
 
   if(isPaid()){
-    banner.innerHTML = '<b>Подписка активна</b> до ' + fmtDate(userPlan.plan_until) +
+    banner.innerHTML = '<b>Активна подписка «' +
+                       (onTeam ? 'Бригада' : 'Полный доступ') + '»</b> до ' +
+                       fmtDate(userPlan.plan_until) +
                        '. Спасибо, что поддерживаете проект.';
     (onTeam && colTeam ? colTeam : colPro).classList.add('current');
     freeCta.textContent = 'Доступен всегда';
@@ -5038,6 +5044,28 @@ async function persist(){
     // «нет связи», приложение продолжало долбить сервер, и человек
     // не догадывался, что нужно просто войти заново.
     if(isAuthError(e)){ sessionLost(); return; }
+
+    // ОТКАЗ СЕРВЕРА — НЕ ОБРЫВ СВЯЗИ.
+    // Раньше сюда попадало всё подряд, и человек видел «нет связи», когда
+    // связь была, а сервер отклонял запись по правам или по правилу.
+    // Отличить просто: у ответа сервера есть код (PostgREST кладёт его
+    // в e.code), у оборванной сети кода нет вообще.
+    // 4 августа 2026 из-за этого полдня искали обрыв связи, которого не было.
+    const code = e && (e.code || e.status);
+    if(code){
+      const HINTS = {
+        '42501': 'нет прав на запись',
+        '23503': 'ссылка на несуществующую запись',
+        '23505': 'такая запись уже есть',
+        '22P02': 'неверный формат значения'
+      };
+      const hint = HINTS[String(code)] || '';
+      setSync('error', 'сервер отклонил запись' + (hint ? ' — ' + hint : '') +
+                       ' (код ' + code + ')');
+      syncOffline = false;   // связь есть, дело не в ней
+      return;
+    }
+
     setSync('error', 'нет связи — сохранено на устройстве');
     syncOffline = true;
   };
