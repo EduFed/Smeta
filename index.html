@@ -615,6 +615,9 @@
   .team-sub{display:flex;align-items:center;justify-content:space-between;gap:10px;
             padding:0 0 10px 0;margin-top:-8px;border-bottom:1px solid var(--paper-line);}
   .team-sub span{font-size:13px;color:var(--ink-soft, #6b6b6b);}
+  .team-sub span i{display:block;font-style:normal;font-size:11px;opacity:.75;margin-top:2px;}
+  .team-share{display:flex;align-items:center;gap:4px;flex:0 0 auto;}
+  .team-share input{width:56px;text-align:right;}
   .team-sub .ref-toggle{width:40px;height:23px;border-radius:12px;}
   .team-sub .ref-toggle .ref-knob{width:17px;height:17px;}
   .team-sub .ref-toggle.on .ref-knob{transform:translateX(17px);}
@@ -2249,7 +2252,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-05-01';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-05-02';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -3049,6 +3052,17 @@ function trialDaysLeft(){
 // В своих проектах — по своему тарифу.
 // Флаг owner_pro приходит с сервера (функция projects_owner_pro): тариф
 // чужого человека клиент прочитать не может и не должен.
+// Смотрит ли человек на НАРЯД, а не на смету.
+// Наряд — когда цены пересчитаны по доле: числа в документе его,
+// а не заказчика. Назвать это «сметой» опасно: мастер однажды
+// отправит её заказчику, и объясняться придётся владельцу.
+// Доля 100 и владелец — обычная смета, цены настоящие.
+function isNaryad(proj){
+  const p = proj || (typeof currentProject === 'function' ? currentProject() : null);
+  if(!p || !p.ownerId || !currentUser || p.ownerId === currentUser.id) return false;
+  return p.sharePct != null && p.sharePct < 100;
+}
+
 function isProAt(proj){
   const p = proj || (typeof currentProject === 'function' ? currentProject() : null);
   if(p && p.ownerId && currentUser && p.ownerId !== currentUser.id) return !!p.ownerPro;
@@ -3874,6 +3888,17 @@ function teamAccHtml(proj){
         </div>` : ''}
       </div>
       ${canTouch ? `<div class="team-sub">
+        <span>Его доля от сметы
+          <i>сколько процентов строки получает мастер. Пусто — цен не видит,
+             100 — видит настоящие, как напарник</i></span>
+        <span class="team-share">
+          <input type="text" inputmode="numeric" maxlength="3"
+                 value="${escapeAttr(m.share_pct == null ? '' : m.share_pct)}"
+                 placeholder="—" data-team-share="${proj.id}|${m.user_id}">
+          <i>%</i>
+        </span>
+      </div>
+      <div class="team-sub">
         <span>Скрыть от него данные заказчика</span>
         <button type="button" class="ref-toggle sm ${m.hide_personal?'on':''}"
                 data-team-pers="${proj.id}|${m.user_id}" role="switch"
@@ -4269,7 +4294,8 @@ const DB = {
   async loadAll(){
     const uid_ = currentUser.id;
 
-    const [projRes, catRes, matRes, execRes, setRes, memRes, proRes, exeRes] = await Promise.all([
+    const [projRes, catRes, matRes, execRes, setRes, memRes, proRes, exeRes,
+           wpRes, epRes] = await Promise.all([
       sb.from('projects').select(
         'id,owner_id,seq,name,status,archived,pinned,occupied,small_area,conds,hide_personal,created_at,updated_at,' +
         'project_customers(*),' +
@@ -4290,6 +4316,13 @@ const DB = {
       // и закрыты ли лично от меня персональные данные заказчика.
       // Чужой тариф клиенту читать нельзя, поэтому сервер отдаёт «да/нет».
       sb.rpc('my_projects_access'),
+      // ЦЕНЫ ЖИВУТ ОТДЕЛЬНО (с 5 августа 2026).
+      // Настоящая цена лежит в room_work_prices и мастеру не отдаётся
+      // вовсе. Свою цену считает сервер по доле участника и отдаёт
+      // функцией. В функцию нельзя записать — значит мастер физически
+      // не может вернуть свою пересчитанную цену на место настоящей.
+      sb.rpc('my_work_prices'),
+      sb.rpc('my_extra_prices'),
       // Данные исполнителя берём ВЛАДЕЛЬЦА проекта: договор заключает он,
       // бригада на него работает. Раньше в чужой договор подставлялся
       // паспорт того, кто нажал кнопку.
@@ -4310,7 +4343,11 @@ const DB = {
       // функции ещё нет на сервере — вернём пустой список, тогда чужие проекты
       // останутся на бесплатных правилах (как было), а не откроются всем
       access: (proRes && !proRes.error) ? (proRes.data || []) : [],
-      executors: (exeRes && !exeRes.error) ? (exeRes.data || []) : []
+      executors: (exeRes && !exeRes.error) ? (exeRes.data || []) : [],
+      // Пусто = функции ещё нет на сервере ИЛИ цены от меня закрыты.
+      // И то и другое означает одно: цен не показываем.
+      workPrices:  (wpRes && !wpRes.error) ? (wpRes.data || []) : [],
+      extraPrices: (epRes && !epRes.error) ? (epRes.data || []) : []
     };
   },
 
@@ -4350,6 +4387,9 @@ const DB = {
     const myRoles = new Map((rows.roles || []).map(r=>[r.project_id, r.role]));
     const access = new Map((rows.access || []).map(r=>[r.project_id, r]));
     const execs  = new Map((rows.executors || []).map(r=>[r.project_id, r]));
+    // Цены по ключу строки. Ключа нет в списке — цена мне не положена.
+    const workPrice  = new Map((rows.workPrices  || []).map(r=>[r.lid, r.price]));
+    const extraPrice = new Map((rows.extraPrices || []).map(r=>[r.id,  r.price]));
 
     state.projects = (rows.projects || []).map(p=>{
       const cu = (p.project_customers && p.project_customers[0]) || p.project_customers || {};
@@ -4384,7 +4424,8 @@ const DB = {
           doors:   ops.filter(o=>o.kind === 'door').map(o=>({ _id:o.id, w:o.w||'', h:o.h||'', qty:o.qty||'' })),
           windows: ops.filter(o=>o.kind === 'window').map(o=>({ _id:o.id, w:o.w||'', h:o.h||'', qty:o.qty||'' })),
           walls: [], floorSections: [],
-          works: (r.room_works || []).slice().sort(bySort).map(w=> DB.workFromRow(w))
+          works: (r.room_works || []).slice().sort(bySort)
+                   .map(w=> DB.workFromRow(w, workPrice.get(w.lid)))
         };
       });
 
@@ -4415,6 +4456,9 @@ const DB = {
         // интерфейс, который ничего не сохраняет.
         myRole: acc.my_role || myRoles.get(p.id) ||
                 (p.owner_id === currentUser.id ? 'owner' : 'viewer'),
+        // доля участника: 100 — полный доступ к ценам, 1–99 — своя цена,
+        // пусто — цен не видит. У владельца всегда полный доступ.
+        sharePct: iAmOwner ? 100 : (acc.share_pct == null ? null : Number(acc.share_pct)),
         archived: !!p.archived, pinned: !!p.pinned,
         createdAt: p.created_at ? Date.parse(p.created_at) : Date.now(),
         // Условия берём из conds целиком, а колонки occupied/small_area —
@@ -4427,7 +4471,9 @@ const DB = {
         rooms: rooms,
         extraWorks: (p.project_extra_works || []).slice().sort(bySort).map(e=>({
           id: e.id, name: e.name||'', unit: e.unit||'',
-          qty: e.qty === null ? '' : e.qty, price: e.price === null ? '' : e.price
+          qty: e.qty === null ? '' : e.qty,
+          // цена приходит функцией, а не из колонки — см. workFromRow
+          price: (function(v){ return (v === undefined || v === null) ? '' : v; })(extraPrice.get(e.id))
         })),
         materials: (p.project_materials || []).slice().sort(bySort).map(m=>({
           id: m.id, matId: m.mat_id || '', name: m.name||'', unit: m.unit||'',
@@ -4448,7 +4494,12 @@ const DB = {
     migrateM3();
   },
 
-  workFromRow(w){
+  // ЦЕНА ПРИХОДИТ НЕ ОТСЮДА (с 5 августа 2026).
+  // В room_works колонки price больше нет — цена лежит в отдельной
+  // таблице и приходит функцией my_work_prices(), уже пересчитанная
+  // по доле смотрящего. Второй аргумент — эта самая цена.
+  // Пусто означает «цены мне не положены», а не «ноль».
+  workFromRow(w, price){
     return {
       lid: w.lid,
       workId: w.is_ref_lay ? REF_LAY_ID : (w.work_id || ('ghost_' + w.lid)),
@@ -4457,7 +4508,8 @@ const DB = {
       cfg: w.cfg || undefined,
       // applies_to — часть снимка: без него приглашённый мастер не может
       // посчитать количество, потому что прайс у каждого свой и чужого он не видит
-      _snap: { name: w.name || '', unit: w.unit || 'm2', price: w.price,
+      _snap: { name: w.name || '', unit: w.unit || 'm2',
+               price: (price === undefined || price === null) ? null : price,
                appliesTo: Array.isArray(w.applies_to) ? w.applies_to : null }
     };
   },
@@ -4510,6 +4562,17 @@ const DB = {
     // --- проекты ---
     const prevProj = new Map((prev.projects||[]).map(p=>[p.id, p]));
     const curProj  = new Map((cur.projects||[]).map(p=>[p.id, p]));
+
+    // Цены пишутся отдельно от строк сметы и только теми, кому можно:
+    // владельцем проекта и участником с долей 100. У остальных цена
+    // на экране пересчитанная, и вернуть её в базу нельзя ни при каких
+    // обстоятельствах — иначе цена заказчика пропадёт.
+    const workPriceRows = [], extraPriceRows = [];
+    const canWritePrices = (p)=>{
+      if(!p) return false;
+      if(!p.ownerId || (currentUser && p.ownerId === currentUser.id)) return true;
+      return p.sharePct === 100;
+    };
 
     const projRows = [], custRows = [], roomRows = [], openRows = [],
           workRows = [], extraRows = [], pmatRows = [];
@@ -4591,7 +4654,11 @@ const DB = {
         (r.works||[]).forEach((rw, wi)=>{
           const pw = wasWorks.get(rw.lid);
           if(!pw || JSON.stringify(pw) !== JSON.stringify(rw) || wi !== DB.indexOfLid((wr&&wr.works)||[], rw.lid)){
-            workRows.push(DB.workToRow(rw, r.id, p.id, (wi+1) * 1000));
+            const wrow = DB.workToRow(rw, r.id, p.id, (wi+1) * 1000);
+            const wprice = wrow._price;
+            delete wrow._price;          // это не колонка таблицы
+            workRows.push(wrow);
+            if(canWritePrices(p)) workPriceRows.push({ lid: rw.lid, price: wprice });
           }
           wasWorks.delete(rw.lid);
         });
@@ -4606,10 +4673,12 @@ const DB = {
         if(!e.id) return;                     // см. ensureIds
         const pe = wasExtra.get(e.id);
         if(!pe || JSON.stringify(pe) !== JSON.stringify(e)){
+          // цена уходит отдельно, в extraPriceRows — см. workToRow
           extraRows.push({
             id: e.id, project_id: p.id, name: txt(e.name), unit: txt(e.unit),
-            qty: num(e.qty), price: num(e.price), position: (ei+1) * 1000
+            qty: num(e.qty), position: (ei+1) * 1000
           });
+          if(canWritePrices(p)) extraPriceRows.push({ id: e.id, price: num(e.price) });
         }
         wasExtra.delete(e.id);
       });
@@ -4718,6 +4787,13 @@ const DB = {
     await put('room_works', workRows, 'lid');
     await put('project_extra_works', extraRows, 'id');
     await put('project_materials', pmatRows, 'id');
+
+    // ЦЕНЫ — ПОСЛЕДНИМИ. У таблицы цен внешний ключ на строку сметы:
+    // пока строки нет, цену записать некуда. Порядок обязателен.
+    // Строки без цены пропускаем: пустая цена означает «не положено
+    // видеть», и записывать её как ноль нельзя.
+    await put('room_work_prices',  workPriceRows.filter(r=> r.price !== null && r.price !== undefined), 'lid');
+    await put('extra_work_prices', extraPriceRows.filter(r=> r.price !== null && r.price !== undefined), 'id');
 
     // удаление справочников — В САМОМ КОНЦЕ. Если на позицию ещё
     // ссылались строки смет, база сама обнулит ссылку (ON DELETE SET NULL),
@@ -4850,6 +4926,22 @@ const DB = {
     }
   },
 
+  // Доля мастера: сколько процентов строки сметы он получает.
+  // Пусто — цен не видит вовсе. 100 — видит настоящие и может править,
+  // это равноправный напарник. Считает и отдаёт сервер, здесь только запись.
+  async setMemberShare(projectId, userId, pct){
+    const v = (pct === '' || pct === null || pct === undefined) ? null : Number(pct);
+    if(v !== null && (!isFinite(v) || v < 1 || v > 100)){
+      throw new Error('Доля — целое число от 1 до 100, либо пусто.');
+    }
+    const { data, error } = await sb.from('project_members')
+      .update({ share_pct: v === null ? null : Math.round(v) })
+      .eq('project_id', projectId).eq('user_id', userId)
+      .select('user_id');
+    if(error) throw error;
+    if(!data || !data.length) throw new Error('Не удалось изменить долю: недостаточно прав.');
+  },
+
   // Закрыть персональные данные заказчика лично от одного мастера.
   // Пишется в его строку участника; сервер после этого просто не отдаёт
   // ему project_customers — маска подставляется и в приложении, и в документах.
@@ -4953,11 +5045,19 @@ const DB = {
     // Ссылку на прайс ставим только если такая позиция реально существует
     // и она не «призрак». Иначе шлём без ссылки: название и цена у строки
     // свои, смета от этого не страдает, а база не отобьёт запись.
+    // ЦЕНУ ЗДЕСЬ НЕ ШЛЁМ (с 5 августа 2026).
+    // Колонки price в room_works больше нет: цена уехала в отдельную
+    // таблицу. Если бы слали — мастер, видящий свою пересчитанную цену,
+    // записал бы 570 на место настоящих 1234, и цена заказчика пропала
+    // бы навсегда. Для этого цену и вынесли.
+    // Настоящее значение уходит отдельно, в priceRows ниже, и только
+    // от того, кому это позволено.
     return {
       lid: rw.lid, room_id: roomId, project_id: projectId,
       work_id: (isRef || ghost || !cat || !cat.id) ? null : cat.id,
-      name: txt(name), unit: txt(unit), price: price,
+      name: txt(name), unit: txt(unit),
       applies_to: applies,
+      _price: price,          // не колонка таблицы, забирается вызывающим
       is_ref_lay: isRef,
       manual_qty: num(rw.manualQty), manual_unit: txt(rw.manualUnit),
       cfg: rw.cfg || null, position: position
@@ -7047,7 +7147,7 @@ function smetaPdfDef(proj){
   body.push([{text:'Итого:',colSpan:5,alignment:'right',style:'total'},{},{},{},{},{text:fmt(total),style:'total',alignment:'right'}]);
   const cn = contractNumber(proj);
   const date = _or(formatDate(c.date), '«___» __________ 20___ г.');
-  const head = [{text:'Смета',style:'h1',alignment:'center'},
+  const head = [{text: isNaryad(proj) ? 'Наряд-задание' : 'Смета',style:'h1',alignment:'center'},
     {text:'на выполнение ремонтно-строительных работ',alignment:'center',margin:[0,0,0,6],fontSize:10}];
   const objectLine = [c.city ? 'г. '+c.city : '', c.address].filter(Boolean).join(', ');
   if(objectLine) head.push({text:'Объект: '+objectLine, margin:[0,0,0,2], fontSize:9});
@@ -7116,7 +7216,7 @@ function smetaText(proj){
 
   // Шапка короткая: смета уходит сообщением, часто ещё до договора.
   // Объект оставляем — по нему заказчик отличит одну квартиру от другой.
-  L.push('СМЕТА');
+  L.push(isNaryad(proj) ? 'НАРЯД-ЗАДАНИЕ' : 'СМЕТА');
   const objectLine = [c.city ? 'г. ' + c.city : '', c.address].filter(Boolean).join(', ');
   if(objectLine) L.push('Объект: ' + objectLine);
   L.push('');
@@ -7650,7 +7750,8 @@ async function generateDoc(proj, docType, format, action, btn){
     if(docType==='smeta' && format==='pdf'){
       await ensurePdfMake();
       blob = await new Promise((res,rej)=>{ try{ pdfMake.createPdf(withWatermark(smetaPdfDef(proj))).getBlob(res); }catch(e){ rej(e); } });
-      filename = `Смета_${nm}.pdf`;
+      // имя файла тоже честное: у мастера это наряд, а не смета
+      filename = `${isNaryad(proj) ? 'Наряд' : 'Смета'}_${nm}.pdf`;
     } else if(docType==='zakupka' && format==='pdf'){
       await ensurePdfMake();
       blob = await new Promise((res,rej)=>{ try{ pdfMake.createPdf(withWatermark(zakupkaPdfDef(proj))).getBlob(res); }catch(e){ rej(e); } });
@@ -7662,7 +7763,7 @@ async function generateDoc(proj, docType, format, action, btn){
     } else if(docType==='smeta' && format==='xlsx'){
       await ensureXLSX();
       blob = smetaXlsxBlob(proj);
-      filename = `Смета_${nm}.xlsx`;
+      filename = `${isNaryad(proj) ? 'Наряд' : 'Смета'}_${nm}.xlsx`;
     } else if(['dogovor','raspiska','akt_priem','akt_etapa','akt_defects','dopsrok','rastorzhenie'].includes(docType)){
       const map = {
         dogovor: dogovorBlocks, raspiska: raspiskaBlocks, akt_priem: aktBlocks,
@@ -8928,7 +9029,11 @@ function renderSmetaDocPanel(proj){
     </div>`).join('');
   return `
     <div class="doc-panel ${open?'open':''}" data-panel-box="smeta">
-      <button class="doc-main-btn" data-panel="smeta"><span class="chev">▾</span> Сформировать смету</button>
+      <button class="doc-main-btn" data-panel="smeta"><span class="chev">▾</span> ${isNaryad(proj) ? 'Сформировать наряд' : 'Сформировать смету'}</button>
+      ${isNaryad(proj) ? `<div class="team-note" style="margin:10px 0 0;">
+        👷 Это <b>наряд</b>, а не смета: цены здесь ваши, по вашей доле.
+        Заказчику такой документ отправлять не нужно — у него свои цифры.
+      </div>` : ''}
       <div class="doc-panel-body">
         ${docBtns('smeta','xlsx','Excel')}
         <div class="conds-box">
@@ -10120,6 +10225,30 @@ function attachHandlers(){
     el.addEventListener('click', ()=>{
       showLimit('Совместная работа — в тарифе «Бригада».',
                 'Пять мест: вы и ещё четверо мастеров. Приглашённым подписка не нужна.');
+    });
+  });
+
+  // доля мастера — только у владельца проекта
+  main.querySelectorAll('[data-team-share]').forEach(el=>{
+    el.addEventListener('change', async ()=>{
+      const [pid, uidv] = el.getAttribute('data-team-share').split('|');
+      const t = teamCache[pid];
+      const m = t && (t.members || []).find(x=> x.user_id === uidv);
+      const was = m ? m.share_pct : null;
+      const val = el.value.trim();
+      try{
+        await DB.setMemberShare(pid, uidv, val);
+        if(m) m.share_pct = val === '' ? null : Math.round(Number(val));
+        // Цены у мастера считает сервер — пока не перечитаем, он видит старые.
+        // Трогаем проект, чтобы новая доля доехала до него сразу.
+        await DB.touchProject(pid);
+        toast(val === '' ? 'Цены скрыты от мастера'
+                         : (Number(val) === 100 ? 'Мастер видит настоящие цены'
+                                                : 'Мастер видит ' + val + '% от сметы'));
+      }catch(e){
+        el.value = was == null ? '' : was;
+        alert((e && e.message) || 'Не удалось изменить долю.');
+      }
     });
   });
 
