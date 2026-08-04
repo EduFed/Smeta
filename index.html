@@ -1799,15 +1799,20 @@
   .mat-sec{margin-bottom:20px;max-width:900px;}
   .mat-sec-title{font-family:'Space Grotesk','Inter',sans-serif;font-size:15px;font-weight:700;
     color:var(--ink);margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--paper-line);}
-  .mat-row{display:grid;grid-template-columns:1fr 96px 176px 34px;gap:8px;align-items:center;margin-bottom:6px;}
+  .mat-row{display:grid;grid-template-columns:1fr 96px 90px 176px 34px;gap:8px;align-items:center;margin-bottom:6px;}
   .mat-row input,.mat-row select{padding:8px 10px;border:1px solid var(--paper-line);border-radius:7px;
     background:var(--white);color:var(--ink);font-size:14px;width:100%;}
   .mat-note{font-size:12px;color:var(--ink-soft);line-height:1.5;}
 
   .mat-block{margin-top:28px;}
-  .pm-head{display:grid;grid-template-columns:1fr 90px 90px 220px 34px;gap:8px;
+  /* итог по закупке — отдельно от сметы, поэтому и выглядит иначе */
+  .pm-total{margin:10px 0 4px;font-size:14px;}
+  .pm-total b{font-size:16px;}
+  .pm-total i{display:block;font-style:normal;font-size:11px;color:var(--ink-soft);margin-top:2px;}
+  .mat-head-sum{margin-left:auto;font-size:12px;color:var(--ink-soft);}
+  .pm-head{display:grid;grid-template-columns:1fr 90px 90px 90px 200px 34px;gap:8px;
     font-size:11px;color:var(--ink-soft);margin-bottom:5px;padding:0 2px;}
-  .pm-row{display:grid;grid-template-columns:1fr 90px 90px 220px 34px;gap:8px;align-items:center;margin-bottom:6px;}
+  .pm-row{display:grid;grid-template-columns:1fr 90px 90px 90px 200px 34px;gap:8px;align-items:center;margin-bottom:6px;}
   .pm-row input,.pm-row select{padding:8px 10px;border:1px solid var(--paper-line);border-radius:7px;
     background:var(--white);color:var(--ink);font-size:14px;width:100%;}
   .pm-row .pm-qty{text-align:right;}
@@ -1815,10 +1820,14 @@
   .pm-actions select{padding:8px 10px;border:1px solid var(--paper-line);border-radius:7px;
     background:var(--white);color:var(--ink);font-size:14px;min-width:280px;max-width:100%;}
   @media (max-width:760px){
-    .mat-row{grid-template-columns:1fr 90px 34px;grid-template-areas:"name name del" "unit cat cat";}
+    .mat-row{grid-template-columns:1fr 90px 34px;
+             grid-template-areas:"name name del" "unit cat cat" "price price price";}
+    .mat-row .mat-price{grid-area:price;}
     .mat-row .mat-name{grid-area:name;} .mat-row .mat-unit{grid-area:unit;} .mat-row .mat-cat{grid-area:cat;}
     .pm-head{display:none;}
-    .pm-row{grid-template-columns:1fr 84px 34px;grid-template-areas:"name name del" "qty unit unit" "note note note";}
+    .pm-row{grid-template-columns:1fr 84px 34px;
+            grid-template-areas:"name name del" "qty unit unit" "price price price" "note note note";}
+    .pm-row .pm-price{grid-area:price;}
     .pm-row .pm-name{grid-area:name;} .pm-row .pm-qty{grid-area:qty;}
     .pm-row .pm-unit{grid-area:unit;} .pm-row .pm-note{grid-area:note;}
   }
@@ -2240,7 +2249,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-04-08';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-05-01';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -4321,7 +4330,10 @@ const DB = {
     }));
 
     state.materials = (rows.materials || []).map(m=>({
-      id: m.id, cat: m.cat || '', name: m.name, unit: m.unit
+      id: m.id, cat: m.cat || '', name: m.name, unit: m.unit,
+      // цена в справочнике — привычная, подставляется в новую закупку.
+      // NULL означает «не указана»: пустое поле, а не ноль
+      price: m.price === null || m.price === undefined ? '' : m.price
     }));
 
     const ex = rows.executor || {};
@@ -4419,7 +4431,8 @@ const DB = {
         })),
         materials: (p.project_materials || []).slice().sort(bySort).map(m=>({
           id: m.id, matId: m.mat_id || '', name: m.name||'', unit: m.unit||'',
-          qty: m.qty === null ? '' : m.qty, note: m.note||''
+          qty: m.qty === null ? '' : m.qty, note: m.note||'',
+          price: m.price === null || m.price === undefined ? '' : m.price
         })),
         _srvAt: p.updated_at || null   // для проверки, не изменил ли кто-то проект
       };
@@ -4613,7 +4626,7 @@ const DB = {
           pmatRows.push({
             id: m.id, project_id: p.id, mat_id: matOk ? m.matId : null,
             name: txt(m.name), unit: txt(m.unit), qty: num(m.qty),
-            note: txt(m.note), position: (mi+1) * 1000
+            note: txt(m.note), price: num(m.price), position: (mi+1) * 1000
           });
         }
         wasPm.delete(m.id);
@@ -4647,7 +4660,8 @@ const DB = {
     (cur.materials||[]).forEach(m=>{
       const pm = wasMat.get(m.id);
       if(!pm || JSON.stringify(pm) !== JSON.stringify(m)){
-        matRows.push({ id: m.id, user_id: uid_, cat: txt(m.cat), name: txt(m.name), unit: txt(m.unit) });
+        matRows.push({ id: m.id, user_id: uid_, cat: txt(m.cat), name: txt(m.name),
+                       unit: txt(m.unit), price: num(m.price) });
       }
       wasMat.delete(m.id);
     });
@@ -7601,7 +7615,7 @@ async function generateDoc(proj, docType, format, action, btn){
   // WhatsApp, Telegram, СМС), а если его нет — просто копируем в буфер.
   // Доступно на всех тарифах: это не экспорт, а обычное сообщение.
   if(format === 'text'){
-    const txt = smetaText(proj);
+    const txt = (docType === 'zakupka') ? zakupkaText(proj) : smetaText(proj);
     try{
       if(navigator.share){
         await navigator.share({ text: txt });
@@ -8045,6 +8059,22 @@ function defaultMaterials(){
 }
 
 function matUnitLabel(u){ return UNIT_LABEL[u] || u || ''; }
+// какие блоки материалов раскрыты — по проекту, в пределах сессии
+let uiMatOpen = {};
+
+// Пересчитать итог по материалам без полной перерисовки: иначе при вводе
+// цены курсор выпрыгивает из поля на каждой цифре.
+function renderMatSum(proj){
+  const items = projMaterials(proj).filter(matFilled);
+  const sum = items.reduce((s,it)=> s + (num(it.qty)||0) * (num(it.price)||0), 0);
+  const any = items.some(it=> num(it.price));
+  const head = document.querySelector('.mat-head-sum');
+  if(head) head.textContent = items.length
+    ? items.length + ' поз.' + (any ? ' · ' + fmtMoney(sum) : '') : '';
+  const tot = document.querySelector('.pm-total b');
+  if(tot) tot.textContent = fmtMoney(sum);
+}
+
 function projMaterials(proj){
   if(!proj) return [];
   if(!Array.isArray(proj.materials)) proj.materials = [];
@@ -8074,6 +8104,10 @@ function renderMaterialsView(){
             <select class="mat-unit" data-mat="${i}|unit">
               ${MAT_UNITS.map(u=>`<option value="${u}" ${m.unit===u?'selected':''}>${matUnitLabel(u)}</option>`).join('')}
             </select>
+            <input type="text" class="mat-price" inputmode="decimal"
+                   value="${escapeAttr(m.price==null?'':m.price)}"
+                   placeholder="цена" title="Привычная цена — подставится в закупку, там можно поправить"
+                   data-mat="${i}|price">
             <select class="mat-cat" data-mat="${i}|cat">
               ${Object.keys(MAT_CATS).map(k=>`<option value="${k}" ${m.cat===k?'selected':''}>${escapeHtml(MAT_CATS[k])}</option>`).join('')}
             </select>
@@ -8095,8 +8129,10 @@ function renderMaterialsView(){
     </div>
     <div class="mat-hint">
       Список того, что вы обычно ставите. В проекте материалы выбираются отсюда,
-      количество указывается там же. Цен здесь нет: материал покупает заказчик,
-      а цены в магазине меняются быстрее, чем составляется смета.
+      количество указывается там же. Цена — привычная, «сколько обычно стоит»:
+      она подставится в закупку, и там её можно поправить под нынешний ценник.
+      Справочник от этого не изменится. В смету за работу материалы не входят —
+      их покупает заказчик.
     </div>
     ${list.length ? rows : '<div class="empty-hint">Пока пусто. Нажмите «Добавить материал».</div>'}`;
 }
@@ -8146,18 +8182,39 @@ function renderProjMaterials(proj){
       <select class="pm-unit" data-pm="${i}|unit">
         ${MAT_UNITS.map(u=>`<option value="${u}" ${it.unit===u?'selected':''}>${matUnitLabel(u)}</option>`).join('')}
       </select>
+      <input type="text" class="pm-price" inputmode="decimal"
+             value="${escapeAttr(it.price==null?'':it.price)}"
+             placeholder="цена" data-pm="${i}|price">
       <input type="text" class="pm-note" value="${escapeAttr(it.note||'')}"
              placeholder="примечание: цвет, артикул, магазин" data-pm="${i}|note">
       <button class="btn-icon" data-pm-del="${i}" title="Убрать">✕</button>
     </div>`).join('');
 
+  // Итог по материалам — ОТДЕЛЬНОЙ строкой. В сумму сметы он не входит
+  // и входить не должен: смета за работу, материалы покупает заказчик.
+  // Считаем только по строкам, где цена указана: пустая цена — не ноль,
+  // а «не знаю», и складывать её с остальными нельзя.
+  const matSum = items.reduce((s,it)=> s + (num(it.qty)||0) * (num(it.price)||0), 0);
+  const withPrice = items.filter(it=> matFilled(it) && num(it.price)).length;
+
+  const open = !!uiMatOpen[proj.id];
+
   return `
-    <div class="section mat-block">
+    <div class="section mat-block cust-acc ${open?'open':''}" data-mat-acc="${proj.id}">
+      <button type="button" class="cust-head no-print" data-mat-toggle="${proj.id}" aria-expanded="${open}">
+        <span class="chev">▾</span>
+        <span>🧱 Материалы</span>
+        <span class="mat-head-sum">${items.filter(matFilled).length
+            ? items.filter(matFilled).length + ' поз.' + (withPrice ? ' · ' + fmtMoney(matSum) : '')
+            : ''}</span>
+      </button>
+      <div class="cust-body">
       <div class="section-head">
-        <h2>Материалы</h2>
         <span class="mat-note">список для заказчика · в смету за работу не входит</span>
       </div>
-      ${items.length ? `<div class="pm-head"><span>наименование</span><span>кол-во</span><span>ед.</span><span>примечание</span><span></span></div>${rows}` : ''}
+      ${items.length ? `<div class="pm-head"><span>наименование</span><span>кол-во</span><span>ед.</span><span>цена</span><span>примечание</span><span></span></div>${rows}` : ''}
+      ${withPrice ? `<div class="pm-total">Материалы: <b>${fmtMoney(matSum)}</b>
+        <i>отдельно от сметы — это закупка заказчика</i></div>` : ''}
       <div class="pm-actions">
         ${ref.length
           ? `<select id="pmPick">
@@ -8173,21 +8230,43 @@ function renderProjMaterials(proj){
           : `<span class="mat-note">Справочник пуст — заполните его в «Настройки → Материалы».</span>`}
         <button class="add-link" data-pm-add="1">+ Своя позиция</button>
       </div>
+      </div>
     </div>`;
 }
 
 function matProjHandlers(main, proj){
+  // сворачивание блока «Материалы» — тем же способом, что «Данные для договора»
+  main.querySelectorAll('[data-mat-toggle]').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      const pid = el.getAttribute('data-mat-toggle');
+      const open = !uiMatOpen[pid];
+      uiMatOpen[pid] = open;
+      const box = main.querySelector(`[data-mat-acc="${pid}"]`);
+      if(box){
+        const body = box.querySelector('.cust-body');
+        accBeforeToggle(body, open);
+        box.classList.toggle('open', open);
+        accAfterToggle(body);
+      }
+      el.setAttribute('aria-expanded', open);
+    });
+  });
+
   const pick = document.getElementById('pmPick');
   if(pick) pick.onchange = ()=>{
     const m = (state.materials||[]).find(x=>x.id===pick.value);
     if(!m) return;
     // снимок: название и единица запоминаются на момент добавления
-    projMaterials(proj).push({ id: uid('pm'), matId: m.id, name: m.name, unit: m.unit, qty:'', note:'' });
+    // цену тоже берём из справочника — как привычную. В закупке её можно
+    // поправить под нынешний ценник, справочник от этого не меняется.
+    projMaterials(proj).push({ id: uid('pm'), matId: m.id, name: m.name, unit: m.unit,
+                               qty:'', price: m.price || '', note:'' });
     scheduleSave(); render();
   };
   main.querySelectorAll('[data-pm-add]').forEach(el=>{
     el.onclick = ()=>{
-      projMaterials(proj).push({ id: uid('pm'), matId:null, name:'', unit:'pcs', qty:'', note:'' });
+      projMaterials(proj).push({ id: uid('pm'), matId:null, name:'', unit:'pcs',
+                                 qty:'', price:'', note:'' });
       scheduleSave(); render();
     };
   });
@@ -8197,6 +8276,8 @@ function matProjHandlers(main, proj){
       const it = projMaterials(proj)[+i];
       if(!it) return;
       it[field] = el.value;
+      // цена меняет итог по материалам — обновляем подпись в шапке блока
+      if(field === 'price' || field === 'qty') renderMatSum(proj);
       scheduleSave();
     };
     el.addEventListener('input', apply);
@@ -8212,30 +8293,69 @@ function matProjHandlers(main, proj){
 
 // ---------- документ «Список материалов» ----------
 function zakupkaData(proj){
-  return projMaterials(proj).filter(matFilled).map(it=>({
-    name: it.name,
-    qty:  String(it.qty == null ? '' : it.qty).trim(),
-    unit: matUnitLabel(it.unit),
-    note: String(it.note || '').trim()
-  }));
+  return projMaterials(proj).filter(matFilled).map(it=>{
+    const price = num(it.price);
+    const qty   = num(it.qty);
+    return {
+      name: it.name,
+      qty:  String(it.qty == null ? '' : it.qty).trim(),
+      unit: matUnitLabel(it.unit),
+      note: String(it.note || '').trim(),
+      // Цена и сумма — только если цена действительно указана.
+      // Пустая цена это «не знаю», а не ноль: печатать «0 ₽» нельзя,
+      // заказчик прочитает это как «бесплатно».
+      price: price,
+      sum:   (price && qty) ? price * qty : null
+    };
+  });
 }
+
+// Есть ли в закупке хоть одна цена. Если нет — столбцы цены и суммы
+// в документе не рисуем вовсе, чтобы не показывать пустые графы.
+function zakupkaHasPrice(items){ return items.some(it=> it.price); }
+function zakupkaTotal(items){ return items.reduce((s,it)=> s + (it.sum || 0), 0); }
 
 function zakupkaPdfDef(proj){
   const items = zakupkaData(proj);
   const c = proj.customer || {};
-  const body = [[
-    {text:'№',style:'th'},{text:'Наименование',style:'th'},
-    {text:'Кол-во',style:'th'},{text:'Ед.',style:'th'},{text:'Примечание',style:'th'}
-  ]];
+  // Столбцы цены и суммы появляются, только если цены заданы хоть где-то.
+  // Пустые графы в документе для заказчика выглядят как недоделка.
+  const hasPrice = zakupkaHasPrice(items);
+  const hasNote  = items.some(it=> it.note);
+
+  const head = [{text:'№',style:'th'},{text:'Наименование',style:'th'},
+                {text:'Кол-во',style:'th'},{text:'Ед.',style:'th'}];
+  if(hasPrice) head.push({text:'Цена',style:'th'}, {text:'Сумма',style:'th'});
+  if(hasNote)  head.push({text:'Примечание',style:'th'});
+  const body = [head];
+
   items.forEach((it,i)=>{
-    body.push([
+    const r = [
       {text:String(i+1),style:'td'},
       {text:it.name,style:'td'},
       {text:it.qty || '—',style:'td',alignment:'right'},
-      {text:it.unit,style:'td',alignment:'center'},
-      {text:it.note,style:'td'},
-    ]);
+      {text:it.unit,style:'td',alignment:'center'}
+    ];
+    if(hasPrice){
+      r.push({text: it.price ? fmtMoney(it.price) : '—',style:'td',alignment:'right'});
+      r.push({text: it.sum   ? fmtMoney(it.sum)   : '—',style:'td',alignment:'right'});
+    }
+    if(hasNote) r.push({text:it.note,style:'td'});
+    body.push(r);
   });
+
+  if(hasPrice){
+    const last = [{text:'',style:'td'},{text:'Итого',style:'th'},
+                  {text:'',style:'td'},{text:'',style:'td'},
+                  {text:'',style:'td'},
+                  {text:fmtMoney(zakupkaTotal(items)),style:'th',alignment:'right'}];
+    if(hasNote) last.push({text:'',style:'td'});
+    body.push(last);
+  }
+
+  const widths = hasPrice
+    ? (hasNote ? [18,'*',44,32,54,60,110] : [18,'*',48,36,64,70])
+    : (hasNote ? [18,'*',48,36,150]       : [18,'*',48,36]);
 
   return {
     pageSize:'A4', pageMargins:[28,28,28,36],
@@ -8245,8 +8365,9 @@ function zakupkaPdfDef(proj){
       {text:`Объект: ${_or(proj.name,'—')}   ·   Смета № ${contractNumber(proj)}`, style:'sub'},
       ...(c.name ? [{text:`Заказчик: ${c.name}`, style:'sub'}] : []),
       {text:' ', margin:[0,0,0,6]},
-      {table:{ headerRows:1, widths:[18,'*',48,36,150], body }, layout:'lightHorizontalLines'},
-      {text:'Материалы приобретает заказчик. Количество указано по замерам; запас на подрезку и бой уточняйте при покупке.',
+      {table:{ headerRows:1, widths, body }, layout:'lightHorizontalLines'},
+      {text:'Материалы приобретает заказчик. Количество указано по замерам; запас на подрезку и бой уточняйте при покупке.'
+            + (hasPrice ? ' Цены справочные, на день составления списка — в магазине могут отличаться. В смету за работу не входят.' : ''),
        style:'note', margin:[0,10,0,0]}
     ],
     styles:{
@@ -8261,16 +8382,38 @@ function zakupkaPdfDef(proj){
 
 function zakupkaXlsxBlob(proj){
   const items = zakupkaData(proj);
+  const hasPrice = zakupkaHasPrice(items);
+  const hasNote  = items.some(it=> it.note);
+
+  const head = ['№','Наименование','Кол-во','Ед.'];
+  if(hasPrice) head.push('Цена','Сумма');
+  if(hasNote)  head.push('Примечание');
+
   const aoa = [
     ['Список материалов'],
     ['Объект', proj.name || '—'],
     ['Смета №', contractNumber(proj)],
     [],
-    ['№','Наименование','Кол-во','Ед.','Примечание']
+    head
   ];
-  items.forEach((it,i)=> aoa.push([i+1, it.name, it.qty, it.unit, it.note]));
+  items.forEach((it,i)=>{
+    const r = [i+1, it.name, it.qty, it.unit];
+    // пустую цену оставляем пустой ячейкой, а не нулём: ноль в таблице
+    // читается как «бесплатно»
+    if(hasPrice) r.push(it.price || '', it.sum || '');
+    if(hasNote)  r.push(it.note);
+    aoa.push(r);
+  });
+  if(hasPrice){
+    const r = ['', 'Итого', '', ''];
+    r.push('', zakupkaTotal(items));
+    if(hasNote) r.push('');
+    aoa.push(r);
+  }
   const ws = XLSX.utils.aoa_to_sheet(aoa);
-  ws['!cols'] = [{wch:5},{wch:44},{wch:10},{wch:9},{wch:30}];
+  ws['!cols'] = hasPrice
+    ? [{wch:5},{wch:40},{wch:10},{wch:9},{wch:12},{wch:12},{wch:26}]
+    : [{wch:5},{wch:44},{wch:10},{wch:9},{wch:30}];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Материалы');
   const out = XLSX.write(wb, { bookType:'xlsx', type:'array' });
@@ -8283,9 +8426,18 @@ function zakupkaText(proj){
   if(proj.name) L.push(proj.name);
   L.push('');
   items.forEach((it,i)=>{
+    // Каждый кусок добавляется, только если он заполнен: пустых
+    // «— 0 ₽» и висящих скобок в сообщении быть не должно.
     const q = it.qty ? ` — ${it.qty} ${it.unit}` : '';
-    L.push(`${i+1}. ${it.name}${q}${it.note ? ' (' + it.note + ')' : ''}`);
+    const p = it.price ? ` × ${fmtMoney(it.price)}` : '';
+    const s = it.sum ? ` = ${fmtMoney(it.sum)}` : '';
+    L.push(`${i+1}. ${it.name}${q}${p}${s}${it.note ? ' (' + it.note + ')' : ''}`);
   });
+  if(zakupkaHasPrice(items)){
+    L.push('');
+    L.push(`Итого материалов: ${fmtMoney(zakupkaTotal(items))}`);
+    L.push('Цены справочные. В смету за работу не входят — материалы покупает заказчик.');
+  }
   return L.join('\n');
 }
 
@@ -8735,8 +8887,10 @@ function docBtns(type, fmt2, fmt2label){
   const lbl2  = pro ? fmt2label : fmt2label + ' 🔒';
   const tip   = pro ? '' : ' title="Доступно в полном тарифе"';
   // смету можно отправить и просто текстом — сообщением в мессенджер
-  const txtBtn = type === 'smeta'
-    ? `<button class="btn btn-outline btn-sm" data-doc="smeta|text|share" title="Отправить сообщением">Текст</button>`
+  // Смету и список материалов можно отправить просто текстом — сообщением
+  // в мессенджер. Заказчику так удобнее: не надо открывать вложение.
+  const txtBtn = (type === 'smeta' || type === 'zakupka')
+    ? `<button class="btn btn-outline btn-sm" data-doc="${type}|text|share" title="Отправить сообщением">Текст</button>`
     : '';
   return `
     <div class="docs-btns">
