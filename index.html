@@ -2210,7 +2210,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-03-03';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-04-01';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -4685,12 +4685,33 @@ const DB = {
   // Можно было подписаться и на project_members, но участник не всегда
   // вправе её читать, а событие приходит только тому, кому строка видна.
   // Прикосновение к проекту работает при любых правах.
+  // ВАЖНО: свою же отметку надо тут же запомнить. Приложение сверяет
+  // известное ему время правки проекта с тем, что на сервере, и так ловит
+  // работу с другого устройства. Если «тронуть» проект и не обновить
+  // отметку, при следующем сохранении приложение увидит на сервере время
+  // новее своего и покажет «Данные расходятся» — на пустом месте,
+  // из-за собственного же действия. Поймано 4 августа 2026.
   async touchProject(projectId){
     try{
-      await sb.from('projects')
+      const { data, error } = await sb.from('projects')
         .update({ updated_at: new Date().toISOString() })
-        .eq('id', projectId);
-    }catch(_){}
+        .eq('id', projectId)
+        .select('id, updated_at');
+      if(error) throw error;
+      const at = data && data[0] && data[0].updated_at;
+      if(at){
+        const stamp = (arr)=> (arr || []).forEach(p=>{ if(p.id === projectId) p._srvAt = at; });
+        stamp(state.projects);
+        stamp(serverSnap && serverSnap.projects);
+      }
+    }catch(_){
+      // Не смогли прочитать новую отметку — тогда безопаснее не оставлять
+      // старую: пусть проверка версий возьмёт её при следующей загрузке,
+      // чем покажет ложное расхождение.
+      const drop = (arr)=> (arr || []).forEach(p=>{ if(p.id === projectId) p._srvAt = null; });
+      drop(state.projects);
+      drop(serverSnap && serverSnap.projects);
+    }
   },
 
   // Закрыть персональные данные заказчика лично от одного мастера.
