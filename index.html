@@ -2240,7 +2240,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-04-07';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-04-08';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -4922,8 +4922,17 @@ const DB = {
     } else {
       // работы нет в своём прайсе (чужой проект или позицию удалили) —
       // сохраняем снимок как есть, чтобы не затереть его пустотой
+      // ВНИМАНИЕ: name и unit в базе NOT NULL. Пустой снимок давал null,
+      // и одна такая строка отбивала ВСЁ сохранение целиком —
+      // «код 23502: null value in column name of relation room_works».
+      // Поймано 4 августа 2026 на аккаунте участника бригады.
+      // Название берём по цепочке: снимок → «призрак» из каталога →
+      // явная заглушка. Затереть настоящее нельзя: сюда попадают только
+      // строки, для которых живой позиции в прайсе нет.
       const s = rw._snap || {};
-      name = s.name || null; unit = s.unit || null; price = num(s.price);
+      name  = s.name || (cat && cat.name) || 'Работа удалена из прайса';
+      unit  = s.unit || (cat && cat.unit) || 'm2';
+      price = num(s.price);
       applies = (s.appliesTo && s.appliesTo.length) ? s.appliesTo
               : (cat && Array.isArray(cat.appliesTo) ? cat.appliesTo : null);
     }
@@ -10400,7 +10409,11 @@ function updateBarState(){
     // Через минуту ожидания разблокируем кнопку с честной подписью:
     // правки остаются на устройстве и уйдут после обновления.
     if(!waitingSince) waitingSince = Date.now();
-    const stuck = (Date.now() - waitingSince) > 60000;
+    // Если сервер УЖЕ отказал — ждать нечего, отправка не пройдёт и через час.
+    // Разблокируем сразу, а не через минуту: 4 августа человек сидел
+    // на старой сборке и не мог обновиться именно потому, что ждал
+    // отправки, которая была обречена.
+    const stuck = !!lastSaveError || (Date.now() - waitingSince) > 20000;
 
     if(stuck){
       if(txt) txt.textContent = 'Новая версия. Данные не уходят — правки останутся на устройстве';
