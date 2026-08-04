@@ -2210,7 +2210,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-03-02';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-03-03';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -4039,6 +4039,8 @@ function applyViewerMode(){
 let rtChannel = null;
 let rtProjectId = null;
 let rtTimer = null;
+let rtMissed = false;   // пришла чужая правка, но мы были заняты своей
+let rtRetry = null;     // повтор, пока своё не сохранится
 
 function realtimeWatch(projectId){
   if(!sb || !projectId || rtProjectId === projectId) return;
@@ -4065,6 +4067,8 @@ function realtimeWatch(projectId){
 function realtimeStop(){
   if(rtChannel){ try{ sb.removeChannel(rtChannel); }catch(_){} }
   rtChannel = null; rtProjectId = null;
+  if(rtRetry){ clearInterval(rtRetry); rtRetry = null; }
+  rtMissed = false;
 }
 
 function onRemoteChange(payload){
@@ -4075,9 +4079,22 @@ function onRemoteChange(payload){
   clearTimeout(rtTimer);
   rtTimer = setTimeout(async ()=>{
     const local = readLocal();
-    // есть неотправленное — не перезатираем работу человека, просто помечаем
+    // Есть неотправленное — не перезатираем работу человека.
+    // Но и терять правку напарника нельзя: раньше здесь всё заканчивалось,
+    // и чужое изменение подхватывалось только при следующем событии.
+    // Со стороны это и есть «поменялось не сразу». Теперь помечаем
+    // пропущенное и возвращаемся к нему, как только своё уйдёт на сервер.
     if(pendingSave || (local && local.dirty)){
-      setSync('', 'напарник изменил смету — обновится после сохранения');
+      rtMissed = true;
+      setSync('', 'напарник изменил смету — обновим после сохранения');
+      if(!rtRetry){
+        rtRetry = setInterval(()=>{
+          const l = readLocal();
+          if(pendingSave || (l && l.dirty)) return;   // ещё не сохранились
+          clearInterval(rtRetry); rtRetry = null;
+          if(rtMissed){ rtMissed = false; onRemoteChange({}); }
+        }, 1200);
+      }
       return;
     }
     serverSnap = null;
@@ -4654,6 +4671,26 @@ const DB = {
       .select('user_id');
     if(error) throw error;
     if(!data || !data.length) throw new Error('Не удалось изменить роль: недостаточно прав.');
+  },
+
+  // «Тронуть» проект, чтобы правка доехала до бригады сразу.
+  //
+  // Живое обновление у участника подписано на сам проект и на содержимое
+  // сметы. Состав бригады, роли и личные тумблеры лежат в project_members —
+  // отдельной таблице, о которой подписка ничего не знает. Без этого
+  // прикосновения владелец переключает тумблер, а участник узнаёт об этом
+  // только когда владелец следующий раз тронет смету. Со стороны выглядит
+  // как «переключилось, но ничего не произошло».
+  //
+  // Можно было подписаться и на project_members, но участник не всегда
+  // вправе её читать, а событие приходит только тому, кому строка видна.
+  // Прикосновение к проекту работает при любых правах.
+  async touchProject(projectId){
+    try{
+      await sb.from('projects')
+        .update({ updated_at: new Date().toISOString() })
+        .eq('id', projectId);
+    }catch(_){}
   },
 
   // Закрыть персональные данные заказчика лично от одного мастера.
@@ -9686,7 +9723,11 @@ function attachHandlers(){
   main.querySelectorAll('[data-team-role]').forEach(el=>{
     el.addEventListener('change', async ()=>{
       const [pid, uidv] = el.getAttribute('data-team-role').split('|');
-      try{ await DB.setRole(pid, uidv, el.value); await teamLoad(pid); }
+      try{
+        await DB.setRole(pid, uidv, el.value);
+        await DB.touchProject(pid);   // смена роли должна дойти до мастера сразу
+        await teamLoad(pid);
+      }
       catch(e){ alert((e && e.message) || 'Не удалось изменить роль.'); }
     });
   });
@@ -9701,7 +9742,10 @@ function attachHandlers(){
       const next = !m.hide_personal;
       m.hide_personal = next;                 // отзываемся сразу, не дожидаясь сервера
       el.classList.toggle('on', next);
-      try{ await DB.setMemberHidePersonal(pid, uidv, next); }
+      try{
+        await DB.setMemberHidePersonal(pid, uidv, next);
+        await DB.touchProject(pid);   // чтобы у мастера скрылось/открылось сразу
+      }
       catch(e){
         m.hide_personal = !next;
         el.classList.toggle('on', !next);
