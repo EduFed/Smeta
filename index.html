@@ -5060,8 +5060,11 @@ async function persist(){
         '22P02': 'неверный формат значения'
       };
       const hint = HINTS[String(code)] || '';
+      // Текст сервера показываем прямо в приложении: на планшете консоль
+      // не открыть, а без него код ошибки часто ни о чём не говорит.
+      const raw = String((e && (e.message || e.details)) || '').slice(0, 120);
       setSync('error', 'сервер отклонил запись' + (hint ? ' — ' + hint : '') +
-                       ' (код ' + code + ')');
+                       ' (код ' + code + ')' + (raw ? ': ' + raw : ''));
       syncOffline = false;   // связь есть, дело не в ней
       return;
     }
