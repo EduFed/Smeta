@@ -2252,7 +2252,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-05-03';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-05-04';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -2597,12 +2597,17 @@ function refCfgApply(){
   render();
 }
 
-// ---------- добавление в каталог ----------
-// Позиция справочника становится обычной позицией каталога.
-// Дальше она живёт своей жизнью: её можно переименовать,
-// поправить цену и единицу в «Настройки → Виды работ».
+// ---------- добавление работы из справочника ----------
+// РАНЬШЕ позиция справочника попадала ещё и в «Виды работ» — личный
+// прайс засорялся десятками строк, которые человек туда не клал.
+// С 5 августа 2026 в прайс НЕ добавляем: работа живёт только в смете,
+// со своим снимком названия, единицы и цены.
+//
+// Это безопасно, потому что строка сметы и так самодостаточна: снимок
+// в ней есть всегда, а для показа приложение создаёт временную запись
+// (addGhosts). Прайс — это то, что мастер собрал сам, и справочник
+// не должен туда лезть без спроса.
 function refPushWork(name, unit, price, applies, refId, roomId){
-  if(REF_PLAN !== 'free' && !allow('catalog')) return;
   const w = {
     id: uid('w'),
     name: name,
@@ -2611,13 +2616,19 @@ function refPushWork(name, unit, price, applies, refId, roomId){
     appliesTo: Array.isArray(applies) ? applies.slice() : [applies],
     refId: refId || null
   };
-  state.catalog.push(w);
+  // В прайс НЕ добавляем. Строка сметы уносит с собой снимок —
+  // из него и рисуется, и сохраняется, и печатается.
   if(roomId){
     const p = currentProject();
     const r = p && (p.rooms||[]).find(x=>x.id===roomId);
     if(r){
       r.works = r.works || [];
-      if(!r.works.find(x=>x.workId===w.id)) r.works.push({ lid: uid('l'), workId:w.id, manualQty:'' });
+      r.works.push({
+        lid: uid('l'), workId: w.id, manualQty: '',
+        _snap: { name: w.name, unit: w.unit, refId: w.refId,
+                 price: (w.price === '' || w.price == null) ? null : num(w.price),
+                 appliesTo: Array.isArray(w.appliesTo) ? w.appliesTo.slice() : null }
+      });
       uiWorkSearchRefocus = roomId;
     }
   }
@@ -2625,15 +2636,25 @@ function refPushWork(name, unit, price, applies, refId, roomId){
   render();
 }
 
-// какие позиции справочника уже перенесены в каталог
-function refUsedIds(){
-  return new Set((state.catalog||[]).map(w=>w.refId).filter(Boolean));
+// Какие позиции справочника уже стоят в смете ЭТОГО помещения.
+// Раньше смотрели в прайс — теперь работа туда не попадает,
+// значит и отметку «уже добавлено» надо искать в самой смете.
+function refUsedIds(room){
+  const ids = new Set();
+  const add = (rw)=>{
+    const s = rw && rw._snap;
+    if(s && s.refId) ids.add(s.refId);
+  };
+  if(room) (room.works || []).forEach(add);
+  // прежние позиции, заведённые в прайс до 5 августа 2026, тоже помечаем
+  (state.catalog || []).forEach(w=>{ if(w.refId) ids.add(w.refId); });
+  return ids;
 }
 
 // ---------- позиции справочника в поиске работ помещения ----------
 function refSearchItems(room){
   if(!refOn()) return '';
-  const used = refUsedIds();
+  const used = refUsedIds(room);
   const rows = [];
 
   const cfgTags = (REF_TILING.layName + ' ' + REF_TILING.layTags).toLowerCase();
