@@ -2274,7 +2274,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-05-06';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-05-07';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -3986,6 +3986,11 @@ function teamAccHtml(proj){
     // после, к моменту сборки ещё не существует.
     const canShare = owner && (SHARE_PLANS.includes(proj.ownerPlan) || trialDaysLeft() > 0);
 
+    // Приглашать — «Бригада» и «Прораб». На Pro и бесплатном нельзя:
+    // это и есть то, чем платные тарифы для команды отличаются от Pro.
+    // Пробный период даёт полный доступ — значит и совместную работу.
+    const canInvite = owner && (TEAM_PLANS.includes(proj.ownerPlan) || trialDaysLeft() > 0);
+
     const rows = (t.members || []).map(m=>{
       const me = currentUser && m.user_id === currentUser.id;
       const canTouch = owner && m.role !== 'owner';
@@ -4061,10 +4066,10 @@ function teamAccHtml(proj){
 
     // Совместная работа — тариф «Бригада». На Pro и бесплатном приглашать
     // нельзя: это и есть то, чем «Бригада» отличается от Pro.
-    // Пробный период даёт полный доступ — значит и совместную работу тоже:
-    // иначе главную функцию тарифа нельзя попробовать до покупки.
-    const canInvite = owner && (TEAM_PLANS.includes(proj.ownerPlan) || trialDaysLeft() > 0);
-
+    // canInvite и canShare объявлены ВЫШЕ, до сборки строк участников:
+    // 5 августа объявление стояло здесь, а пользовались им раньше —
+    // и вся панель «Бригада» переставала открываться. Ошибка тихая:
+    // в консоли ReferenceError, на экране просто пусто.
     const form = owner ? (!canInvite ? `
       <div class="team-note">
         <b>Приглашать мастеров можно на тарифе «Бригада».</b><br>
