@@ -656,6 +656,35 @@
   .team-add{background:var(--orange);color:#fff;border:0;border-radius:10px;padding:10px 16px;font-weight:600;cursor:pointer;}
   .team-note{font-size:13px;opacity:.7;line-height:1.45;margin-top:10px;}
 
+  /* окно выбора рабочего проекта на бесплатном тарифе */
+  .picker-modal{max-width:520px;}
+  .picker-warn{
+    font-size:13px;line-height:1.5;padding:11px 13px;border-radius:10px;margin-bottom:14px;
+    background:color-mix(in srgb, var(--orange) 10%, transparent);
+    border:1px solid color-mix(in srgb, var(--orange) 35%, transparent);
+  }
+  .picker-list{display:flex;flex-direction:column;gap:8px;margin-bottom:12px;
+               max-height:46vh;overflow:auto;}
+  .picker-item{
+    display:flex;align-items:center;justify-content:space-between;gap:12px;
+    width:100%;text-align:left;cursor:pointer;
+    padding:13px 15px;border-radius:10px;background:none;
+    border:1px solid var(--paper-line);font-family:inherit;color:var(--ink);
+  }
+  .picker-item:hover{border-color:var(--orange);}
+  .picker-name{font-weight:600;font-size:14px;min-width:0;word-break:break-word;}
+  .picker-meta{font-size:12px;color:var(--ink-soft);flex:0 0 auto;}
+  .picker-msg{font-size:13px;min-height:18px;margin-bottom:8px;color:var(--ink-soft);}
+  .picker-msg.err{color:var(--red);}
+
+  /* плашка на замороженном проекте */
+  .frozen-note{
+    display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;
+    padding:12px 16px;border-radius:12px;margin-bottom:16px;font-size:13px;line-height:1.5;
+    background:color-mix(in srgb, var(--orange) 8%, transparent);
+    border:1px solid color-mix(in srgb, var(--orange) 30%, transparent);
+  }
+
   .cust-body{max-height:0;overflow:hidden;transition:max-height .3s ease;padding:0 20px;}
   .cust-acc.open .cust-body{max-height:2000px;padding:0 20px 20px;}
   .cust-group{margin-bottom:18px;}
@@ -2295,7 +2324,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-05-10';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-05-11';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -3089,7 +3118,10 @@ async function loadPlan(){
   try{
     const { data, error } = await withTimeout(sb
       .from('profiles')
-      .select('plan, plan_until, trial_until')
+      // active_project_id — выбранный рабочий проект на бесплатном тарифе.
+      // Едет вместе с тарифом: userPlan целиком кладётся в localStorage,
+      // значит выбор переживает работу без сети так же, как тариф.
+      .select('plan, plan_until, trial_until, active_project_id')
       .eq('user_id', currentUser.id)
       .maybeSingle());
     if(error) throw error;
@@ -3380,6 +3412,151 @@ async function sendLead(){
 // ВАЖНО: эти же числа продублированы в триггере в базе.
 // Здесь — только для удобного интерфейса, реальная защита на сервере.
 const FREE_LIMITS = { projects: 1, rooms: 3, catalog: 10, materials: 5 };
+
+// ---------- ОДИН РАБОЧИЙ ПРОЕКТ НА БЕСПЛАТНОМ ТАРИФЕ ----------
+// Сервер разрешает бесплатному человеку править ОДИН свой проект — тот,
+// который он выбрал сам, один раз и навсегда. Остальные открываются,
+// читаются и печатаются, но не правятся.
+//
+// ЭТИ ЧЕТЫРЕ УСЛОВИЯ ОБЯЗАНЫ СОВПАДАТЬ СО СТОРОЖЕМ zz_active_project
+// В БАЗЕ. Разойдутся — человек увидит рабочие поля, а запись будет
+// отбиваться, и причины он не поймёт. Менять только парой с миграцией.
+
+// какой проект выбран рабочим (null — выбор ещё не сделан)
+function activeProjectId(){
+  return (userPlan && userPlan.active_project_id) || null;
+}
+function activeProject(){
+  const id = activeProjectId();
+  return id ? (state.projects || []).find(p=>p.id === id) || null : null;
+}
+
+// заморожен ли проект: свой, тариф бесплатный, своих проектов больше
+// одного, и это не выбранный. Пустой выбор запирает ВСЕ свои проекты —
+// так же, как сторож: молчание закрывает, а не открывает.
+function isFrozenProject(proj){
+  const p = proj || (typeof currentProject === 'function' ? currentProject() : null);
+  if(!p) return false;
+  if(!currentUser) return false;
+  if(p.ownerId && p.ownerId !== currentUser.id) return false;  // чужой — не наше дело
+  if(isPro()) return false;                                     // платный или пробный
+  if(myProjectsCount() <= 1) return false;                      // один проект — не запираем
+  return p.id !== activeProjectId();
+}
+
+// ---------- ОКНО ВЫБОРА РАБОЧЕГО ПРОЕКТА ----------
+// Открывается, когда сервер отбил запись с кодом FREE_ONE_PROJECT_NOT_CHOSEN.
+//
+// ОКНО НЕ ВЫБИРАЕТ ЗА ЧЕЛОВЕКА — ни по дате, ни первым в списке, ни тем,
+// что сейчас открыт. Приложение само открывает какой-то проект при
+// запуске; если выбор закрепит открытие, судьбу решит случайное нажатие,
+// а поменять её будет нельзя. Пустой выбор — законное состояние.
+let uiPickerOpen = false;
+
+function openActiveProjectPicker(){
+  if(uiPickerOpen) return;
+  if(activeProjectId()) return;        // выбор уже сделан
+  uiPickerOpen = true;
+  renderActiveProjectPicker();
+}
+
+function closeActiveProjectPicker(){
+  uiPickerOpen = false;
+  const ov = document.getElementById('pickerOverlay');
+  if(ov) ov.remove();
+}
+
+function renderActiveProjectPicker(){
+  const mine = (state.projects || []).filter(p=>
+    !p.ownerId || (currentUser && p.ownerId === currentUser.id));
+
+  const rows = mine.map(p=>`
+    <button type="button" class="picker-item" data-pick-project="${escapeAttr(p.id)}">
+      <span class="picker-name">${escapeHtml(p.name || 'Без названия')}</span>
+      <span class="picker-meta">${p.rooms ? p.rooms.length : 0} помещ.${p.archived ? ' · в архиве' : ''}</span>
+    </button>`).join('');
+
+  const old = document.getElementById('pickerOverlay');
+  if(old) old.remove();
+
+  const ov = document.createElement('div');
+  ov.className = 'plan-overlay no-print';
+  ov.id = 'pickerOverlay';
+  ov.style.display = 'flex';
+  ov.innerHTML = `
+    <div class="plan-modal picker-modal">
+      <div class="plan-modal-head">
+        <div>
+          <div class="plan-modal-title">Выберите рабочий проект</div>
+          <div class="plan-modal-sub">Пробный период закончился</div>
+        </div>
+      </div>
+      <div class="plan-banner">
+        На бесплатном тарифе редактируется <b>один</b> проект.
+        Остальные останутся: их можно открыть, посмотреть и распечатать —
+        <b>ничего не удаляется</b>.
+      </div>
+      <div class="picker-warn">
+        <b>Выбор изменить будет нельзя.</b>
+        Подумайте, над каким объектом работаете сейчас.
+      </div>
+      <div class="picker-list">${rows || '<div class="team-note">проектов нет</div>'}</div>
+      <div class="picker-msg" id="pickerMsg"></div>
+      <div class="plan-foot">
+        Нужны все проекты сразу — оформите подписку, и выбор не понадобится.
+      </div>
+      <button class="btn btn-outline" id="pickerPlans" style="width:100%;">Посмотреть тарифы</button>
+    </div>`;
+  document.body.appendChild(ov);
+
+  ov.querySelectorAll('[data-pick-project]').forEach(el=>{
+    el.onclick = ()=> pickActiveProject(el.getAttribute('data-pick-project'),
+                                        el.querySelector('.picker-name').textContent);
+  });
+  const pl = document.getElementById('pickerPlans');
+  if(pl) pl.onclick = ()=>{ closeActiveProjectPicker(); openPlans(); };
+}
+
+async function pickActiveProject(id, name){
+  const msg = document.getElementById('pickerMsg');
+  if(!confirm('Работать в проекте «' + name + '»?\n\n' +
+              'Остальные проекты станут только для просмотра. ' +
+              'Изменить выбор потом будет нельзя.')) return;
+  if(msg){ msg.textContent = 'Сохраняем выбор…'; msg.className = 'picker-msg'; }
+
+  try{
+    const { error } = await sb.rpc('set_active_project', { p_project_id: id });
+    if(error) throw error;
+    await loadPlan();
+    closeActiveProjectPicker();
+    state.currentProjectId = id;
+    render();
+  }catch(e){
+    console.error('set_active_project failed', e);
+    const t = (e && e.message) || '';
+    // Отказы функции. Каждый означает своё, и общее «не получилось»
+    // тут не годится: человек должен понять, что делать дальше.
+    if(/ACTIVE_PROJECT_ALREADY_SET/.test(t)){
+      await loadPlan();
+      closeActiveProjectPicker();
+      const act = activeProject();
+      if(act) state.currentProjectId = act.id;
+      render();
+      showLimit('Рабочий проект уже был выбран.',
+                act ? 'Это «' + act.name + '». Открыли его.'
+                    : 'Открыли выбранный проект.');
+      return;
+    }
+    if(isAuthError(e) || /ACTIVE_PROJECT_NO_USER/.test(t)){ sessionLost(); return; }
+    if(msg){
+      msg.className = 'picker-msg err';
+      msg.textContent =
+        /ACTIVE_PROJECT_FOREIGN/.test(t) ? 'Это чужой проект — рабочим он быть не может.' :
+        /ACTIVE_PROJECT_NO_PROJECT/.test(t) ? 'Проект не найден. Обновите страницу.' :
+        'Не удалось сохранить выбор. Проверьте связь и попробуйте ещё раз.';
+    }
+  }
+}
 
 // Сколько проектов человека считать своими.
 //
@@ -4258,7 +4435,12 @@ function applyViewerMode(){
   const main = document.getElementById('main');
   const proj = (typeof currentProject === 'function') ? currentProject() : null;
   if(!main) return;
-  const ro = !!(proj && proj.myRole === 'viewer');
+  // Только чтение по двум причинам, и они разные:
+  //   1) чужой проект, где выдана роль «смотрит»;
+  //   2) свой проект, который на бесплатном тарифе не выбран рабочим.
+  // Второй случай обязан совпадать со сторожем в базе слово в слово,
+  // иначе поля будут выглядеть рабочими, а запись — отбиваться.
+  const ro = !!(proj && proj.myRole === 'viewer') || isFrozenProject(proj);
   main.classList.toggle('viewer-mode', ro);
   if(!ro) return;
 
@@ -5327,8 +5509,39 @@ async function persist(){
 
   const onFail = (e)=>{
     console.error('Save failed', e);
+
+    // ОДИН РАБОЧИЙ ПРОЕКТ НА БЕСПЛАТНОМ ТАРИФЕ.
+    // Разбирать ДО проверки на FREE_LIMIT: эти коды на FREE_LIMIT
+    // не похожи, и без своей ветки они провалились бы в общий разбор
+    // по номеру ошибки. Сторож поднимает check_violation (23514),
+    // а такого номера в HINTS нет — человек увидел бы невнятицу
+    // вместо объяснения, что делать.
+    const msg = (e && e.message) || '';
+    if(/FREE_ONE_PROJECT/.test(msg)){
+      setSync('error', 'не сохранено: нужен выбор рабочего проекта');
+      const notChosen = /FREE_ONE_PROJECT_NOT_CHOSEN/.test(msg);
+      // Правка не сохранена — местную копию откатываем чтением из облака,
+      // иначе на экране останется то, чего в базе нет.
+      loadPlan().then(()=> loadFromCloud()).then(()=>{
+        renderPlanBtn(); render();
+        if(notChosen){
+          // выбор ещё не сделан — показываем окно выбора
+          openActiveProjectPicker();
+        } else {
+          // пишут не в тот проект. Название выбранного сервер прислал
+          // в тексте после кода — но надёжнее взять из своих данных.
+          const act = activeProject();
+          showLimit('Этот проект — только для просмотра.',
+            'На бесплатном тарифе редактируется один проект' +
+            (act ? ' — сейчас это «' + act.name + '»' : '') +
+            '. Изменение не сохранено, ничего не потеряно.');
+        }
+      });
+      return;
+    }
+
     // сервер отклонил запись из-за лимита бесплатного тарифа
-    if(e && /FREE_LIMIT/.test(e.message || '')){
+    if(e && /FREE_LIMIT/.test(msg)){
       setSync('error', 'не сохранено: лимит тарифа');
       // Сторож в базе называет, КАКОЙ именно лимит упёрся: код вида
       // FREE_LIMIT_ROOMS идёт первым словом сообщения. Раньше на любой
@@ -9158,6 +9371,13 @@ function renderProjectView(proj){
     <div class="arch-note no-print">
       <span>Проект в архиве. Его нет в списке слева, но смета работает как обычно.</span>
       <button class="btn btn-outline" data-unarch="${proj.id}">Вернуть в список</button>
+    </div>` : ''}
+    ${isFrozenProject(proj) ? `
+    <div class="frozen-note no-print">
+      <span><b>Только просмотр.</b> На бесплатном тарифе редактируется один
+        проект${(()=>{ const a = activeProject(); return a ? ' — сейчас это «' + escapeHtml(a.name || 'без названия') + '»' : ''; })()}.
+        Смету можно открыть, посмотреть и распечатать. Ничего не удалено.</span>
+      <button class="btn btn-outline" data-go-plan="1">Тарифы</button>
     </div>` : ''}
     <div class="proj-header">
       <div>

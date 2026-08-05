@@ -7,7 +7,7 @@
    старый index.html из кэша.
    ============================================================ */
 
-const CACHE_VERSION = '2026-08-05-10';
+const CACHE_VERSION = '2026-08-05-11';
 
 const CACHE_APP = 'smeta-app-' + CACHE_VERSION;   // файлы приложения — своя версия у каждой сборки
 
