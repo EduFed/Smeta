@@ -2252,7 +2252,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-05-04';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-05-05';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -2565,11 +2565,22 @@ function refCfgName(c){
 // Для настроенной укладки собирает работу на лету — в каталоге её нет.
 function effWork(work, rw){
   if(!rw || !rw.cfg) return work;
+  // ЦЕНУ БЕРЁМ ИЗ СНИМКА, А НЕ СЧИТАЕМ ЗАНОВО.
+  // Калькулятор считает от ЛИЧНОЙ базовой ставки смотрящего. У владельца
+  // она своя, у мастера своя — и строка с настроенной укладкой выходила
+  // у каждого разная, мимо сохранённой цены и мимо доли.
+  // 5 августа: сохранено 3200, мастеру с долей 50 положено 1600,
+  // а он видел 4032 — свой расчёт вместо чужой цены.
+  // Считаем заново только когда снимка ещё нет: в момент, когда строку
+  // добавляют из калькулятора, — там цену взять больше неоткуда.
+  const snapPrice = rw._snap && rw._snap.price;
   return {
     id: (work && work.id) || REF_LAY_ID,
     name: refCfgName(rw.cfg),
     unit: 'm2',
-    price: refCfgCalc(rw.cfg).price,
+    price: (snapPrice === undefined || snapPrice === null)
+             ? refCfgCalc(rw.cfg).price
+             : snapPrice,
     appliesTo: refCfgApplies(rw.cfg),
     cfgLine: true
   };
@@ -2585,11 +2596,27 @@ function refCfgApply(){
   const r = p && (p.rooms||[]).find(x=>x.id===roomId);
   if(!r){ refCfgClose(); return; }
   r.works = r.works || [];
+
+  // Настройки поменяли — цену надо пересчитать и положить в снимок,
+  // иначе она застынет на прежней (показ теперь берёт цену оттуда).
+  // Но только тому, кто вправе менять цены: у мастера с долей на экране
+  // не настоящая цена, и его пересчёт затёр бы чужую.
+  const mayPrice = !isNaryad(p);
+  const freshSnap = ()=>({
+    name: refCfgName(cfg), unit: 'm2',
+    price: refCfgCalc(cfg).price,
+    appliesTo: refCfgApplies(cfg)
+  });
+
   if(lid){
     const rw = r.works.find(x=>x.lid===lid);
-    if(rw) rw.cfg = cfg;
+    if(rw){
+      rw.cfg = cfg;
+      if(mayPrice) rw._snap = freshSnap();
+    }
   } else {
-    r.works.push({ lid: uid('l'), workId: REF_LAY_ID, manualQty:'', cfg: cfg });
+    r.works.push({ lid: uid('l'), workId: REF_LAY_ID, manualQty:'', cfg: cfg,
+                   _snap: freshSnap() });
     uiWorkSearchRefocus = roomId;
   }
   refCfgClose();
@@ -5046,7 +5073,16 @@ const DB = {
     if(isRef){
       name  = (typeof refCfgName === 'function' && rw.cfg) ? refCfgName(rw.cfg) : 'Укладка плитки';
       unit  = 'm2';
-      price = (typeof refCfgCalc === 'function' && rw.cfg) ? num(refCfgCalc(rw.cfg).price) : null;
+      // Цена — из снимка строки, а не из калькулятора.
+      // Калькулятор считает от ЛИЧНОЙ базовой ставки того, кто сейчас
+      // за экраном. Пересчёт при каждом сохранении означал бы, что
+      // старая смета молча едет за прайсом владельца — ровно то,
+      // ради чего снимок и заведён. Снимок обновляется в refCfgApply,
+      // когда настройки укладки поменяли осознанно.
+      // Считаем заново только если снимка нет (строки до 5 августа 2026).
+      const snapP = rw._snap && rw._snap.price;
+      price = (snapP !== null && snapP !== undefined) ? num(snapP)
+            : ((typeof refCfgCalc === 'function' && rw.cfg) ? num(refCfgCalc(rw.cfg).price) : null);
       applies = DB.appliesFromCfg(rw.cfg);
     } else if(cat && !cat._ghost){
       name = cat.name; unit = cat.unit; price = num(cat.price);
