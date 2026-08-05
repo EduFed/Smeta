@@ -628,12 +628,6 @@
   .team-form input{flex:1;min-width:180px;}
   .team-add{background:var(--orange);color:#fff;border:0;border-radius:10px;padding:10px 16px;font-weight:600;cursor:pointer;}
   .team-note{font-size:13px;opacity:.7;line-height:1.45;margin-top:10px;}
-  /* подсказка про тариф «Прораб» — не блёклая, её должны заметить */
-  .team-note.team-note-sell{
-    opacity:1;margin-top:16px;padding:12px 14px;border-radius:10px;
-    background:color-mix(in srgb, var(--orange) 8%, transparent);
-    border:1px solid color-mix(in srgb, var(--orange) 30%, transparent);
-  }
 
   .cust-body{max-height:0;overflow:hidden;transition:max-height .3s ease;padding:0 20px;}
   .cust-acc.open .cust-body{max-height:2000px;padding:0 20px 20px;}
@@ -2274,7 +2268,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-05-07';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-05-08';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -4020,8 +4014,8 @@ function teamAccHtml(proj){
       </div>` : ''}
       ${canTouch && !canShare && m.share_pct != null ? `<div class="team-sub">
         <span>Его доля от сметы
-          <i>задана раньше и продолжает действовать. Менять её можно
-             на тарифе «Прораб»</i></span>
+          <i>задана раньше и продолжает действовать. Изменить её
+             на текущем тарифе нельзя — см. окно тарифов</i></span>
         <span class="team-share"><b>${escapeHtml(String(m.share_pct))}%</b></span>
       </div>` : ''}
       ${canTouch ? `<div class="team-sub">
@@ -4050,19 +4044,11 @@ function teamAccHtml(proj){
     const noList = t.canList ? '' :
       `<div class="team-note">список участников появится после обновления сервера</div>`;
 
-    // Подсказка про доли — только тому, кто уже собрал бригаду, но платит
-    // за «Бригаду». Показывать её на пустом списке бессмысленно: человек
-    // ещё не столкнулся с задачей и не поймёт, о чём речь.
-    const shareHint = (canInvite && !canShare && (t.members || []).length > 1) ? `
-      <div class="team-note team-note-sell">
-        <b>Мастера видят цены заказчика.</b><br>
-        Если вы нанимаете их и платите сами — на тарифе «Прораб» каждому
-        можно задать долю, и он увидит свою цену вместо вашей.
-        Ваша наценка не попадёт ни в один документ.
-        <div class="team-form">
-          <button type="button" class="team-add" data-go-prorab="1">Посмотреть тариф «Прораб»</button>
-        </div>
-      </div>` : '';
+    // Рекламы тарифа здесь нет намеренно (решено 5 августа 2026).
+    // Была подсказка «на „Прорабе“ можно задать долю» — убрана:
+    // человеку, который уже заплатил за «Бригаду», продавать внутри
+    // рабочего экрана незачем. Состав тарифов описан в окне тарифов,
+    // и одного места для этого достаточно.
 
     // Совместная работа — тариф «Бригада». На Pro и бесплатном приглашать
     // нельзя: это и есть то, чем «Бригада» отличается от Pro.
@@ -4114,7 +4100,7 @@ function teamAccHtml(proj){
         </button>
       </div>` : '';
 
-    body = noList + rows + invites + guard + form + shareHint;
+    body = noList + rows + invites + guard + form;
   }
 
   return `
@@ -10385,14 +10371,6 @@ function attachHandlers(){
     });
   });
 
-  // «Посмотреть тариф Прораб» — оттуда же, но повод другой
-  main.querySelectorAll('[data-go-prorab]').forEach(el=>{
-    el.addEventListener('click', ()=>{
-      showLimit('Доля мастера — в тарифе «Прораб».',
-                'Каждому мастеру можно задать свой процент. Он увидит свою цену, ' +
-                'а не цену заказчика, — ни на экране, ни в документах.');
-    });
-  });
 
   // доля мастера — только у владельца проекта
   main.querySelectorAll('[data-team-share]').forEach(el=>{
