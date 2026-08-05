@@ -628,6 +628,12 @@
   .team-form input{flex:1;min-width:180px;}
   .team-add{background:var(--orange);color:#fff;border:0;border-radius:10px;padding:10px 16px;font-weight:600;cursor:pointer;}
   .team-note{font-size:13px;opacity:.7;line-height:1.45;margin-top:10px;}
+  /* подсказка про тариф «Прораб» — не блёклая, её должны заметить */
+  .team-note.team-note-sell{
+    opacity:1;margin-top:16px;padding:12px 14px;border-radius:10px;
+    background:color-mix(in srgb, var(--orange) 8%, transparent);
+    border:1px solid color-mix(in srgb, var(--orange) 30%, transparent);
+  }
 
   .cust-body{max-height:0;overflow:hidden;transition:max-height .3s ease;padding:0 20px;}
   .cust-acc.open .cust-body{max-height:2000px;padding:0 20px 20px;}
@@ -1324,8 +1330,8 @@
     font-size:13px;color:var(--ink);line-height:1.5;
   }
 
-  .plan-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;}
-  @media (max-width:1100px){ .plan-grid{grid-template-columns:1fr 1fr;} }
+  .plan-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;}
+  @media (max-width:1400px){ .plan-grid{grid-template-columns:1fr 1fr;} }
   @media (max-width:640px){ .plan-grid{grid-template-columns:1fr;} }
   .plan-col{
     border:1px solid var(--paper-line);border-radius:var(--radius);
@@ -1857,7 +1863,7 @@
     "@type": "Offer",
     "price": "890",
     "priceCurrency": "RUB",
-    "description": "Полный доступ — 890 ₽ в месяц или 8900 ₽ в год. Тариф «Бригада» на пять мастеров — 1790 ₽ в месяц. Есть бесплатный тариф."
+    "description": "Полный доступ — 890 ₽ в месяц или 8900 ₽ в год. Тариф «Бригада» на пять мастеров — 1790 ₽ в месяц. Тариф «Прораб» на десять мастеров с нарядами — 2900 ₽ в месяц. Есть бесплатный тариф."
   }
 }
 </script>
@@ -2062,7 +2068,7 @@
     <div class="plan-modal-head">
       <div>
         <div class="plan-modal-title">Тарифы</div>
-        <div class="plan-modal-sub">Бесплатно, в одиночку или бригадой</div>
+        <div class="plan-modal-sub">Бесплатно, в одиночку, бригадой или с наёмными мастерами</div>
       </div>
       <button class="plan-close" id="planClose" aria-label="Закрыть">✕</button>
     </div>
@@ -2122,6 +2128,21 @@
         </ul>
         <button class="btn btn-outline" id="planTeamCta">Оформить «Бригаду»</button>
       </div>
+
+      <div class="plan-col" id="planColFore">
+        <div class="plan-name"><svg class="plan-logo" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><rect x="6" y="6" width="88" height="88" rx="18" fill="none" stroke="var(--ink-soft)" stroke-width="5"/><path d="M30 64 L30 42 L50 28 L70 42 L70 64" fill="none" stroke="var(--ink-soft)" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/><path d="M43 64 L43 51 L57 51 L57 64" fill="none" stroke="var(--ink-soft)" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/></svg>Прораб</div>
+        <div class="plan-price">2 900 ₽ <small>/ месяц</small></div>
+        <div class="plan-price-note">или 29 000 ₽ в год — два месяца в подарок<br>для тех, кто нанимает мастеров</div>
+        <ul class="plan-feats">
+          <li class="yes"><span class="ic"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>Всё из «Бригады»</span></li>
+          <li class="lim"><span class="ic">10</span><span>Десять мест: вы и ещё девять мастеров</span></li>
+          <li class="yes"><span class="ic"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span><b>Доля мастера в процентах</b> — каждый видит свою цену, а не цену заказчика</span></li>
+          <li class="yes"><span class="ic"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span><b>Наряд-задание</b> вместо сметы: документ исполнителю, а не заказчику</span></li>
+          <li class="yes"><span class="ic"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>Своя доля каждому: электрику одна, разнорабочему другая</span></li>
+          <li class="yes"><span class="ic"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>Ваша наценка не попадает ни в один документ — ни в PDF, ни в Excel</span></li>
+        </ul>
+        <button class="btn btn-outline" id="planForeCta">Оформить «Прораб»</button>
+      </div>
     </div>
 
     <div class="plan-lead" id="planLead" style="display:none;">
@@ -2138,6 +2159,7 @@
           <option value="pro_month">Полный доступ помесячно, 890 ₽</option>
           <option value="pro_year">Полный доступ на год, 8 900 ₽</option>
           <option value="team">«Бригада» — работаю не один</option>
+          <option value="prorab">«Прораб» — нанимаю мастеров и плачу им</option>
           <option value="expensive">Пока дороговато</option>
         </select>
       </div>
@@ -2252,7 +2274,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-05-05';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-05-06';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -3070,11 +3092,29 @@ async function loadPlan(){
   }
 }
 
-// Платные тарифы. В базе есть не только 'pro', но и 'brigada' — сравнение
-// с одной строкой отсекало владельца бригадного тарифа, и он видел
+// Платные тарифы. В базе есть не только 'pro', но и 'brigada' и 'prorab' —
+// сравнение с одной строкой отсекало владельца бригадного тарифа, и он видел
 // бесплатные правила в собственном проекте. Список держать в паре
 // с функцией effective_plan на сервере.
-const PAID_PLANS = ['pro', 'brigada'];
+//
+// ЛЮБОЙ НОВЫЙ ТАРИФ ДОБАВЛЯТЬ СЮДА ПЕРВЫМ ДЕЛОМ. Забыть — значит
+// показать человеку, который заплатил, бесплатные ограничения:
+// без экспорта, без раскладки, один проект. Ошибка тихая, жалоба громкая.
+const PAID_PLANS = ['pro', 'brigada', 'prorab'];
+
+// Тарифы, на которых можно приглашать людей в проект.
+// Отдельный список, а не сравнение с одной строкой: на сравнении
+// уже обожглись выше.
+const TEAM_PLANS = ['brigada', 'prorab'];
+
+// Тарифы, на которых можно задавать долю мастера (наряд).
+// Только «Прораб»: это и есть то, за что он платит вдвое больше «Бригады».
+const SHARE_PLANS = ['prorab'];
+
+// Человеческие названия тарифов — для меток и плашек.
+const PLAN_NAME = { free:'Бесплатный', pro:'Полный доступ',
+                    brigada:'Бригада', prorab:'Прораб' };
+const PLAN_TAG  = { pro:'PRO', brigada:'БРИГАДА', prorab:'ПРОРАБ' };
 
 // есть ли сейчас полный доступ (оплачен или идёт пробный период)?
 function isPro(){
@@ -3153,7 +3193,7 @@ function renderPlanBtn(){
     // один, и владелец «Бригады» не понимал, почему у него «Pro»,
     // а совместная работа при этом доступна.
     val.textContent = 'до ' + fmtDate(userPlan.plan_until);
-    tag.textContent = (userPlan.plan === 'brigada') ? 'БРИГАДА' : 'PRO';
+    tag.textContent = PLAN_TAG[userPlan.plan] || 'PRO';
     tag.className = 'plan-tag pro';
   } else if(days > 0){
     val.textContent = days + ' ' + plural(days, 'день', 'дня', 'дней') + ' — полный доступ';
@@ -3172,6 +3212,7 @@ function renderPlanModal(){
   const colFree = document.getElementById('planColFree');
   const colPro  = document.getElementById('planColPro');
   const colTeam = document.getElementById('planColTeam');
+  const colFore = document.getElementById('planColFore');
   const freeCta = document.getElementById('planFreeCta');
   const proCta  = document.getElementById('planProCta');
   if(!banner) return;
@@ -3179,27 +3220,34 @@ function renderPlanModal(){
   // форма заявки скрыта, пока не нажали «Оформить подписку»
   const lead = document.getElementById('planLead');
   const teamCta = document.getElementById('planTeamCta');
+  const foreCta = document.getElementById('planForeCta');
   if(lead && lead.style.display !== 'block'){
     proCta.style.display = '';
     if(teamCta) teamCta.style.display = '';
+    if(foreCta) foreCta.style.display = '';
   }
 
   const days = trialDaysLeft();
   colFree.classList.remove('current');
   colPro.classList.remove('current');
   if(colTeam) colTeam.classList.remove('current');
+  if(colFore) colFore.classList.remove('current');
 
-  // какой именно тариф оплачен — «Бригада» или обычный полный доступ
-  const onTeam = isPaid() && userPlan && userPlan.plan === 'brigada';
+  // какой именно тариф оплачен. Раньше здесь стояло сравнение с одной
+  // строкой, и любой тариф кроме «Бригады» назывался «Полный доступ» —
+  // включая тот, что дороже всех.
+  const paidPlan = isPaid() && userPlan ? userPlan.plan : null;
+  const paidCol  = { brigada: colTeam, prorab: colFore }[paidPlan] || colPro;
 
   if(isPaid()){
     banner.innerHTML = '<b>Активна подписка «' +
-                       (onTeam ? 'Бригада' : 'Полный доступ') + '»</b> до ' +
+                       (PLAN_NAME[paidPlan] || 'Полный доступ') + '»</b> до ' +
                        fmtDate(userPlan.plan_until) +
                        '. Спасибо, что поддерживаете проект.';
-    (onTeam && colTeam ? colTeam : colPro).classList.add('current');
+    (paidCol || colPro).classList.add('current');
     freeCta.textContent = 'Доступен всегда';
-    proCta.textContent = onTeam ? 'Перейти на «Полный доступ»' : 'Продлить подписку';
+    proCta.textContent = (paidPlan === 'pro') ? 'Продлить подписку'
+                                              : 'Перейти на «Полный доступ»';
   } else if(days > 0){
     banner.innerHTML = '<b>Идёт пробный период:</b> ' + days + ' ' +
                        plural(days, 'день', 'дня', 'дней') + ' полного доступа, до ' +
@@ -3251,6 +3299,14 @@ function startTeamCheckout(){
   openLeadForm('team');
 }
 
+// «Прораб» — туда же. Отдельная метка нужна, чтобы отличить спрос
+// на совместную работу от спроса на наряды: это разные покупатели,
+// и до запуска платежей других сведений о них не будет.
+function startForeCheckout(){
+  track('click_prorab');
+  openLeadForm('prorab');
+}
+
 function openLeadForm(preset){
   const lead = document.getElementById('planLead');
   if(!lead) return;
@@ -3259,8 +3315,10 @@ function openLeadForm(preset){
   lead.style.display = 'block';
   const proCta = document.getElementById('planProCta');
   const teamCta = document.getElementById('planTeamCta');
+  const foreCta = document.getElementById('planForeCta');
   if(proCta)  proCta.style.display = 'none';
   if(teamCta) teamCta.style.display = 'none';
+  if(foreCta) foreCta.style.display = 'none';
   lead.scrollIntoView({ block:'nearest', behavior:'smooth' });
 }
 
@@ -3919,6 +3977,15 @@ function teamAccHtml(proj){
   } else if(t.err){
     body = `<div class="team-note">не удалось загрузить: ${escapeHtml(t.err)}</div>`;
   } else {
+    // Долю мастера задаёт только «Прораб». На «Бригаде» её нет:
+    // там все работают над одной сметой и видят одни цены заказчика.
+    // Пробный период даёт полный доступ — значит и долю тоже,
+    // иначе главную функцию тарифа нельзя попробовать до покупки.
+    // ОБЪЯВЛЯТЬ ЗДЕСЬ, а не ниже рядом с canInvite: строки участников
+    // собираются прямо в этой строке кода, и переменная, объявленная
+    // после, к моменту сборки ещё не существует.
+    const canShare = owner && (SHARE_PLANS.includes(proj.ownerPlan) || trialDaysLeft() > 0);
+
     const rows = (t.members || []).map(m=>{
       const me = currentUser && m.user_id === currentUser.id;
       const canTouch = owner && m.role !== 'owner';
@@ -3935,7 +4002,7 @@ function teamAccHtml(proj){
           <button type="button" class="team-x" data-team-del="${proj.id}|${m.user_id}" title="Убрать из проекта">✕</button>
         </div>` : ''}
       </div>
-      ${canTouch ? `<div class="team-sub">
+      ${canTouch && canShare ? `<div class="team-sub">
         <span>Его доля от сметы
           <i>сколько процентов строки получает мастер. Пусто — цен не видит,
              100 — видит настоящие, как напарник</i></span>
@@ -3945,8 +4012,14 @@ function teamAccHtml(proj){
                  placeholder="—" data-team-share="${proj.id}|${m.user_id}">
           <i>%</i>
         </span>
-      </div>
-      <div class="team-sub">
+      </div>` : ''}
+      ${canTouch && !canShare && m.share_pct != null ? `<div class="team-sub">
+        <span>Его доля от сметы
+          <i>задана раньше и продолжает действовать. Менять её можно
+             на тарифе «Прораб»</i></span>
+        <span class="team-share"><b>${escapeHtml(String(m.share_pct))}%</b></span>
+      </div>` : ''}
+      ${canTouch ? `<div class="team-sub">
         <span>Скрыть от него данные заказчика</span>
         <button type="button" class="ref-toggle sm ${m.hide_personal?'on':''}"
                 data-team-pers="${proj.id}|${m.user_id}" role="switch"
@@ -3972,11 +4045,25 @@ function teamAccHtml(proj){
     const noList = t.canList ? '' :
       `<div class="team-note">список участников появится после обновления сервера</div>`;
 
+    // Подсказка про доли — только тому, кто уже собрал бригаду, но платит
+    // за «Бригаду». Показывать её на пустом списке бессмысленно: человек
+    // ещё не столкнулся с задачей и не поймёт, о чём речь.
+    const shareHint = (canInvite && !canShare && (t.members || []).length > 1) ? `
+      <div class="team-note team-note-sell">
+        <b>Мастера видят цены заказчика.</b><br>
+        Если вы нанимаете их и платите сами — на тарифе «Прораб» каждому
+        можно задать долю, и он увидит свою цену вместо вашей.
+        Ваша наценка не попадёт ни в один документ.
+        <div class="team-form">
+          <button type="button" class="team-add" data-go-prorab="1">Посмотреть тариф «Прораб»</button>
+        </div>
+      </div>` : '';
+
     // Совместная работа — тариф «Бригада». На Pro и бесплатном приглашать
     // нельзя: это и есть то, чем «Бригада» отличается от Pro.
     // Пробный период даёт полный доступ — значит и совместную работу тоже:
     // иначе главную функцию тарифа нельзя попробовать до покупки.
-    const canInvite = owner && (proj.ownerPlan === 'brigada' || trialDaysLeft() > 0);
+    const canInvite = owner && (TEAM_PLANS.includes(proj.ownerPlan) || trialDaysLeft() > 0);
 
     const form = owner ? (!canInvite ? `
       <div class="team-note">
@@ -4022,7 +4109,7 @@ function teamAccHtml(proj){
         </button>
       </div>` : '';
 
-    body = noList + rows + invites + guard + form;
+    body = noList + rows + invites + guard + form + shareHint;
   }
 
   return `
@@ -5897,6 +5984,7 @@ async function bootstrapLocal(){
   on('planClose', closePlans);
   on('planProCta', startCheckout);
   on('planTeamCta', startTeamCheckout);
+  on('planForeCta', startForeCheckout);
   on('leadSend', sendLead);
   const pOv = document.getElementById('planOverlay');
   if(pOv) pOv.onclick = (e)=>{ if(e.target.id === 'planOverlay') closePlans(); };
@@ -5995,6 +6083,8 @@ async function bootstrap(){
   document.getElementById('planProCta').onclick = startCheckout;
   const teamCtaBtn = document.getElementById('planTeamCta');
   if(teamCtaBtn) teamCtaBtn.onclick = startTeamCheckout;
+  const foreCtaBtn = document.getElementById('planForeCta');
+  if(foreCtaBtn) foreCtaBtn.onclick = startForeCheckout;
   document.getElementById('leadSend').onclick   = sendLead;
   document.getElementById('planOverlay').onclick = e=>{
     if(e.target.id === 'planOverlay') closePlans();   // клик по фону закрывает
@@ -10287,6 +10377,15 @@ function attachHandlers(){
     el.addEventListener('click', ()=>{
       showLimit('Совместная работа — в тарифе «Бригада».',
                 'Пять мест: вы и ещё четверо мастеров. Приглашённым подписка не нужна.');
+    });
+  });
+
+  // «Посмотреть тариф Прораб» — оттуда же, но повод другой
+  main.querySelectorAll('[data-go-prorab]').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      showLimit('Доля мастера — в тарифе «Прораб».',
+                'Каждому мастеру можно задать свой процент. Он увидит свою цену, ' +
+                'а не цену заказчика, — ни на экране, ни в документах.');
     });
   });
 
