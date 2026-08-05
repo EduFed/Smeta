@@ -2268,7 +2268,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-05-08';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-05-09';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -5399,7 +5399,7 @@ async function loadFromCloud(){
     applyBlob(local.data);
     renderPending();
     if(state.projects.length && !state.currentProjectId){
-      state.currentProjectId = state.projects[0].id;
+      state.currentProjectId = firstOpenableProjectId();
     }
     if(navigator.onLine){ await persist(); }
     else { setSync('error', 'офлайн — правки на устройстве'); syncOffline = true; }
@@ -5478,7 +5478,7 @@ async function loadFromCloud(){
     }
   }
   if(state.projects.length && !state.currentProjectId){
-    state.currentProjectId = state.projects[0].id;
+    state.currentProjectId = firstOpenableProjectId();
   }
   loadMyInvites();      // не ждём: плашка появится, когда сервер ответит
 }
@@ -5876,7 +5876,7 @@ async function afterLogin(){
       if(raw) userPlan = JSON.parse(raw);
     }catch(_){}
     if(state.projects.length && !state.currentProjectId){
-      state.currentProjectId = state.projects[0].id;
+      state.currentProjectId = firstOpenableProjectId();
     }
     // Пока идёт сверка с облаком, показываем осмысленный статус.
     // Раньше здесь оставался прочерк «—», и при мёртвом интернете
@@ -5994,7 +5994,7 @@ async function bootstrapLocal(){
   const cached = readLocal();
   if(cached && cached.data) applyBlob(cached.data);
   if(state.projects.length && !state.currentProjectId){
-    state.currentProjectId = state.projects[0].id;
+    state.currentProjectId = firstOpenableProjectId();
   }
 
   setSync('saved', 'локальный режим — без облака');
@@ -8182,6 +8182,24 @@ function currentProject(){
   return state.projects.find(p=>p.id===state.currentProjectId) || null;
 }
 
+// Какой проект открыть, когда открывать нечего: при запуске, после входа,
+// после загрузки из кэша.
+//
+// АРХИВНЫЕ ПРОПУСКАЕМ. Раньше здесь в четырёх местах стояло
+// state.projects[0].id — просто первый в списке. Если первым лежал
+// архивный проект, человек при каждом запуске и каждом обновлении
+// оказывался именно в нём: приложение открывалось на работе,
+// которую он сам убрал с глаз. Замечено владельцем 5 августа 2026.
+//
+// Если живых проектов нет вовсе — открываем архивный: пустой экран
+// хуже архивного проекта, и человек хотя бы видит свои данные.
+function firstOpenableProjectId(){
+  const list = state.projects || [];
+  if(!list.length) return null;
+  const live = list.find(p=>!p.archived);
+  return (live || list[0]).id;
+}
+
 // ---------- RENDER ----------
 function render(){
   renderSidebar();
@@ -9055,7 +9073,7 @@ function attachSidebarHandlers(){
       const id = el.getAttribute('data-del');
       if(confirm('Удалить проект без возможности восстановления?')){
         state.projects = state.projects.filter(p=>p.id!==id);
-        if(state.currentProjectId===id) state.currentProjectId = state.projects[0]?.id || null;
+        if(state.currentProjectId===id) state.currentProjectId = firstOpenableProjectId();
         scheduleSave(); render();
       }
     };
