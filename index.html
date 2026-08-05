@@ -605,22 +605,49 @@
   /* тянуть строки сметы мышью тоже нельзя */
   .viewer-mode [draggable]{ -webkit-user-drag:none; user-drag:none; }
 
-  /* Бригада: участники проекта */
-  .team-row{display:flex;align-items:center;gap:10px;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--paper-line);}
-  .team-who b{font-weight:600;}
+  /* Бригада: участники проекта.
+     Каждый человек — карточка. До 5 августа 2026 строки шли сплошным
+     списком, разделённые только тонкими линиями, и при двух мастерах
+     было не разобрать, к кому относится тумблер. */
+  .team-member{
+    border:1px solid var(--paper-line);border-radius:12px;
+    padding:12px 14px;margin-bottom:12px;
+    background:color-mix(in srgb, var(--ink) 2%, transparent);
+  }
+  .team-row{display:flex;align-items:center;gap:10px;justify-content:space-between;padding:0 0 2px;}
+  .team-who{min-width:0;}
+  .team-who b{font-weight:600;word-break:break-word;}
   .team-role{font-size:12px;opacity:.65;margin-top:2px;}
   .team-me,.team-wait{font-size:12px;opacity:.6;}
   .team-act{display:flex;align-items:center;gap:8px;flex:0 0 auto;}
-  /* строка «скрыть данные заказчика» — своя на каждого мастера */
-  .team-sub{display:flex;align-items:center;justify-content:space-between;gap:10px;
-            padding:0 0 10px 0;margin-top:-8px;border-bottom:1px solid var(--paper-line);}
-  .team-sub span{font-size:13px;color:var(--ink-soft, #6b6b6b);}
-  .team-sub span i{display:block;font-style:normal;font-size:11px;opacity:.75;margin-top:2px;}
+
+  /* настройка по одному мастеру: подпись слева, орган управления справа */
+  .team-sub{display:flex;align-items:center;justify-content:space-between;gap:14px;
+            padding:10px 0 0;margin-top:10px;border-top:1px solid var(--paper-line);}
+  .team-sub > span:first-child{font-size:13px;color:var(--ink-soft, #6b6b6b);min-width:0;}
+  .team-sub span i{display:block;font-style:normal;font-size:11px;opacity:.75;
+                   margin-top:3px;line-height:1.4;}
   .team-share{display:flex;align-items:center;gap:4px;flex:0 0 auto;}
-  .team-share input{width:56px;text-align:right;}
-  .team-sub .ref-toggle{width:40px;height:23px;border-radius:12px;}
+  .team-share input{width:64px;text-align:right;}
+  .team-sub .ref-toggle{width:40px;height:23px;border-radius:12px;flex:0 0 auto;}
   .team-sub .ref-toggle .ref-knob{width:17px;height:17px;}
   .team-sub .ref-toggle.on .ref-knob{transform:translateX(17px);}
+
+  /* На узком экране подпись и орган управления не помещаются рядом:
+     подпись сжимается в столбик по одному слову. Ставим друг под друга. */
+  @media (max-width:560px){
+    .team-row{flex-wrap:wrap;}
+    .team-act{width:100%;justify-content:flex-end;}
+    .team-sub{flex-direction:column;align-items:stretch;gap:8px;}
+    .team-share{align-self:flex-end;}
+    .team-sub .ref-toggle{align-self:flex-end;}
+  }
+
+  /* приглашения — тем же кирпичом, но без заливки: человека ещё нет */
+  .team-row.team-inv{
+    border:1px dashed var(--paper-line);border-radius:12px;
+    padding:12px 14px;margin-bottom:12px;
+  }
   .team-x{border:0;background:none;cursor:pointer;font-size:16px;opacity:.55;padding:4px 6px;}
   .team-x:hover{opacity:1;}
   .team-copy{border:1px solid var(--paper-line);background:none;border-radius:8px;padding:6px 10px;cursor:pointer;font-size:13px;}
@@ -2268,7 +2295,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-05-09';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-05-10';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -3354,6 +3381,19 @@ async function sendLead(){
 // Здесь — только для удобного интерфейса, реальная защита на сервере.
 const FREE_LIMITS = { projects: 1, rooms: 3, catalog: 10, materials: 5 };
 
+// Сколько проектов человека считать своими.
+//
+// ЧУЖИЕ НЕ СЧИТАЕМ. Правило совместной работы: за чужой проект платит
+// его владелец. Раньше считались все подряд, включая те, куда человека
+// пригласили, — и бесплатный мастер, которого позвали в один проект,
+// не мог создать даже свой первый: приложение считало предел выбранным.
+// Замечено 5 августа 2026.
+function myProjectsCount(){
+  return (state.projects || []).filter(p=>
+    !p.ownerId || !currentUser || p.ownerId === currentUser.id
+  ).length;
+}
+
 // проверка перед действием. true — можно; false — показали окно тарифов
 function allow(what){
   const p = currentProject();
@@ -3361,7 +3401,7 @@ function allow(what){
   // Помещения добавляются внутрь открытого проекта, а в чужом проекте
   // правила задаёт владелец — он и платит.
   if(what === 'room' ? isProAt(p) : isPro()) return true;
-  if(what === 'project' && state.projects.length >= FREE_LIMITS.projects){
+  if(what === 'project' && myProjectsCount() >= FREE_LIMITS.projects){
     showLimit('На бесплатном тарифе доступен один проект.',
               'Оформите подписку, чтобы вести несколько объектов одновременно.');
     return false;
@@ -3448,11 +3488,11 @@ function applyLocks(){
   };
 
   mark(document.getElementById('newProjectBtn'),
-       !pro && state.projects.length >= FREE_LIMITS.projects,
+       !pro && myProjectsCount() >= FREE_LIMITS.projects,
        '+ Новый проект');
 
   mark(document.getElementById('duplicateProject'),
-       !pro && state.projects.length >= FREE_LIMITS.projects,
+       !pro && myProjectsCount() >= FREE_LIMITS.projects,
        'Дублировать');
 
   mark(document.getElementById('addRoom'),
@@ -3988,7 +4028,12 @@ function teamAccHtml(proj){
     const rows = (t.members || []).map(m=>{
       const me = currentUser && m.user_id === currentUser.id;
       const canTouch = owner && m.role !== 'owner';
-      return `<div class="team-row">
+      // Каждый участник — отдельной карточкой. Раньше строка человека
+      // и его настройки были соседями на одном уровне, разделёнными
+      // только тонкими линиями: при двух-трёх мастерах всё сливалось
+      // в сплошную стену, и было не понять, чей тумблер чей.
+      return `<div class="team-member">
+      <div class="team-row">
         <div class="team-who">
           <b>${escapeHtml(m.email || 'участник')}</b>${me ? ' <span class="team-me">это вы</span>' : ''}
           <div class="team-role">${ROLE_NAME[m.role] || m.role}</div>
@@ -4026,7 +4071,8 @@ function teamAccHtml(proj){
                 title="${m.hide_personal?'Показать этому мастеру':'Скрыть от этого мастера'}">
           <span class="ref-knob"></span>
         </button>
-      </div>` : ''}`;
+      </div>` : ''}
+      </div>`;
     }).join('');
 
     const invites = (t.invites || []).map(i=>`
