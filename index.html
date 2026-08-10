@@ -2365,7 +2365,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-10-05';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-10-06';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -3647,7 +3647,7 @@ function allow(what){
               'В полном тарифе список не ограничен — заведите всё, что ставите.');
     return false;
   }
-  if(what === 'catalog' && state.catalog.length >= FREE_LIMITS.catalog){
+  if(what === 'catalog' && realCatalog().length >= FREE_LIMITS.catalog){
     showLimit('На бесплатном тарифе — до ' + FREE_LIMITS.catalog + ' позиций в каталоге.',
               'В подписке свой прайс-лист любого размера.');
     return false;
@@ -3731,7 +3731,7 @@ function applyLocks(){
        '+ Добавить помещение');
 
   mark(document.getElementById('addWork'),
-       !pro && state.catalog.length >= FREE_LIMITS.catalog,
+       !pro && realCatalog().length >= FREE_LIMITS.catalog,
        '+ Добавить вид работ');
 }
 let lastAuthUid = null;     // id последнего вошедшего — защита от повторного afterLogin
@@ -9827,7 +9827,11 @@ function renderRoomWorks(room){
     </div>`;
   }).join('');
   const selIds = new Set((room.works||[]).map(w=>w.workId));
-  const items = state.catalog.filter(w=>!selIds.has(w.id)).map(w=>
+  // Из НАСТОЯЩЕГО справочника: призрак — это позиция, которой в прайсе уже
+  // нет. Она держится в памяти ради старых смет, где на неё ссылаются,
+  // но предлагать её к добавлению в новую смету нельзя — человек удалил
+  // её осознанно, а в списке она выглядела бы как живая.
+  const items = realCatalog().filter(w=>!selIds.has(w.id)).map(w=>
     `<div class="wd-item" data-add-work-item="${room.id}|${w.id}" data-name="${escapeAttr((w.name||'').toLowerCase())}">${escapeHtml(w.name||'—')} <span class="wd-unit">${fmtMoney(w.price)}/${UNIT_LABEL[w.unit]}</span></div>`).join('');
   const refItems = refSearchItems(room);
   const q = uiWorkSearch[room.id] || '';
@@ -10193,8 +10197,25 @@ function appliesSummary(work){
   if(!at.length) return '—';
   return at.map(k=> (APPLIES_LABEL[k]||k)).join(', ');
 }
+// НАСТОЯЩИЙ СПРАВОЧНИК — без «призраков» (сборка 2026-08-10-06).
+// Призрак это позиция, которой в прайсе уже нет, но на неё ссылается строка
+// сметы: приложение подставляет её обратно из снимка внутри строки, чтобы
+// старая смета считалась и печаталась верно (см. addGhosts). Для расчёта
+// они нужны, а для справочника — нет: человек удалил позицию, а она
+// возвращалась при каждой перезагрузке страницы, и выглядело это как
+// «удаление не сохраняется». Замысел был именно такой — в addGhosts
+// написано «в справочнике работ она не показывается», — но фильтра
+// в показе не было.
+// Тем же счётом меряется и лимит бесплатного тарифа. Раньше призраки в него
+// попадали: удалив три позиции из десяти, человек оставался с полным
+// лимитом и заблокированной кнопкой, хотя сервер (он считает по своей
+// таблице, где призраков нет) добавить бы разрешил.
+function realCatalog(){
+  return (state.catalog || []).filter(w=> !w._ghost);
+}
+
 function renderCatalogView(){
-  const rows = state.catalog.map((w,i)=>{
+  const rows = realCatalog().map((w,i)=>{
     const at = appliesArr(w);
     const checks = APPLIES_OPTIONS.map(([k,l])=>`
       <label class="ap-item"><input type="checkbox" data-applies="${w.id}|${k}" ${at.includes(k)?'checked':''}><span>${escapeHtml(l)}</span></label>`).join('');
@@ -10227,7 +10248,7 @@ function renderCatalogView(){
       <div class="cat-head-top">
         <div>
           <div style="font-family:'Space Grotesk','Inter',sans-serif;font-size:28px;font-weight:700;">Виды работ</div>
-          <div class="proj-meta">справочник для расчёта смет · ${state.catalog.length} позиций</div>
+          <div class="proj-meta">справочник для расчёта смет · ${realCatalog().length} позиций</div>
         </div>
         <div class="header-actions">
           <button class="btn btn-outline" data-go="settings">← Настройки</button>
@@ -10467,9 +10488,19 @@ function attachHandlers(){
             .map(el=>el.getAttribute('data-drag-id'));
           const byId = new Map(state.catalog.map(w=>[w.id, w]));
           const next = rows.map(id=>byId.get(id)).filter(Boolean);
-          if(next.length === state.catalog.length){
-            const changed = next.some((w,i)=> w.id !== state.catalog[i].id);
-            if(changed){ state.catalog = next; scheduleSave(); render(); }
+          // Сравниваем с НАСТОЯЩИМ справочником, а не со всем state.catalog:
+          // с 2026-08-10-06 призраки в таблице не показываются, и в разметке
+          // их нет. Со сравнением по полной длине условие переставало
+          // выполняться при первом же призраке, и порядок молча не
+          // сохранялся бы — поломка тихая, заметная не сразу.
+          // Призраков дописываем в конец: порядок у них никакой роли
+          // не играет, но терять их нельзя — на них держится расчёт
+          // старых смет.
+          const real = realCatalog();
+          const ghosts = (state.catalog || []).filter(w=> w._ghost);
+          if(next.length === real.length){
+            const changed = next.some((w,i)=> w.id !== real[i].id);
+            if(changed){ state.catalog = next.concat(ghosts); scheduleSave(); render(); }
           }
           dragId = null;
         };
