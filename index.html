@@ -2365,7 +2365,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-10-06';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-10-07';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -5824,10 +5824,19 @@ async function loadFromCloud(){
     const job = DB.loadAll();
 
     const apply = (rows)=>{
+      // ПУСТО — НЕ ЗНАЧИТ «НОВЫЙ АККАУНТ» (уточнено 2026-08-10-06).
+      // Раньше признаком новизны считалась пустота ответа, и стартовый набор
+      // выдавался всякий раз, когда её видели. Но пустота бывает двух родов:
+      // человек ещё ничего не завёл — или человек всё СТЁР. Второе выглядит
+      // точно так же, и стартовые работы возвращались к тому, кто удалил их
+      // осознанно, чтобы завести свои.
+      // Отличаем по отметке: один раз выдали — записали в настройки, и больше
+      // не выдаём никогда. Отметка уезжает на сервер, поэтому переживает
+      // и смену устройства, и чистку кэша.
+      const seeded = !!(rows.settings && rows.settings.ui && rows.settings.ui.seeded);
       const empty = !rows.projects.length && !rows.catalog.length &&
                     !rows.materials.length && !rows.executor && !rows.settings;
-      if(empty){
-        // аккаунт совсем новый: выдаём стартовый каталог, как раньше делал applyBlob(null)
+      if(empty && !seeded){
         applyBlob(null);
       } else {
         DB.applyRows(rows);
@@ -5838,6 +5847,15 @@ async function loadFromCloud(){
       saveLocal({ projects: state.projects, catalog: state.catalog, executor: state.executor, ref: state.ref, ui: state.ui, materials: state.materials }, false);
       syncOffline = false;
       setSync('saved', 'синхронизировано');
+
+      // Отметку ставим ПОСЛЕ снятия слепка — тогда разница увидит её и
+      // отправит на сервер одной строкой настроек. Сам стартовый каталог
+      // при этом не уедет: в слепке он уже есть, изменением не считается.
+      if(empty && !seeded){
+        state.ui = state.ui || {};
+        state.ui.seeded = new Date().toISOString();
+        scheduleSave();
+      }
     };
 
     const quick = await Promise.race([ job, timeoutMark(NET_TIMEOUT_MS) ]);
