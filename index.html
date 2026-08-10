@@ -2324,7 +2324,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-05-11';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-10-01';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -3453,9 +3453,22 @@ function isFrozenProject(proj){
 // а поменять её будет нельзя. Пустой выбор — законное состояние.
 let uiPickerOpen = false;
 
+// ОТКРЫВАТЬ САМО, А НЕ ПО ОТКАЗУ СЕРВЕРА.
+// 10 августа 2026 поймано на планшете: пока окно открывалось только
+// из onFail, получался замкнутый круг. Выбор не сделан — значит ВСЕ
+// свои проекты помечены «только просмотр», поля заперты, изменить
+// нечего, сохранение не уходит, сервер не отказывает, окна нет.
+// Человек видел запертое приложение без единого выхода.
+function needActiveProjectPick(){
+  if(!currentUser) return false;
+  if(activeProjectId()) return false;   // выбор уже сделан
+  if(isPro()) return false;             // платный или пробный — не наше дело
+  return myProjectsCount() > 1;         // один проект — выбирать нечего
+}
+
 function openActiveProjectPicker(){
   if(uiPickerOpen) return;
-  if(activeProjectId()) return;        // выбор уже сделан
+  if(!needActiveProjectPick()) return;
   uiPickerOpen = true;
   renderActiveProjectPicker();
 }
@@ -8462,6 +8475,11 @@ function firstOpenableProjectId(){
 // ---------- RENDER ----------
 function render(){
   renderSidebar();
+  // Выбор рабочего проекта не сделан, а проектов несколько — спрашиваем
+  // сразу. Ждать неудачной правки нельзя: правки заперты до выбора,
+  // и человек оказался бы в приложении без выхода (поймано 10 августа).
+  // Функция сама проверит, надо ли, и не откроется дважды.
+  openActiveProjectPicker();
   const main = document.getElementById('main');
   // страховка: бесплатного не пускаем в режим плитки, даже если view успел
   // стать 'tiles' в обход кнопки (сохранённое состояние, старая вкладка)
@@ -9372,13 +9390,19 @@ function renderProjectView(proj){
       <span>Проект в архиве. Его нет в списке слева, но смета работает как обычно.</span>
       <button class="btn btn-outline" data-unarch="${proj.id}">Вернуть в список</button>
     </div>` : ''}
-    ${isFrozenProject(proj) ? `
+    ${isFrozenProject(proj) ? (activeProjectId() ? `
     <div class="frozen-note no-print">
       <span><b>Только просмотр.</b> На бесплатном тарифе редактируется один
         проект${(()=>{ const a = activeProject(); return a ? ' — сейчас это «' + escapeHtml(a.name || 'без названия') + '»' : ''; })()}.
         Смету можно открыть, посмотреть и распечатать. Ничего не удалено.</span>
       <button class="btn btn-outline" data-go-plan="1">Тарифы</button>
-    </div>` : ''}
+    </div>` : `
+    <div class="frozen-note no-print">
+      <span><b>Рабочий проект не выбран.</b> На бесплатном тарифе
+        редактируется один проект — выберите, какой. Остальные останутся
+        для просмотра, ничего не удалится.</span>
+      <button class="btn btn-primary" data-pick-open="1">Выбрать проект</button>
+    </div>`) : ''}
     <div class="proj-header">
       <div>
         <input class="proj-title-input" id="projName" value="${escapeAttr(proj.name)}" placeholder="Название проекта">
@@ -10645,6 +10669,11 @@ function attachHandlers(){
       }
       catch(e){ alert((e && e.message) || 'Не удалось изменить роль.'); }
     });
+  });
+
+  // «Выбрать проект» с плашки — запасной выход, если окно закрыли
+  main.querySelectorAll('[data-pick-open]').forEach(el=>{
+    el.addEventListener('click', ()=>{ uiPickerOpen = false; openActiveProjectPicker(); });
   });
 
   // «Посмотреть тариф Бригада» из блока бригады
