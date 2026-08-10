@@ -2365,7 +2365,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-10-04';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-10-05';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -3820,6 +3820,39 @@ function saveLocal(payload, dirty, quiet){
   if(!quiet) renderPending();
 }
 
+// СЛЕПОК СЕРВЕРА НА УСТРОЙСТВЕ (сборка 2026-08-10-05).
+// Приложение отправляет не состояние целиком, а разницу с тем, что лежит
+// на сервере. Слепок сервера жил только в памяти — и при сворачивании
+// приложения телефон выгружал страницу вместе с ним. При возврате
+// в saveDiff подставлялась пустышка «на сервере нет ничего», и разница
+// получалась однобокой: всё видимое отправлялось заново, а СПИСОК
+// НА УДАЛЕНИЕ уходил пустым — вычитать было не из чего.
+// Так удалённые виды работ возвращались: на сервере их никто не удалял.
+// Держим слепок отдельным ключом, а не внутри копии данных: копия
+// пишется перед каждой отправкой, а слепок меняется только по факту
+// успеха — их время жизни разное.
+function snapKey(){ return currentUser ? ('smeta-srv-' + CACHE_FORMAT + '-' + currentUser.id) : null; }
+
+function saveServerSnap(){
+  const k = snapKey();
+  if(!k) return;
+  try{
+    if(serverSnap) localStorage.setItem(k, JSON.stringify(serverSnap));
+    else localStorage.removeItem(k);
+  }catch(e){
+    // Место кончилось. Не беда: без слепка приложение работает как раньше,
+    // просто досылка после перезагрузки снова не сможет выразить удаление.
+    console.warn('Слепок сервера не сохранён', e);
+  }
+}
+
+function readServerSnap(){
+  const k = snapKey();
+  if(!k) return null;
+  try{ return JSON.parse(localStorage.getItem(k) || 'null'); }
+  catch(e){ return null; }
+}
+
 // Снять с местной копии пометку «не отправлено», не трогая сами данные.
 // Нужно там, где сервер отказал ОКОНЧАТЕЛЬНО (лимит тарифа, чужой рабочий
 // проект): досылать такую правку бессмысленно, её надо откатить чтением
@@ -3960,6 +3993,9 @@ async function conflictTakeCloud(){
   conflictPayload = null;
   cloudBase = null;
   serverSnap = null;      // перечитаем таблицы начисто
+  saveServerSnap();       // и слепок с устройства убираем вместе с копией:
+                          // свои правки отброшены, старая разница больше
+                          // ни к чему не относится
   await loadFromCloud();
   renderPending();
   render();
@@ -5246,6 +5282,8 @@ const DB = {
     }
 
     serverSnap = cur;      // всё прошло — этот слепок теперь и есть сервер
+    saveServerSnap();      // и на устройство: без него досылка после
+                           // перезагрузки не сможет выразить удаление
   },
 
   // ---------- БРИГАДА: участники и приглашения ----------
@@ -5752,6 +5790,19 @@ async function loadFromCloud(){
   // берём их и пробуем дослать
   if(local && local.dirty){
     cloudBase = local.base || null;
+    // ВОССТАНОВИТЬ СЛЕПОК СЕРВЕРА ДО ДОСЫЛКИ (сборка 2026-08-10-05).
+    // Сюда приходят после перезагрузки страницы — например, когда телефон
+    // выгрузил свёрнутое приложение. В памяти слепка уже нет, а saveDiff
+    // без него считает, что на сервере пусто, и не отправляет НИ ОДНОГО
+    // удаления: удалённые строки остаются в базе и возвращаются на экран
+    // при следующем чтении. Берём слепок с устройства — тот, что
+    // соответствовал серверу на момент последней удачной синхронизации.
+    // Не нашли — досылать разницу нельзя: молча отправить «всё как есть»
+    // значит потерять удаление и обмануть человека видом «сохранено».
+    if(!serverSnap){
+      const srv = readServerSnap();
+      if(srv) serverSnap = srv;
+    }
     applyBlob(local.data);
     renderPending();
     if(state.projects.length && !state.currentProjectId){
@@ -5782,6 +5833,7 @@ async function loadFromCloud(){
         DB.applyRows(rows);
       }
       serverSnap = DB.snapshot();
+      saveServerSnap();
       cloudBase = new Date().toISOString();
       saveLocal({ projects: state.projects, catalog: state.catalog, executor: state.executor, ref: state.ref, ui: state.ui, materials: state.materials }, false);
       syncOffline = false;
@@ -6176,6 +6228,11 @@ async function doSignOut(){
   // запомненный тариф больше не нужен: без сети войти нельзя,
   // а при следующем входе он загрузится из базы заново
   try{ if(currentUser) localStorage.removeItem('plan-cache:' + currentUser.id); }catch(_){}
+  // Слепок сервера — тоже. Это копия чужих в будущем данных: на общем
+  // телефоне она не должна пережить выход. Копию правок (smeta-cache-…)
+  // намеренно НЕ трогаем: в ней могут лежать неотправленные изменения,
+  // и они дождутся следующего входа тем же человеком.
+  try{ serverSnap = null; saveServerSnap(); }catch(_){}
   // Выход отзывает токен через интернет. При «висящей» сети этот запрос
   // застревал — кнопка «Выйти» не срабатывала. Ждём не дольше 5 секунд,
   // дальше выходим сами: вручную стираем сессию с устройства, чтобы на
