@@ -1910,10 +1910,31 @@
   .pm-actions select{padding:8px 10px;border:1px solid var(--paper-line);border-radius:7px;
     background:var(--white);color:var(--ink);font-size:14px;min-width:280px;max-width:100%;}
   @media (max-width:760px){
+    /* КАЖДЫЙ МАТЕРИАЛ — ОТДЕЛЬНОЙ КАРТОЧКОЙ (сборка 2026-08-10-10).
+       На телефоне строка разворачивается в три ряда полей, а между
+       соседними материалами было шесть пикселей пустоты — ни рамки,
+       ни фона. Где кончился один и начался другой, приходилось
+       угадывать по смыслу, а поля сливались в сплошную стену.
+       Тот же приём уже применён к участникам бригады и к дополнительным
+       работам, и по той же причине: «строка человека и его настройки
+       были соседями на одном уровне, при двух-трёх мастерах всё
+       сливалось». Здесь просто доделано до конца. */
+    .mat-row, .pm-row{
+      padding:10px;
+      border:1px solid var(--paper-line);
+      border-radius:var(--radius);
+      background:var(--paper);
+      margin-bottom:10px;
+      row-gap:8px;
+    }
     .mat-row{grid-template-columns:1fr 90px 34px;
              grid-template-areas:"name name del" "unit cat cat" "price price price";}
     .mat-row .mat-price{grid-area:price;}
     .mat-row .mat-name{grid-area:name;} .mat-row .mat-unit{grid-area:unit;} .mat-row .mat-cat{grid-area:cat;}
+    /* Поля внутри карточки — на белом, иначе они сливаются с её подложкой
+       и перестают читаться как места для ввода. */
+    .mat-row input, .mat-row select,
+    .pm-row input, .pm-row select{background:var(--white);}
     .pm-head{display:none;}
     .pm-row{grid-template-columns:1fr 84px 34px;
             grid-template-areas:"name name del" "qty unit unit" "price price price" "note note note";}
@@ -2376,7 +2397,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-10-09';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-10-10';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -6681,7 +6702,37 @@ async function bootstrap(){
 // ---------- CALCULATIONS ----------
 // какие аккордеоны "Виды работ" раскрыты (по помещению), в пределах сессии
 const uiWorksOpen = {};
-const uiRoomCollapsed = {};   // свёрнутые карточки помещений (по id), в пределах сессии
+
+// СВЁРНУТЫЕ ПОМЕЩЕНИЯ ПЕРЕЖИВАЮТ ЗАКРЫТИЕ ПРИЛОЖЕНИЯ (сборка 2026-08-10-10).
+// Раньше жили в памяти вкладки и терялись, как только телефон выгружал
+// свёрнутое приложение: человек аккуратно сворачивал всё, кроме нужного,
+// отвечал на звонок — и возвращался к полностью развёрнутому списку.
+// Храним на устройстве, а не в базе: это привычка на конкретном экране.
+// На телефоне сворачивают, чтобы не листать, за компьютером — нет,
+// и синхронизировать это между устройствами скорее вредно.
+// Ключ общий, без привязки к аккаунту: номера помещений уникальны,
+// перепутать их между двумя учётными записями нельзя.
+const UI_COLLAPSED_KEY = 'smeta-ui-collapsed';
+
+function readCollapsed(){
+  try{
+    const v = JSON.parse(localStorage.getItem(UI_COLLAPSED_KEY) || '{}');
+    return (v && typeof v === 'object') ? v : {};
+  }catch(e){ return {}; }
+}
+
+// Храним ТОЛЬКО свёрнутые. Развёрнутое — это обычное состояние, его
+// записывать незачем, а иначе объект растёт с каждым помещением,
+// которое человек когда-либо открывал, и не уменьшается никогда.
+function saveCollapsed(){
+  try{
+    const only = {};
+    Object.keys(uiRoomCollapsed).forEach(k=>{ if(uiRoomCollapsed[k] === true) only[k] = true; });
+    localStorage.setItem(UI_COLLAPSED_KEY, JSON.stringify(only));
+  }catch(e){ /* место кончилось — не беда, вернёмся к прежнему поведению */ }
+}
+
+const uiRoomCollapsed = readCollapsed();   // свёрнутые карточки помещений, по id
 const uiWorkSearch = {};      // текст поиска по помещению
 let uiWorkSearchRefocus = null; // вернуть фокус после render
 const uiCustomerOpen = {};
@@ -10678,6 +10729,7 @@ function attachHandlers(){
       const body = card.querySelector('.room-body');
       const collapse = !card.classList.contains('collapsed');
       uiRoomCollapsed[id] = collapse;
+      saveCollapsed();
       el.setAttribute('aria-expanded', !collapse);
       el.title = (collapse ? 'Развернуть' : 'Свернуть') + ' помещение';
       const brief = card.querySelector(`[data-room-brief="${id}"]`);
