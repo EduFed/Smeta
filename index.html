@@ -2435,7 +2435,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-10-13';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-10-14';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -3685,6 +3685,7 @@ async function pickActiveProject(id, name){
     await loadPlan();
     closeActiveProjectPicker();
     state.currentProjectId = id;
+    rememberProject(id);
     render();
   }catch(e){
     console.error('set_active_project failed', e);
@@ -4474,24 +4475,25 @@ function teamAccHtml(proj){
           <div class="team-role">${memberModeName(m)}</div>
         </div>
         ${canTouch ? `<div class="team-act">
-          ${(m.share_pct != null && m.share_pct < 100)
-            // РАБОТАЕТ ПО НАРЯДУ — ВЫБОРА РОЛИ НЕТ (с 2026-08-10-13).
-            // Пока у человека задана доля, он получает наряд: свои работы
-            // по своей цене, смета не его документ. Правка ему всё равно
-            // не пройдёт — база отбивает её правилом доступа. Раньше здесь
-            // стоял обычный выбор «правит / смотрит», и «правит» обещало
-            // то, чего не бывает: поля открывались, суммы пересчитывались
-            // на экране, а запись отбивалась. Приписка про недействующую
-            // роль это объясняла, но объяснять невозможный выбор — плохая
-            // замена тому, чтобы его не предлагать.
-            // Способ работы, а не звание: сегодня человек взял кусок
-            // на подряд, завтра работает наравне — метку менять не надо,
-            // достаточно убрать долю.
-            ? `<span class="team-mode" title="Смета — ваш документ с заказчиком. Мастер, меняя в ней объёмы, двигал бы ваши деньги, видя только свою долю цены. Уберите долю — сможет работать наравне.">работает по наряду</span>`
-            : `<select data-team-role="${proj.id}|${m.user_id}">
-                 <option value="editor" ${m.role==='editor'?'selected':''}>работает вместе</option>
-                 <option value="viewer" ${m.role==='viewer'?'selected':''}>только смотрит</option>
-               </select>`}
+          ${/* СПОСОБ РАБОТЫ — ОДИН ВЫБОР ИЗ ТРЁХ (с 2026-08-10-14).
+                Сначала (в -13) «работает по наряду» было неизменяемой
+                подписью: раз доля задана, выбирать нечего. Замысел
+                не считался — владелец прочёл её как сломанную кнопку
+                и попытался нажать. Значит объяснять было нечего, надо
+                было дать управление.
+                Теперь это обычный выбор, и он же задаёт долю: наряд
+                без доли невозможен, а доля при совместной работе
+                бессмысленна. Раньше роль и доля были двумя независимыми
+                настройками, и их можно было сочетать бессмысленно —
+                «правит» у человека, которому база не даст править.
+                Долю при выборе наряда НЕ проставляю сам: это деньги.
+                Пока она пуста, мастер цен не видит вовсе — молчание
+                закрывает, а не открывает. */''}
+          <select data-team-mode="${proj.id}|${m.user_id}">
+            <option value="together" ${(m.role==='editor' && !(m.share_pct != null && m.share_pct < 100))?'selected':''}>работает вместе</option>
+            <option value="naryad"   ${(m.share_pct != null && m.share_pct < 100)?'selected':''}>работает по наряду</option>
+            <option value="watch"    ${(m.role==='viewer' && !(m.share_pct != null && m.share_pct < 100))?'selected':''}>только смотрит</option>
+          </select>
           <button type="button" class="team-x" data-team-del="${proj.id}|${m.user_id}" title="Убрать из проекта">✕</button>
         </div>` : ''}
       </div>
@@ -8880,9 +8882,42 @@ function currentProject(){
 //
 // Если живых проектов нет вовсе — открываем архивный: пустой экран
 // хуже архивного проекта, и человек хотя бы видит свои данные.
+// КАКОЙ ПРОЕКТ ОТКРЫТЬ ПРИ ЗАПУСКЕ (уточнено 2026-08-10-14).
+// Раньше открывался просто первый неархивный из того порядка, в котором
+// проекты вернул сервер. Человека, работавшего в «Каспийской», при каждом
+// обновлении приложения бросало в другой объект — и на телефоне, где
+// приложение выгружается по десять раз на дню, это происходило постоянно.
+// Теперь помним последний открытый. На устройстве, а не в базе: с телефона
+// на объекте и с компьютера дома работают в разных проектах, и общая
+// настройка мешала бы обоим. Ключ привязан к человеку — на одном
+// устройстве могут входить двое.
+function lastProjectKey(){
+  return currentUser ? ('smeta-last-project-' + currentUser.id) : null;
+}
+
+function rememberProject(id){
+  const k = lastProjectKey();
+  if(!k) return;
+  try{
+    if(id) localStorage.setItem(k, id);
+    else localStorage.removeItem(k);
+  }catch(e){ /* место кончилось — вернёмся к прежнему поведению */ }
+}
+
 function firstOpenableProjectId(){
   const list = state.projects || [];
   if(!list.length) return null;
+  // Запомненный годится, только если он ещё существует и не в архиве:
+  // проект могли удалить, убрать в архив или отобрать доступ, и тогда
+  // приложение открылось бы в пустоту.
+  try{
+    const k = lastProjectKey();
+    const saved = k ? localStorage.getItem(k) : null;
+    if(saved){
+      const p = list.find(x=> x.id === saved && !x.archived);
+      if(p) return p.id;
+    }
+  }catch(e){}
   const live = list.find(p=>!p.archived);
   return (live || list[0]).id;
 }
@@ -9877,6 +9912,7 @@ function attachSidebarHandlers(){
         return;
       }
       state.currentProjectId = pid;
+      rememberProject(pid);          // вернёмся сюда после перезапуска
       state.view = 'project';
       render();
     };
@@ -11295,15 +11331,37 @@ function attachHandlers(){
       }catch(e){ alert((e && e.message) || 'Не удалось выйти.'); }
     });
   });
-  main.querySelectorAll('[data-team-role]').forEach(el=>{
+  // Способ работы: одна настройка вместо двух независимых.
+  // «Вместе» — правит смету, доли нет. «По наряду» — не правит, доля
+  // задаётся отдельным полем (сам её не проставляю: это деньги).
+  // «Только смотрит» — не правит, доли нет.
+  main.querySelectorAll('[data-team-mode]').forEach(el=>{
     el.addEventListener('change', async ()=>{
-      const [pid, uidv] = el.getAttribute('data-team-role').split('|');
+      const [pid, uidv] = el.getAttribute('data-team-mode').split('|');
+      const mode = el.value;
       try{
-        await DB.setRole(pid, uidv, el.value);
-        await DB.touchProject(pid);   // смена роли должна дойти до мастера сразу
+        await DB.setRole(pid, uidv, mode === 'together' ? 'editor' : 'viewer');
+        // Уходим с наряда — доля снимается: иначе человек остался бы
+        // с чужой ценой на экране при совместной работе.
+        // Переходим на наряд — долю не трогаем. Была задана раньше:
+        // продолжает действовать. Не была: мастер цен не видит, пока
+        // прораб не назначит долю осознанно.
+        if(mode !== 'naryad'){
+          const t = teamCache[pid];
+          const m = ((t && t.members) || []).find(x=> x.user_id === uidv);
+          if(m && m.share_pct != null) await DB.setMemberShare(pid, uidv, '');
+        }
+        await DB.touchProject(pid);   // смена должна дойти до мастера сразу
         await teamLoad(pid);
+        if(mode === 'naryad'){
+          const t = teamCache[pid];
+          const m = ((t && t.members) || []).find(x=> x.user_id === uidv);
+          if(!m || m.share_pct == null){
+            toast('Укажите долю мастера — без неё он не увидит цен');
+          }
+        }
       }
-      catch(e){ alert((e && e.message) || 'Не удалось изменить роль.'); }
+      catch(e){ alert((e && e.message) || 'Не удалось изменить.'); }
     });
   });
 
