@@ -539,11 +539,17 @@
      Не назначено — бледная надпись «назначить», чтобы не спорила
      за внимание с ценой и количеством. Назначено — имя цветом акцента:
      прораб должен видеть розданное с одного взгляда, не вчитываясь. */
+  /* Метка исполнителя. Подпись не режется по символам — ограничена
+     шириной и переносится на вторую строку, если не влезла (2026-08-10-39).
+     Больше двух строк не даём: строка сметы вырастет и раскладка
+     помещения расползётся. */
   .sel-work-assign{
     background:none;border:1px dashed var(--paper-line);border-radius:7px;
-    padding:3px 8px;font-family:inherit;font-size:11px;line-height:1.4;
-    color:var(--ink-soft);cursor:pointer;white-space:nowrap;max-width:120px;
-    overflow:hidden;text-overflow:ellipsis;
+    padding:3px 8px;font-family:inherit;font-size:11px;line-height:1.35;
+    color:var(--ink-soft);cursor:pointer;text-align:left;
+    max-width:150px;white-space:normal;overflow-wrap:break-word;
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;
+    overflow:hidden;
   }
   .sel-work-assign:hover{border-color:var(--orange);color:var(--ink);}
   /* Назначено — плашка с ЗАЛИВКОЙ, а не рамка (уточнено 2026-08-10-37).
@@ -580,7 +586,7 @@
     display:inline-block;max-width:100%;padding:3px 9px;border-radius:6px;
     background:var(--who, var(--orange));color:#fff;
     font-size:12px;font-weight:600;line-height:1.4;
-    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+    white-space:normal;overflow-wrap:break-word;
   }
   [data-theme="dark"] .who-chip{
     background:color-mix(in srgb, var(--who, var(--orange)) 28%, var(--white));
@@ -2631,7 +2637,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-10-38';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-10-39';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -4708,13 +4714,22 @@ function whoColor(proj, userId){
   return WHO_COLORS[(i < 0 ? 0 : i) % WHO_COLORS.length];
 }
 
-// Для метки на строке сметы: подпись показываем целиком (её писал
-// человек и делал короткой), а почту режем до собачки.
+// Для метки на строке сметы.
+//
+// ПОДПИСЬ НЕ РЕЖЕМ ВОВСЕ (уточнено 2026-08-10-39). Сначала обрезали
+// на пятнадцатом знаке, и «Серёга плиточник» превращался в «Серёга
+// плиточн…» — приложение спорило с человеком, который сам придумал
+// эту подпись и сам сделал её короткой. Длину он и так ограничен
+// полем ввода: шестьдесят знаков.
+// Место ограничиваем шириной, а не числом символов: влезло — влезло,
+// не влезло — перенеслось на вторую строку (см. .sel-work-assign).
+// Почту режем до собачки: это не имя, а адрес, и в нём важно начало.
+// Хвост «@mail.ru» у трёх мастеров одинаковый и различать не помогает.
 function shortWho(sOrLabel){
   const v = String(sOrLabel || '');
-  if(v.indexOf('@') < 0) return v.length > 16 ? v.slice(0, 15) + '…' : v;
+  if(v.indexOf('@') < 0) return v;
   const head = v.slice(0, v.indexOf('@'));
-  return head.length > 12 ? head.slice(0, 11) + '…' : head;
+  return head.length > 14 ? head.slice(0, 13) + '…' : head;
 }
 
 function inviteLink(token){
