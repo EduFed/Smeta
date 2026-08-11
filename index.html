@@ -514,6 +514,11 @@
     background:var(--orange-soft);color:var(--orange);font-weight:600;
   }
   .am-note{padding:8px 10px 6px;font-size:11px;color:var(--ink-soft);line-height:1.45;}
+  /* Строка выбора: подпись сверху, почта под ней мелким */
+  .am-who{display:flex;flex-direction:column;gap:1px;text-align:left;min-width:0;}
+  .am-who b{font-weight:600;}
+  .am-who i{font-style:normal;font-family:'JetBrains Mono',monospace;
+    font-size:10px;color:var(--ink-soft);word-break:break-all;}
   /* Приписка у роли, когда доля её перекрывает. Не ошибка и не тревога —
      просто честное «это ничего не меняет», чтобы прораб не ждал от роли
      того, чего она не даёт. */
@@ -2559,7 +2564,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-10-29';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-10-30';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -10078,7 +10083,14 @@ function openAssignMenu(x, y, proj, ids, roomId, kind){
     m.innerHTML =
         `<div class="am-note">${roomId ? 'Все работы помещения — кому:' : 'Кому назначить:'}</div>`
       + members.map(x=>
-          `<button data-uid="${escapeAttr(x.user_id)}" class="${cur===x.user_id?'on':''}"><i class="none"></i>${escapeHtml(x.email||'участник')}</button>`).join('')
+          // Подписан — показываем подпись, почту мелким под ней.
+          // Не подписан — почту, как раньше. Тот же порядок, что
+          // в списке бригады: сначала то, что человек узнаёт,
+          // потом то, чем он отличается от однофамильца.
+          ((lab)=> `<button data-uid="${escapeAttr(x.user_id)}" class="${cur===x.user_id?'on':''}"><i class="none"></i>${
+            lab ? `<span class="am-who"><b>${escapeHtml(lab)}</b><i>${escapeHtml(x.email||'')}</i></span>`
+                : escapeHtml(x.email||'участник')
+          }</button>`)((t && t.labels || {})[x.user_id])).join('')
       + `<div class="sm-sep"></div>`
       + `<button data-uid="" class="${cur?'':'on'}"><i class="none"></i>Снять назначение</button>`;
   }
