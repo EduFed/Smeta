@@ -1978,9 +1978,6 @@
   .pm-head{display:grid;grid-template-columns:1fr 90px 90px 90px 200px 34px;gap:8px;
     font-size:11px;color:var(--ink-soft);margin-bottom:5px;padding:0 2px;}
   .pm-row{display:grid;grid-template-columns:1fr 90px 90px 90px 200px 34px;gap:8px;align-items:center;margin-bottom:6px;}
-  /* У мастера на наряде колонки цены нет вовсе — сетка на одну уже */
-  .pm-row-noprice{grid-template-columns:1fr 90px 90px 200px 34px;}
-  .pm-head-noprice{grid-template-columns:1fr 90px 90px 200px 34px;}
   .pm-row input,.pm-row select{padding:8px 10px;border:1px solid var(--paper-line);border-radius:7px;
     background:var(--white);color:var(--ink);font-size:14px;width:100%;}
   .pm-row .pm-qty{text-align:right;}
@@ -2475,7 +2472,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-10-19';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-10-16';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -4501,16 +4498,7 @@ function teamAccHtml(proj){
     // Пробный период даёт полный доступ — значит и совместную работу.
     const canInvite = owner && (TEAM_PLANS.includes(proj.ownerPlan) || trialDaysLeft() > 0);
 
-    // МАСТЕР НА НАРЯДЕ НЕ ВИДИТ СОСТАВ БРИГАДЫ (с 2026-08-10-19).
-    // Почты остальных участников — персональные данные третьих лиц,
-    // и согласия друг другу они не давали. Плюс состав бригады —
-    // ресурс прораба: с кем он работает, вместе с заданием не раздаётся.
-    // Себя оставляем: человек должен видеть свою долю и уметь выйти.
-    const visible = isNaryad(proj)
-      ? (t.members || []).filter(m=> currentUser && m.user_id === currentUser.id)
-      : (t.members || []);
-
-    const rows = visible.map(m=>{
+    const rows = (t.members || []).map(m=>{
       const me = currentUser && m.user_id === currentUser.id;
       const canTouch = owner && m.role !== 'owner';
       // Каждый участник — отдельной карточкой. Раньше строка человека
@@ -9224,19 +9212,8 @@ function renderProjMaterials(proj){
   const items = projMaterials(proj);
   const ref = Array.isArray(state.materials) ? state.materials : [];
 
-  // МАСТЕРУ НА НАРЯДЕ — СПИСОК БЕЗ ЦЕН (с 2026-08-10-19).
-  // Сам перечень полезен: какой клей, какая затирка, хватит ли на объём.
-  // А цены материалов — расходы заказчика, к деньгам мастера отношения
-  // не имеют.
-  const noPrices = isNaryad(proj);
-
-  const priceCell = (it,i)=> noPrices ? '' :
-    `<input type="text" class="pm-price" inputmode="decimal"
-            value="${escapeAttr(it.price==null?'':it.price)}"
-            placeholder="цена" data-pm="${i}|price">`;
-
   const rows = items.map((it,i)=>`
-    <div class="pm-row${noPrices?' pm-row-noprice':''}">
+    <div class="pm-row">
       <input type="text" class="pm-name" value="${escapeAttr(it.name||'')}"
              placeholder="наименование" data-pm="${i}|name">
       <input type="text" class="pm-qty" value="${escapeAttr(it.qty==null?'':it.qty)}"
@@ -9244,7 +9221,9 @@ function renderProjMaterials(proj){
       <select class="pm-unit" data-pm="${i}|unit">
         ${MAT_UNITS.map(u=>`<option value="${u}" ${it.unit===u?'selected':''}>${matUnitLabel(u)}</option>`).join('')}
       </select>
-      ${priceCell(it,i)}
+      <input type="text" class="pm-price" inputmode="decimal"
+             value="${escapeAttr(it.price==null?'':it.price)}"
+             placeholder="цена" data-pm="${i}|price">
       <input type="text" class="pm-note" value="${escapeAttr(it.note||'')}"
              placeholder="примечание: цвет, артикул, магазин" data-pm="${i}|note">
       <button class="btn-icon" data-pm-del="${i}" title="Убрать">✕</button>
@@ -9265,15 +9244,15 @@ function renderProjMaterials(proj){
         <span class="chev">▾</span>
         <span>🧱 Материалы</span>
         <span class="mat-head-sum">${items.filter(matFilled).length
-            ? items.filter(matFilled).length + ' поз.' + ((withPrice && !noPrices) ? ' · ' + fmtMoney(matSum) : '')
+            ? items.filter(matFilled).length + ' поз.' + (withPrice ? ' · ' + fmtMoney(matSum) : '')
             : ''}</span>
       </button>
       <div class="cust-body">
       <div class="section-head">
         <span class="mat-note">список для заказчика · в смету за работу не входит</span>
       </div>
-      ${items.length ? `<div class="pm-head${noPrices?' pm-head-noprice':''}"><span>наименование</span><span>кол-во</span><span>ед.</span>${noPrices?'':'<span>цена</span>'}<span>примечание</span><span></span></div>${rows}` : ''}
-      ${(withPrice && !noPrices) ? `<div class="pm-total">Материалы: <b>${fmtMoney(matSum)}</b>
+      ${items.length ? `<div class="pm-head"><span>наименование</span><span>кол-во</span><span>ед.</span><span>цена</span><span>примечание</span><span></span></div>${rows}` : ''}
+      ${withPrice ? `<div class="pm-total">Материалы: <b>${fmtMoney(matSum)}</b>
         <i>отдельно от сметы — это закупка заказчика</i></div>` : ''}
       <div class="pm-actions">
         ${ref.length
@@ -10094,18 +10073,11 @@ function renderProjectView(proj){
         <div class="proj-meta">${proj.rooms.length} помещ. · создан ${new Date(proj.createdAt).toLocaleDateString('ru-RU')}</div>
       </div>
       <div class="header-actions no-print">
-        ${/* Мастеру на наряде дублировать чужой проект нельзя (с 2026-08-10-19).
-              Копия попала бы к нему целиком и стала его проектом — вынос
-              чужого объекта тем, кто видел от него только свою часть. */''}
-        ${isNaryad(proj) ? '' : `<button class="btn btn-outline" id="duplicateProject">Дублировать</button>`}
+        <button class="btn btn-outline" id="duplicateProject">Дублировать</button>
       </div>
     </div>
 
-    ${/* Данные для договора мастеру на наряде не показываем вовсе.
-          Договор с заказчиком заключает прораб; у мастера отношения
-          с прорабом, а не с заказчиком. Скрытие содержимого, которое
-          было раньше, оставляло пустой блок и вопрос «почему тут пусто». */''}
-    ${isNaryad(proj) ? '' : renderCustomerBlock(proj)}
+    ${renderCustomerBlock(proj)}
 
     ${roomsHtml}
     <button class="add-room-btn no-print" id="addRoom">+ Добавить помещение</button>
@@ -10117,12 +10089,8 @@ function renderProjectView(proj){
     <div class="docs-block no-print">
       <div class="docs-title">Документы</div>
       ${renderSmetaDocPanel(proj)}
-      ${/* Договор, акт и расписка — бумаги прораба с заказчиком, в них
-            паспорта обеих сторон. Мастеру из документов нужен один: наряд
-            со своими ценами, он выше. Список закупки тоже убираем —
-            материалы покупает заказчик. */''}
-      ${isNaryad(proj) ? '' : renderZakupkaDocPanel(proj)}
-      ${isNaryad(proj) ? '' : renderDogovorDocPanel(proj)}
+      ${renderZakupkaDocPanel(proj)}
+      ${renderDogovorDocPanel(proj)}
     </div>
   `;
 }
@@ -10174,15 +10142,15 @@ function renderSmetaDocPanel(proj){
       <span class="extra-sum" data-extra-sum="${i}">${fmtMoney(num(e.qty)*num(e.price))}</span>
       <button class="btn-icon" data-del-extra="${i}" title="Удалить">✕</button>
     </div>`).join('');
-
-  // УСЛОВИЯ ОБЪЕКТА МАСТЕРУ НА НАРЯДЕ НЕ ПОКАЗЫВАЕМ (с 2026-08-10-19).
-  // Надбавки за этаж, лифт и стеснённость уже сидят в его пересчитанной
-  // цене, управлять ими он всё равно не может. А видя сами проценты,
-  // он может вычислить наценку прораба, сопоставив со своей ценой.
-  // Собираем блок ОТДЕЛЬНОЙ переменной, а не оборачиваем теги тернарником
-  // прямо в шаблоне: в прошлый раз именно так я разорвал разметку посреди
-  // строки, и разобраться, что сломалось, стало нельзя.
-  const condsHtml = isNaryad(proj) ? '' : `
+  return `
+    <div class="doc-panel ${open?'open':''}" data-panel-box="smeta">
+      <button class="doc-main-btn" data-panel="smeta"><span class="chev">▾</span> ${isNaryad(proj) ? 'Сформировать наряд' : 'Сформировать смету'}</button>
+      ${isNaryad(proj) ? `<div class="team-note" style="margin:10px 0 0;">
+        👷 Это <b>наряд</b>, а не смета: цены здесь ваши, по вашей доле.
+        Заказчику такой документ отправлять не нужно — у него свои цифры.
+      </div>` : ''}
+      <div class="doc-panel-body">
+        ${docBtns('smeta','xlsx','Excel')}
         <div class="conds-box">
           <div class="extra-title">Условия объекта <span class="hint-inline">проценты начисляются на всю смету</span></div>
           ${PROJECT_CONDS.map(c=>{
@@ -10207,18 +10175,7 @@ function renderSmetaDocPanel(proj){
             <span>Включить надбавки в цены позиций
               <i>в смете не будет отдельной строки — заказчик увидит только цены. Итог не меняется</i></span>
           </label>
-        </div>`;
-
-  return `
-    <div class="doc-panel ${open?'open':''}" data-panel-box="smeta">
-      <button class="doc-main-btn" data-panel="smeta"><span class="chev">▾</span> ${isNaryad(proj) ? 'Сформировать наряд' : 'Сформировать смету'}</button>
-      ${isNaryad(proj) ? `<div class="team-note" style="margin:10px 0 0;">
-        👷 Это <b>наряд</b>, а не смета: цены здесь ваши, по вашей доле.
-        Заказчику такой документ отправлять не нужно — у него свои цифры.
-      </div>` : ''}
-      <div class="doc-panel-body">
-        ${docBtns('smeta','xlsx','Excel')}
-        ${condsHtml}
+        </div>
         <div class="extra-works">
           <div class="extra-title">Дополнительные работы <span class="hint-inline">добавляются в смету и в общий итог</span></div>
           <div class="extra-list">${rows}</div>
