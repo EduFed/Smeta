@@ -2101,6 +2101,13 @@
   .mat-note{font-size:12px;color:var(--ink-soft);line-height:1.5;}
 
   .mat-block{margin-top:28px;}
+  /* Доп. работы и условия объекта — такие же блоки, что материалы.
+     Отдельных отступов и рамок им не заводим: три блока подряд должны
+     выглядеть как один список, а не как три разных изобретения. */
+  .extra-block{margin-top:28px;}
+  .conds-block{margin-top:28px;}
+  .extra-block .mat-note,.conds-block .mat-note{margin-bottom:12px;}
+  .conds-block .conds-box{margin-bottom:0;}
   /* итог по закупке — отдельно от сметы, поэтому и выглядит иначе */
   .pm-total{margin:10px 0 4px;font-size:14px;}
   .pm-total b{font-size:16px;}
@@ -2199,11 +2206,14 @@
   .naryad-mode #duplicateProject{display:none;}
   .naryad-mode .cust-acc[data-cust-acc]{display:none;}
   .naryad-mode [data-panel-box="dogovor"]{display:none;}
-  .naryad-mode .conds-box{display:none;}
+  /* С 2026-08-10-42 условия объекта и доп. работы стоят своими блоками
+     в проекте, а не внутри панели документа. Прячем блоки целиком,
+     вместе с шапкой: иначе мастер увидит пустой заголовок. */
+  .naryad-mode .conds-block{display:none;}
   /* Место для ПРАВКИ доп. работ мастеру не нужно — их ведёт прораб.
      Сами работы, поручённые ему, в наряд попадают и в документе видны
      (см. buildEstimateData). */
-  .naryad-mode .extra-works{display:none;}
+  .naryad-mode .extra-block{display:none;}
   .naryad-mode .team-member-other{display:none;}
   /* Блок «Материалы» в проекте убираем целиком: это рабочее место
      прораба — он ведёт список, правит количества и цены. Мастеру там
@@ -2675,7 +2685,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-10-41';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-10-42';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -5170,6 +5180,9 @@ function applyViewerMode(){
       btn.hasAttribute('data-team-leave')   ||   // выйти из проекта — можно
       btn.hasAttribute('data-room-toggle')  ||   // свернуть/развернуть помещение
       btn.hasAttribute('data-mat-toggle')   ||   // раскрыть «Материалы»
+      btn.hasAttribute('data-extra-toggle') ||   // раскрыть «Дополнительные работы»
+      btn.hasAttribute('data-conds-toggle') ||   // раскрыть «Условия объекта»
+      btn.hasAttribute('data-pay-toggle')   ||   // раскрыть «Расклад по деньгам»
       btn.hasAttribute('data-applies-toggle')||  // раскрывающийся список — только смотрит
       btn.hasAttribute('data-more')         ||
       btn.hasAttribute('data-panel')        ||   // раскрыть панель документов
@@ -9678,6 +9691,8 @@ function matUnitLabel(u){ return UNIT_LABEL[u] || u || ''; }
 // какие блоки материалов раскрыты — по проекту, в пределах сессии
 let uiMatOpen = {};
 let uiPayoutOpen = {};   // раскрыт ли «Расклад по деньгам», по проекту
+let uiExtraOpen = {};    // раскрыты ли «Дополнительные работы», по проекту
+let uiCondsOpen = {};    // раскрыты ли «Условия объекта», по проекту
 
 // Пересчитать итог по материалам без полной перерисовки: иначе при вводе
 // цены курсор выпрыгивает из поля на каждой цифре.
@@ -9685,7 +9700,12 @@ function renderMatSum(proj){
   const items = projMaterials(proj).filter(matFilled);
   const sum = items.reduce((s,it)=> s + (num(it.qty)||0) * (num(it.price)||0), 0);
   const any = items.some(it=> num(it.price));
-  const head = document.querySelector('.mat-head-sum');
+  // Шапку ищем ВНУТРИ блока материалов, а не первую на странице.
+  // С 2026-08-10-42 таких шапок на экране несколько: доп. работы,
+  // материалы, условия, расклад. Раньше здесь стоял просто
+  // '.mat-head-sum' — и сумма материалов уехала бы в блок доп. работ,
+  // который стоит выше (грабля 42: показ и счёт должны смотреть на одно).
+  const head = document.querySelector('.mat-block .mat-head-sum');
   if(head) head.textContent = items.length
     ? items.length + ' поз.' + (any ? ' · ' + fmtMoney(sum) : '') : '';
   const tot = document.querySelector('.pm-total b');
@@ -10714,7 +10734,11 @@ function renderProjectView(proj){
     ${roomsHtml}
     <button class="add-room-btn no-print" id="addRoom">+ Добавить помещение</button>
 
+    ${renderExtraWorksBlock(proj)}
+
     ${renderProjMaterials(proj)}
+
+    ${renderCondsBlock(proj)}
 
     ${renderPayoutBlock(proj)}
 
@@ -10762,8 +10786,17 @@ function docBtns(type, fmt2, fmt2label){
     </div>`;
 }
 
-function renderSmetaDocPanel(proj){
-  const open = uiPanel.smeta;
+// ДОПОЛНИТЕЛЬНЫЕ РАБОТЫ — СВОИМ БЛОКОМ (с 2026-08-10-42).
+// Раньше они жили внутри панели «Сформировать смету», то есть в разделе
+// «Документы». Место историческое и неудачное: доп. работы входят в смету
+// и в итог, а лежали там, где человек ищет кнопку печати.
+// Практическое следствие было видно сразу: чтобы отдать доп. работу
+// мастеру, приходилось открывать панель документа — прораб раздаёт
+// объект, а не готовит бумагу.
+// Устройство блока — как у материалов: всегда на месте, свёрнут,
+// в шапке число позиций и сумма. Своего вида раскрывающихся блоков
+// не заводим.
+function renderExtraWorksBlock(proj){
   const rows = (proj.extraWorks||[]).map((e,i)=>`
     <div class="extra-row">
       <input type="text" placeholder="наименование" value="${escapeAttr(e.name)}" data-extra="${i}|name">
@@ -10783,17 +10816,50 @@ function renderSmetaDocPanel(proj){
         >${e.assignedTo ? escapeHtml(shortWho(assigneeLabel(proj, e.assignedTo))) : 'назначить'}</button>` : ''}
       <button class="btn-icon" data-del-extra="${i}" title="Удалить">✕</button>
     </div>`).join('');
+
+  const filled = (proj.extraWorks||[]).filter(e=>(e.name||'').trim() || num(e.qty) || num(e.price));
+  const sum = filled.reduce((s,e)=> s + num(e.qty) * num(e.price), 0);
+  const open = !!uiExtraOpen[proj.id];
+
   return `
-    <div class="doc-panel ${open?'open':''}" data-panel-box="smeta">
-      <button class="doc-main-btn" data-panel="smeta"><span class="chev">▾</span> ${isNaryad(proj) ? 'Сформировать наряд' : 'Сформировать смету'}</button>
-      ${isNaryad(proj) ? `<div class="team-note" style="margin:10px 0 0;">
-        👷 Это <b>наряд</b>, а не смета: цены здесь ваши, по вашей доле.
-        Заказчику такой документ отправлять не нужно — у него свои цифры.
-      </div>` : ''}
-      <div class="doc-panel-body">
-        ${docBtns('smeta','xlsx','Excel')}
+    <div class="section extra-block cust-acc ${open?'open':''}" data-extra-acc="${proj.id}">
+      <button type="button" class="cust-head no-print" data-extra-toggle="${proj.id}" aria-expanded="${open}">
+        <span class="chev">▾</span>
+        <span>🔧 Дополнительные работы</span>
+        <span class="mat-head-sum">${filled.length
+          ? filled.length + ' ' + plural(filled.length,'позиция','позиции','позиций') + (sum ? ' · ' + fmtMoney(sum) : '')
+          : ''}</span>
+      </button>
+      <div class="cust-body">
+        <div class="mat-note">то, что не привязано к помещению: вывоз мусора, доставка, простой. Входит в смету и в общий итог</div>
+        <div class="extra-list">${rows}</div>
+        <button class="add-link" data-add-extra="1">+ Доп. работа</button>
+      </div>
+    </div>`;
+}
+
+// УСЛОВИЯ ОБЪЕКТА — тоже своим блоком, но ближе к итогу (с 2026-08-10-42).
+// Это не работа, а множитель на всю смету: этаж без лифта, стеснённость,
+// выходные. Место рядом с итогом, а не в панели документа.
+// Мастеру блок не нужен, но из разметки его НЕ вырезаем: скрываем через
+// класс .naryad-mode (см. грабли 19 — вырезанная кнопка уронила обработчики
+// и вместе с ними замки лимитов).
+function renderCondsBlock(proj){
+  const open = !!uiCondsOpen[proj.id];
+  // Сумма надбавок одна и та же независимо от того, показаны они
+  // отдельной строкой или размазаны по ценам позиций.
+  const sum = condSum(proj);
+
+  return `
+    <div class="section conds-block cust-acc ${open?'open':''}" data-conds-acc="${proj.id}">
+      <button type="button" class="cust-head no-print" data-conds-toggle="${proj.id}" aria-expanded="${open}">
+        <span class="chev">▾</span>
+        <span>📐 Условия объекта</span>
+        <span class="mat-head-sum">${sum ? fmtMoney(sum) : ''}</span>
+      </button>
+      <div class="cust-body">
+        <div class="mat-note">проценты начисляются на всю смету</div>
         <div class="conds-box">
-          <div class="extra-title">Условия объекта <span class="hint-inline">проценты начисляются на всю смету</span></div>
           ${PROJECT_CONDS.map(c=>{
             const on = !!(proj.conds||{})[c.id];
             const own = (proj.conds||{})[c.id+'Pct'];
@@ -10817,14 +10883,27 @@ function renderSmetaDocPanel(proj){
               <i>в смете не будет отдельной строки — заказчик увидит только цены. Итог не меняется</i></span>
           </label>
         </div>
-        <div class="extra-works">
-          <div class="extra-title">Дополнительные работы <span class="hint-inline">добавляются в смету и в общий итог</span></div>
-          <div class="extra-list">${rows}</div>
-          <button class="add-link" data-add-extra="1">+ Доп. работа</button>
-        </div>
       </div>
     </div>`;
 }
+
+function renderSmetaDocPanel(proj){
+  const open = uiPanel.smeta;
+  return `
+    <div class="doc-panel ${open?'open':''}" data-panel-box="smeta">
+      <button class="doc-main-btn" data-panel="smeta"><span class="chev">▾</span> ${isNaryad(proj) ? 'Сформировать наряд' : 'Сформировать смету'}</button>
+      ${isNaryad(proj) ? `<div class="team-note" style="margin:10px 0 0;">
+        👷 Это <b>наряд</b>, а не смета: цены здесь ваши, по вашей доле.
+        Заказчику такой документ отправлять не нужно — у него свои цифры.
+      </div>` : ''}
+      <div class="doc-panel-body">
+        ${docBtns('smeta','xlsx','Excel')}
+      </div>
+    </div>`;
+}
+// Панель осталась тем, чем называется: кнопки просмотра и выгрузки.
+// Условия объекта и доп. работы переехали в свои блоки выше
+// (renderExtraWorksBlock, renderCondsBlock) — 2026-08-10-42.
 
 function renderDogovorDocPanel(proj){
   const open = uiPanel.dogovor;
@@ -11970,13 +12049,43 @@ function attachHandlers(){
   const stg = main.querySelector('[data-stageno]');
   if(stg) stg.addEventListener('input', ()=>{ uiStageNo = stg.value; });
 
-  // суммы надбавок лежат вне блока сметы — обновляем их отдельно
-  const refreshCond = ()=>{
-    PROJECT_CONDS.forEach(c=>{
-      const box = main.querySelector(`[data-cond-sum="${c.id}"]`);
-      if(box) box.textContent = (proj.conds||{})[c.id] ? fmtMoney(condSumOf(proj,c)) : '—';
+  // суммы надбавок лежат вне блока сметы — обновляем их отдельно.
+  // Заодно правим сумму в шапке свёрнутого блока: человек чаще всего
+  // смотрит именно на неё, а не разворачивает блок.
+  const refreshCond = ()=> refreshCondSums(proj);
+
+  // то же для шапки доп. работ
+  const refreshExtraHead = ()=>{
+    const head = main.querySelector('.extra-block .mat-head-sum');
+    if(!head) return;
+    const filled = (proj.extraWorks||[]).filter(e=>(e.name||'').trim() || num(e.qty) || num(e.price));
+    const sum = filled.reduce((s,e)=> s + num(e.qty)*num(e.price), 0);
+    head.textContent = filled.length
+      ? filled.length + ' ' + plural(filled.length,'позиция','позиции','позиций') + (sum ? ' · ' + fmtMoney(sum) : '')
+      : '';
+  };
+
+  // Раскрытие двух новых блоков — тем же способом, что материалы
+  // и расклад по деньгам. Своего вида раскрывающихся блоков не заводим.
+  const accToggle = (attr, store, accAttr)=>{
+    main.querySelectorAll(`[${attr}]`).forEach(el=>{
+      el.addEventListener('click', ()=>{
+        const pid  = el.getAttribute(attr);
+        const open = !store[pid];
+        store[pid] = open;
+        const box = main.querySelector(`[${accAttr}="${pid}"]`);
+        if(box){
+          const body = box.querySelector('.cust-body');
+          accBeforeToggle(body, open);
+          box.classList.toggle('open', open);
+          accAfterToggle(body);
+        }
+        el.setAttribute('aria-expanded', open);
+      });
     });
   };
+  accToggle('data-extra-toggle', uiExtraOpen, 'data-extra-acc');
+  accToggle('data-conds-toggle', uiCondsOpen, 'data-conds-acc');
   main.querySelectorAll('[data-cond]').forEach(el=>{
     el.onclick = ()=>{
       const key = el.getAttribute('data-cond');
@@ -12021,6 +12130,7 @@ function attachHandlers(){
       e[field] = el.value;
       const sumEl = main.querySelector(`[data-extra-sum="${idx}"]`);
       if(sumEl) sumEl.textContent = fmtMoney(num(e.qty)*num(e.price));
+      refreshExtraHead();
       refreshCond();   // надбавки считаются и от доп. работ
       scheduleSave(); updateDerived(proj);
     });
@@ -12601,7 +12711,22 @@ function updateDerived(proj){
   const ctw = document.querySelector(`[data-cust-total-words="${proj.id}"]`);
   if(ct) ct.textContent = fmtMoney(total);
   if(ctw) ctw.textContent = rublesToWords(total);
+  refreshCondSums(proj);
   refreshPayoutBlock(proj);
+}
+
+// Суммы надбавок пересчитываются от ВСЕЙ сметы, значит меняются при любой
+// правке количества в помещении. Пока условия объекта лежали внутри
+// свёрнутой панели документа, отставание никто не видел. Теперь блок стоит
+// на виду рядом с итогом — обновляем его вместе с остальными цифрами.
+function refreshCondSums(proj){
+  if(!proj) return;
+  PROJECT_CONDS.forEach(c=>{
+    const box = document.querySelector(`[data-cond-sum="${c.id}"]`);
+    if(box) box.textContent = (proj.conds||{})[c.id] ? fmtMoney(condSumOf(proj,c)) : '—';
+  });
+  const head = document.querySelector('.conds-block .mat-head-sum');
+  if(head){ const s = condSum(proj); head.textContent = s ? fmtMoney(s) : ''; }
 }
 
 // Пересчитать «Расклад по деньгам» на месте (с 2026-08-10-41).
