@@ -2631,7 +2631,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-10-37';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-10-38';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -3589,6 +3589,16 @@ function renderPlanBtn(){
   const tag = document.getElementById('planBtnTag');
   if(!val || !tag) return;
   const days = trialDaysLeft();
+  // Тариф ещё не пришёл — не пишем «Ограниченный доступ / Free».
+  // На первом входе это неправда: человек может быть на пробном периоде
+  // или платить, а приложение сообщает ему, что он ограничен. Пока
+  // не знаем — говорим, что узнаём.
+  if(!userPlan){
+    val.textContent = 'узнаём тариф…';
+    tag.textContent = '';
+    tag.className = 'plan-tag';
+    return;
+  }
   if(isPaid()){
     // Метка называет тариф своим именем. Раньше на любой оплаченной
     // подписке стояло «PRO» — это осталось со времён, когда тариф был
@@ -4032,6 +4042,18 @@ function fillPrintWatermark(){
 }
 // вызывается после каждого render(): помечает кнопки, упирающиеся в лимит
 function applyLocks(){
+  // ПОКА ТАРИФ НЕИЗВЕСТЕН — ЗАМКОВ НЕ СТАВИМ (с 2026-08-10-38).
+  // Приложение рисует экран из копии на устройстве и только потом
+  // спрашивает у сервера тариф. Если копии нет — первый вход, новое
+  // устройство, чистка данных сайта, — то в этот момент userPlan пуст,
+  // и isPro() отвечает «нет». Человек на пробном периоде видел замки
+  // на настройках и раскладке, пока не придёт ответ.
+  // Из двух неверных состояний выбираем менее вредное: платящий,
+  // увидевший замок, решает, что у него отняли оплаченное, — а тот,
+  // кто на секунду увидел открытое, не теряет ничего. К тому же
+  // настоящие пределы стерегут триггеры в базе, а не эти замки:
+  // они здесь для того, чтобы человек видел границу заранее.
+  const planKnown = !!userPlan;
   const pro = isPro();
   const p = currentProject();
 
@@ -4048,19 +4070,19 @@ function applyLocks(){
   };
 
   mark(document.getElementById('newProjectBtn'),
-       !pro && myProjectsCount() >= FREE_LIMITS.projects,
+       planKnown && !pro && myProjectsCount() >= FREE_LIMITS.projects,
        '+ Новый проект');
 
   mark(document.getElementById('duplicateProject'),
-       !pro && myProjectsCount() >= FREE_LIMITS.projects,
+       planKnown && !pro && myProjectsCount() >= FREE_LIMITS.projects,
        'Дублировать');
 
   mark(document.getElementById('addRoom'),
-       !isProAt(p) && p && p.rooms.length >= FREE_LIMITS.rooms,
+       planKnown && !isProAt(p) && p && p.rooms.length >= FREE_LIMITS.rooms,
        '+ Добавить помещение');
 
   mark(document.getElementById('addWork'),
-       !pro && realCatalog().length >= FREE_LIMITS.catalog,
+       planKnown && !pro && realCatalog().length >= FREE_LIMITS.catalog,
        '+ Добавить вид работ');
 }
 let lastAuthUid = null;     // id последнего вошедшего — защита от повторного afterLogin
@@ -10529,7 +10551,10 @@ function renderProjectView(proj){
 function docBtns(type, fmt2, fmt2label){
   // на бесплатном тарифе второй формат (Excel/Word) под замком.
   // В чужом проекте смотрим на тариф владельца — платит он.
-  const pro   = isProAt();
+  // Пока тариф неизвестен, замка не ставим — см. пояснение в applyLocks:
+  // на первом входе userPlan ещё пуст, и человек на пробном периоде
+  // видел замки на том, что ему открыто.
+  const pro   = !userPlan || isProAt();
   const lk    = pro ? '' : ' btn-locked';
   const lbl2  = pro ? fmt2label : fmt2label + ' 🔒';
   const tip   = pro ? '' : ' title="Доступно в полном тарифе"';
