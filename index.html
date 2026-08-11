@@ -880,6 +880,9 @@
   .extra-title{font-family:'JetBrains Mono',monospace;font-size:11px;text-transform:uppercase;letter-spacing:0.08em;color:var(--ink-soft);margin-bottom:10px;}
   .extra-list{display:flex;flex-direction:column;gap:6px;margin-bottom:8px;}
   .extra-row{display:grid;grid-template-columns:1fr 70px 74px 84px auto 24px;gap:8px;align-items:center;}
+  /* Кнопка исполнителя у доп. работы — колонка появляется только
+     у прораба на «Прорабе», у остальных сетка прежняя. */
+  .extra-row:has(> .sel-work-assign){grid-template-columns:1fr 70px 74px 84px auto auto 24px;}
   .extra-row input, .extra-row select{font-family:'Inter',sans-serif;font-size:13px;border:1px solid var(--paper-line);border-radius:var(--radius);padding:6px 8px;background:var(--paper);color:var(--ink);min-width:0;}
   .extra-row input:focus, .extra-row select:focus{outline:none;border-color:var(--blue);}
   .extra-sum{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--ink);text-align:right;white-space:nowrap;}
@@ -2069,9 +2072,9 @@
   .naryad-mode .cust-acc[data-cust-acc]{display:none;}
   .naryad-mode [data-panel-box="dogovor"]{display:none;}
   .naryad-mode .conds-box{display:none;}
-  /* Доп. работы прораб ведёт для себя и для заказчика. В наряд они
-     не идут (см. buildEstimateData), значит и место для их правки
-     мастеру показывать незачем. */
+  /* Место для ПРАВКИ доп. работ мастеру не нужно — их ведёт прораб.
+     Сами работы, поручённые ему, в наряд попадают и в документе видны
+     (см. buildEstimateData). */
   .naryad-mode .extra-works{display:none;}
   .naryad-mode .team-member-other{display:none;}
   /* Блок «Материалы» в проекте убираем целиком: это рабочее место
@@ -2544,7 +2547,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-10-26';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-10-27';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -5282,6 +5285,10 @@ const DB = {
         extraWorks: (p.project_extra_works || []).slice().sort(bySort).map(e=>({
           id: e.id, name: e.name||'', unit: e.unit||'',
           qty: e.qty === null ? '' : e.qty,
+          // Кому назначена доп. работа (с 2026-08-10-27). Как и у строк
+          // сметы, в общем сохранении это поле НЕ участвует — уходит
+          // отдельным узким запросом, иначе стёрлось бы у всех разом.
+          assignedTo: e.assigned_to || null,
           // цена приходит функцией, а не из колонки — см. workFromRow
           price: (function(v){ return (v === undefined || v === null) ? '' : v; })(extraPrice.get(e.id))
         })),
@@ -5783,6 +5790,21 @@ const DB = {
     if(error) throw error;
     if(!data || !data.length){
       throw new Error('Строка не найдена или назначать её вы не вправе.');
+    }
+    return data[0];
+  },
+
+  // Назначение доп. работы. Всё то же самое, что у строки сметы:
+  // сторож в базе один и тот же (zz_assign_guard на обеих таблицах),
+  // и поле точно так же не участвует в общем сохранении.
+  async setExtraAssignee(id, userId){
+    const { data, error } = await sb.from('project_extra_works')
+      .update({ assigned_to: userId || null })
+      .eq('id', id)
+      .select('id, assigned_to');
+    if(error) throw error;
+    if(!data || !data.length){
+      throw new Error('Работа не найдена или назначать её вы не вправе.');
     }
     return data[0];
   },
@@ -8112,8 +8134,13 @@ function buildEstimateData(proj){
   // значит однажды поправить три места из четырёх.
   const naryad = isNaryad(proj);
 
-  const extra = naryad ? [] :
-    (proj.extraWorks||[]).filter(e=>(e.name||'').trim() || num(e.qty) || num(e.price))
+  // В наряде — только те доп. работы, что поручены этому мастеру
+  // (с 2026-08-10-27). Не назначенные никому в наряд не идут: их никто
+  // не поручал, а увидев их в своём задании, мастер решит, что делать
+  // надо и это. У прораба видны все, как и было.
+  const extra = (proj.extraWorks||[])
+    .filter(e=> !naryad || (e.assignedTo && currentUser && e.assignedTo === currentUser.id))
+    .filter(e=>(e.name||'').trim() || num(e.qty) || num(e.price))
     .map(e=>{
       const price = Math.round(num(e.price) * k);
       return { name:e.name||'—', unit:UNIT_LABEL[e.unit]||'', qty:num(e.qty), price:price, sum:num(e.qty)*price };
@@ -9946,7 +9973,7 @@ function projMenu(id, x, y){
 // (нажатие мимо гасилось не полностью, и меню исчезало, а под ним
 // сразу открывалось то, во что ткнули). Трогать работающее ради
 // красоты не стал.
-function openAssignMenu(x, y, proj, ids, roomId){
+function openAssignMenu(x, y, proj, ids, roomId, kind){
   const prev = document.getElementById('assignMenu');
   if(prev) prev.style.display = 'none';
   let m = document.getElementById('assignMenu');
@@ -9959,7 +9986,10 @@ function openAssignMenu(x, y, proj, ids, roomId){
 
   const t = teamCache[proj.id];
   const members = ((t && t.members) || []).filter(x=> x.role !== 'owner');
-  const cur = (ids.length === 1) ? (findWorkByLid(proj, ids[0])||{}).assignedTo : null;
+  const cur = (ids.length !== 1) ? null
+    : (kind === 'extra'
+        ? ((proj.extraWorks||[]).find(e=> e.id === ids[0]) || {}).assignedTo
+        : (findWorkByLid(proj, ids[0]) || {}).assignedTo);
 
   if(!t || t.loading){
     m.innerHTML = `<div class="am-note">Загружаем бригаду…</div>`;
@@ -9981,7 +10011,7 @@ function openAssignMenu(x, y, proj, ids, roomId){
     b.onclick = async ()=>{
       const uid_ = b.getAttribute('data-uid') || null;
       close();
-      await applyAssign(proj, ids, roomId, uid_);
+      await applyAssign(proj, ids, roomId, uid_, kind);
     };
   });
 
@@ -10024,12 +10054,15 @@ function findWorkByLid(proj, lid){
 // Отправить назначение и привести местное состояние в согласие с базой.
 // Слепок сервера правим тоже: иначе следующее обычное сохранение сочтёт
 // строку изменившейся и отправит её целиком без нужды.
-async function applyAssign(proj, ids, roomId, userId){
+async function applyAssign(proj, ids, roomId, userId, kind){
   try{
     setSync('saving', 'назначаем…');
     let touched;
     if(roomId){
       touched = await DB.setRoomAssignee(roomId, userId);
+    } else if(kind === 'extra'){
+      await DB.setExtraAssignee(ids[0], userId);
+      touched = 1;
     } else {
       await DB.setWorkAssignee(ids[0], userId);
       touched = 1;
@@ -10039,6 +10072,8 @@ async function applyAssign(proj, ids, roomId, userId){
     if(roomId){
       const room = (proj.rooms||[]).find(r=> r.id === roomId);
       (room && room.works || []).forEach(mark);
+    } else if(kind === 'extra'){
+      mark((proj.extraWorks||[]).find(e=> e.id === ids[0]));
     } else {
       mark(findWorkByLid(proj, ids[0]));
     }
@@ -10274,6 +10309,9 @@ function renderSmetaDocPanel(proj){
       <input type="text" inputmode="decimal" placeholder="кол-во" value="${escapeAttr(e.qty)}" data-extra="${i}|qty">
       <input type="text" inputmode="decimal" placeholder="цена" value="${escapeAttr(e.price)}" data-extra="${i}|price">
       <span class="extra-sum" data-extra-sum="${i}">${fmtMoney(num(e.qty)*num(e.price))}</span>
+      ${canAssign(proj) ? `<button class="sel-work-assign${e.assignedTo?' on':''}" data-assign-extra="${escapeAttr(e.id||'')}"
+        title="${e.assignedTo ? 'Назначено: ' + escapeAttr(assigneeLabel(proj, e.assignedTo)) : 'Назначить исполнителя'}"
+        >${e.assignedTo ? escapeHtml(shortWho(assigneeLabel(proj, e.assignedTo))) : 'назначить'}</button>` : ''}
       <button class="btn-icon" data-del-extra="${i}" title="Удалить">✕</button>
     </div>`).join('');
   return `
@@ -11894,6 +11932,16 @@ function attachHandlers(){
       const lid = el.getAttribute('data-assign');
       const r = el.getBoundingClientRect();
       openAssignMenu(r.left, r.bottom + 6, proj, [lid], null);
+    };
+  });
+  // То же для доп. работы. Отдельным признаком, а не общим списком:
+  // у них разные таблицы и разные ключи, и путать их нельзя.
+  main.querySelectorAll('[data-assign-extra]').forEach(el=>{
+    el.onclick = (e)=>{
+      e.stopPropagation();
+      const id = el.getAttribute('data-assign-extra');
+      const r = el.getBoundingClientRect();
+      openAssignMenu(r.left, r.bottom + 6, proj, [id], null, 'extra');
     };
   });
   main.querySelectorAll('[data-qty-over]').forEach(el=>{
