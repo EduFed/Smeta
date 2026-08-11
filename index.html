@@ -2069,6 +2069,10 @@
   .naryad-mode .cust-acc[data-cust-acc]{display:none;}
   .naryad-mode [data-panel-box="dogovor"]{display:none;}
   .naryad-mode .conds-box{display:none;}
+  /* Доп. работы прораб ведёт для себя и для заказчика. В наряд они
+     не идут (см. buildEstimateData), значит и место для их правки
+     мастеру показывать незачем. */
+  .naryad-mode .extra-works{display:none;}
   .naryad-mode .team-member-other{display:none;}
   /* Блок «Материалы» в проекте убираем целиком: это рабочее место
      прораба — он ведёт список, правит количества и цены. Мастеру там
@@ -2540,7 +2544,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-10-23';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-10-24';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -8072,14 +8076,27 @@ function buildEstimateData(proj){
     });
     if(items.length) groups.push({ room: room.name||'Помещение', items });
   });
-  const extra = (proj.extraWorks||[]).filter(e=>(e.name||'').trim() || num(e.qty) || num(e.price))
+  // НАРЯД — ТОЛЬКО РАБОТЫ МАСТЕРА (с 2026-08-10-24).
+  // Дополнительные работы и надбавки за условия объекта в наряд
+  // не попадают. Доп. работы прораб держит для себя и для заказчика:
+  // мастеру их никто не поручал, а увидев их в своём задании, он решит,
+  // что делать надо и это. Надбавки за этаж и стеснённость — деньги
+  // прораба с заказчика, к оплате мастера отношения не имеют и уже
+  // учтены в его доле.
+  // Правим здесь, в сборке данных: отсюда кормятся и экран, и PDF,
+  // и Excel, и текст, и общий итог. В каждом документе отдельно —
+  // значит однажды поправить три места из четырёх.
+  const naryad = isNaryad(proj);
+
+  const extra = naryad ? [] :
+    (proj.extraWorks||[]).filter(e=>(e.name||'').trim() || num(e.qty) || num(e.price))
     .map(e=>{
       const price = Math.round(num(e.price) * k);
       return { name:e.name||'—', unit:UNIT_LABEL[e.unit]||'', qty:num(e.qty), price:price, sum:num(e.qty)*price };
     });
   if(extra.length) groups.push({ room:'Дополнительные работы', items:extra });
   // надбавки отдельной строкой — только если они не размазаны по ценам
-  const cLines = condSpread(proj) ? [] : condLines(proj);
+  const cLines = (naryad || condSpread(proj)) ? [] : condLines(proj);
   if(cLines.length){
     groups.push({ room:'Условия объекта',
       items: cLines.map(l=>({ name:l.name, unit:'', qty:1, price:l.sum, sum:l.sum })) });
