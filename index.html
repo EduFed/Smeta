@@ -2472,7 +2472,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-10-15';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-10-16';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -11398,7 +11398,10 @@ function attachHandlers(){
   // Выбор способа работы. Роль и доля меняются вместе — это одна
   // настройка, а не две независимые.
   main.querySelectorAll('[data-mode-pick]').forEach(el=>{
-    el.onclick = async ()=>{
+    el.onclick = async (e)=>{
+      // Не пускаем нажатие дальше: шапка «Бригады» раскрывается по клику,
+      // и блок сворачивался прямо под пальцем.
+      e.stopPropagation();
       const [pid, uidv, mode] = el.getAttribute('data-mode-pick').split('|');
       const dd = el.closest('.mode-dd');
       if(dd) dd.classList.remove('open');
@@ -11425,7 +11428,15 @@ function attachHandlers(){
         }
 
         await DB.touchProject(pid);   // смена должна дойти до мастера сразу
-        await teamLoad(pid);
+        // Обновляем на месте и рисуем один раз — по той же причине,
+        // что и у стрелок доли: teamLoad мигает «Загружаем бригаду…»
+        // и складывает блок.
+        if(m0 && m0.user_id){
+          m0.role = (mode === 'together') ? 'editor' : 'viewer';
+          if(mode === 'naryad'){ if(m0.share_pct == null) m0.share_pct = 50; }
+          else m0.share_pct = null;
+        }
+        render();
       }
       catch(e){ alert((e && e.message) || 'Не удалось изменить.'); }
     };
@@ -11435,7 +11446,8 @@ function attachHandlers(){
   // не наряд, а равноправный напарник, и ставится она сменой способа
   // работы, а не стрелкой.
   main.querySelectorAll('[data-share-step]').forEach(el=>{
-    el.onclick = async ()=>{
+    el.onclick = async (e)=>{
+      e.stopPropagation();          // иначе свернётся блок «Бригада»
       const [pid, uidv, d] = el.getAttribute('data-share-step').split('|');
       const t = teamCache[pid];
       const m = ((t && t.members) || []).find(x=> x.user_id === uidv) || {};
@@ -11444,7 +11456,14 @@ function attachHandlers(){
       if(next === now) return;
       try{
         await DB.setMemberShare(pid, uidv, next);
-        await teamLoad(pid);
+        // Правим список участников на месте и рисуем ОДИН раз.
+        // teamLoad сюда не годится: он сначала рисует «Загружаем
+        // бригаду…», потом данные — и блок на глазах схлопывается
+        // и раскрывается обратно при каждом нажатии стрелки.
+        // Ответ сервера здесь не нужен: мы сами только что записали
+        // это число и знаем его. Ошибка выбросит исключение раньше.
+        m.share_pct = next;
+        render();
       }catch(e){ alert((e && e.message) || 'Не удалось изменить долю.'); }
     };
   });
