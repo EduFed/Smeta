@@ -90,6 +90,28 @@
     --red:#B33A2E;
     --white:#FFFDF9;
 
+    /* ЦВЕТА ИСПОЛНИТЕЛЕЙ (расширение палитры, 12 августа 2026).
+       Отдельная группа, а не подбор на глаз: прораб раздаёт объект
+       нескольким мастерам и должен видеть раскладку боковым зрением,
+       не вчитываясь в имена. Четырёх смысловых цветов на это не хватало.
+       Правила группы:
+       · только для меток исполнителя, больше нигде;
+       · красного здесь нет и не будет — он означает ошибку и удаление,
+         человек с красной меткой читался бы как проблема;
+       · первые четыре совпадают со смысловыми цветами палитры,
+         остальные шесть добавлены под эту задачу;
+       · у каждой темы свой набор: на тёмном фоне те же оттенки тускнеют. */
+    --who-1:#2C5F7C;   /* синий      */
+    --who-2:#4A7C59;   /* зелёный    */
+    --who-3:#AD7C22;   /* янтарный   */
+    --who-4:#E8622C;   /* оранжевый  */
+    --who-5:#7B4B94;   /* фиолетовый */
+    --who-6:#2E7D7D;   /* бирюзовый  */
+    --who-7:#A34A6B;   /* вишнёвый   */
+    --who-8:#6B5B3E;   /* коричневый */
+    --who-9:#4F6D8C;   /* серо-синий */
+    --who-10:#8C5A2B;  /* терракота  */
+
     /* Сайдбар тёмный при любой теме, поэтому его цвета от темы не зависят */
     --sb-bg:#161D22;             /* фон панели */
     --sb-surface:#28353D;        /* строка под курсором, блоки внутри */
@@ -115,6 +137,18 @@
     --green:#5E9A6E;
     --red:#D2554A;
     --white:#1B2228;
+    /* Те же десять, но светлее: на тёмном фоне исходные тускнеют
+       и перестают различаться между собой */
+    --who-1:#5A9BC0;
+    --who-2:#5E9A6E;
+    --who-3:#E0A93C;
+    --who-4:#E8622C;
+    --who-5:#A97FC4;
+    --who-6:#4FAFAF;
+    --who-7:#D07A97;
+    --who-8:#A28B63;
+    --who-9:#7E9CBB;
+    --who-10:#C08552;
     color-scheme:dark;
   }
   /* цвета панели заданы переменными и одинаковы в обеих темах */
@@ -509,16 +543,30 @@
     overflow:hidden;text-overflow:ellipsis;
   }
   .sel-work-assign:hover{border-color:var(--orange);color:var(--ink);}
+  /* Назначено — метка цветом этого исполнителя. Цвет приходит
+     переменной --who прямо на кнопке: у каждого человека свой,
+     и прораб видит раскладку по объекту, не вчитываясь в имена.
+     Фон — тот же цвет прозрачностью, чтобы метка не спорила
+     с ценой и количеством по яркости. */
   .sel-work-assign.on{
-    border-style:solid;border-color:var(--orange);
-    background:var(--orange-soft);color:var(--orange);font-weight:600;
+    border-style:solid;
+    border-color:var(--who, var(--orange));
+    color:var(--who, var(--orange));
+    background:color-mix(in srgb, var(--who, var(--orange)) 12%, transparent);
+    font-weight:600;
   }
   .am-note{padding:8px 10px 6px;font-size:11px;color:var(--ink-soft);line-height:1.45;}
-  /* Строка выбора: подпись сверху, почта под ней мелким */
-  .am-who{display:flex;flex-direction:column;gap:1px;text-align:left;min-width:0;}
-  .am-who b{font-weight:600;}
-  .am-who i{font-style:normal;font-family:'JetBrains Mono',monospace;
-    font-size:10px;color:var(--ink-soft);word-break:break-all;}
+  /* Строка выбора: подпись сверху, почта под ней мелким.
+     ВАЖНО: почта — span, а не <i>. В этом меню тег <i> уже занят под
+     цветной кружок 11×11, и почта в него схлопывалась — подписи
+     наезжали друг на друга. */
+  .status-menu button{align-items:flex-start;}
+  .am-who{display:flex;flex-direction:column;gap:2px;text-align:left;min-width:0;flex:1;}
+  .am-who b{font-weight:600;line-height:1.3;}
+  .am-mail{font-family:'JetBrains Mono',monospace;font-size:10px;
+    line-height:1.3;color:var(--ink-soft);word-break:break-all;}
+  /* Кружок цвета исполнителя — тот же размер, что у меток проекта */
+  .status-menu i.who-dot{margin-top:3px;}
   /* Приписка у роли, когда доля её перекрывает. Не ошибка и не тревога —
      просто честное «это ничего не меняет», чтобы прораб не ждал от роли
      того, чего она не даёт. */
@@ -2564,7 +2612,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-10-34';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-10-36';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -4587,6 +4635,36 @@ function assigneeLabel(proj, userId){
   const m = (t && t.members || []).find(x=> x.user_id === userId);
   if(m && m.email) return m.email;
   return (currentUser && userId === currentUser.id) ? 'вам' : 'назначено';
+}
+
+// ЦВЕТ ИСПОЛНИТЕЛЯ (с 2026-08-10-35).
+// Прораб, раздав объект троим, должен видеть картину не вчитываясь:
+// где чья работа. Цвет для этого годится лучше имени — он читается
+// боковым зрением.
+//
+// Берём ТОЛЬКО цвета палитры проекта, новых не заводим: правило
+// «любой цвет в коде — это переменная» без исключений. Красный не
+// используем — он означает ошибку и удаление, и человек с красной
+// меткой читался бы как проблема.
+// Порядок закреплён за человеком его же номером: пока он в проекте,
+// цвет у него один и тот же, и на другом устройстве такой же.
+const WHO_COLORS = ['var(--who-1)','var(--who-2)','var(--who-3)','var(--who-4)','var(--who-5)',
+                    'var(--who-6)','var(--who-7)','var(--who-8)','var(--who-9)','var(--who-10)'];
+
+// Раздаём ПО ПОРЯДКУ, а не хешем от номера. Хеш комкует: проверено
+// на живых номерах в трёх вариантах — пятеро из семи получали один
+// цвет, и вся затея теряла смысл.
+// Порядок берём по возрастанию номера участника, а не тем, в каком
+// их вернул сервер: тогда цвет у человека один и тот же на телефоне
+// и на компьютере, и не меняется, когда в бригаду добавляют кого-то ещё.
+// Цветов десять — столько же, сколько мест на тарифе «Прораб». Значит
+// на полной бригаде повторов не будет вовсе.
+function whoColor(proj, userId){
+  if(!userId) return 'var(--orange)';
+  const t = proj && teamCache[proj.id];
+  const ids = ((t && t.members) || []).map(m=> m.user_id).sort();
+  const i = ids.indexOf(userId);
+  return WHO_COLORS[(i < 0 ? 0 : i) % WHO_COLORS.length];
 }
 
 // Для метки на строке сметы: подпись показываем целиком (её писал
@@ -10157,9 +10235,9 @@ function openAssignMenu(x, y, proj, ids, roomId, kind){
           // Не подписан — почту, как раньше. Тот же порядок, что
           // в списке бригады: сначала то, что человек узнаёт,
           // потом то, чем он отличается от однофамильца.
-          ((lab)=> `<button data-uid="${escapeAttr(x.user_id)}" class="${cur===x.user_id?'on':''}"><i class="none"></i>${
-            lab ? `<span class="am-who"><b>${escapeHtml(lab)}</b><i>${escapeHtml(x.email||'')}</i></span>`
-                : escapeHtml(x.email||'участник')
+          ((lab)=> `<button data-uid="${escapeAttr(x.user_id)}" class="${cur===x.user_id?'on':''}"><i class="who-dot" style="background:${whoColor(proj, x.user_id)}"></i>${
+            lab ? `<span class="am-who"><b>${escapeHtml(lab)}</b><span class="am-mail">${escapeHtml(x.email||'')}</span></span>`
+                : `<span class="am-who"><b>${escapeHtml(x.email||'участник')}</b></span>`
           }</button>`)((t && t.labels || {})[x.user_id])).join('')
       + `<div class="sm-sep"></div>`
       + `<button data-uid="" class="${cur?'':'on'}"><i class="none"></i>Снять назначение</button>`;
@@ -10470,6 +10548,7 @@ function renderSmetaDocPanel(proj){
       <input type="text" inputmode="decimal" placeholder="цена" value="${escapeAttr(e.price)}" data-extra="${i}|price">
       <span class="extra-sum" data-extra-sum="${i}">${fmtMoney(num(e.qty)*num(e.price))}</span>
       ${canAssign(proj) ? `<button class="sel-work-assign${e.assignedTo?' on':''}" data-assign-extra="${escapeAttr(e.id||'')}"
+        ${e.assignedTo ? `style="--who:${whoColor(proj, e.assignedTo)}"` : ''}
         title="${e.assignedTo ? 'Назначено: ' + escapeAttr(assigneeLabel(proj, e.assignedTo)) : 'Назначить исполнителя'}"
         >${e.assignedTo ? escapeHtml(shortWho(assigneeLabel(proj, e.assignedTo))) : 'назначить'}</button>` : ''}
       <button class="btn-icon" data-del-extra="${i}" title="Удалить">✕</button>
@@ -10687,6 +10766,7 @@ function renderRoomWorks(room){
       ${unitField}
       <span class="wsum" data-wsum="${room.id}|${rw.lid}">${fmt(line.qty)} ${workUnitLabel(work,rw)} · ${fmtMoney(line.sum)}</span>
       ${mayAssign ? `<button class="sel-work-assign${rw.assignedTo?' on':''}" data-assign="${rw.lid}"
+        ${rw.assignedTo ? `style="--who:${whoColor(proj, rw.assignedTo)}"` : ''}
         title="${rw.assignedTo ? 'Назначено: ' + escapeAttr(assigneeLabel(proj, rw.assignedTo)) : 'Назначить исполнителя'}"
         >${rw.assignedTo ? escapeHtml(shortWho(assigneeLabel(proj, rw.assignedTo))) : 'назначить'}</button>` : ''}
       <button class="btn-icon" data-remove-work="${room.id}|${rw.lid}" title="Убрать">✕</button>
