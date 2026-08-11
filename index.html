@@ -2544,7 +2544,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-10-25';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-10-26';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -3712,14 +3712,34 @@ let uiPickerOpen = false;
 // Человек видел запертое приложение без единого выхода.
 function needActiveProjectPick(){
   if(!currentUser) return false;
+  // ПОКА ТАРИФ НЕИЗВЕСТЕН — НЕ СПРАШИВАЕМ (с 2026-08-10-26).
+  // Приложение сначала рисует экран из копии на устройстве и только потом
+  // спрашивает у сервера тариф. Если копии нет — первый вход, новое
+  // устройство, чистка данных сайта, — то в момент отрисовки userPlan
+  // ещё пуст. Раньше это читалось как «выбор не сделан», и окно
+  // открывалось человеку, который выбрал рабочий проект давно.
+  // Ответ сервера приходил через секунду, но окно уже висело.
+  // Молчание закрывает: не знаем — не спрашиваем.
+  if(!userPlan) return false;
   if(activeProjectId()) return false;   // выбор уже сделан
   if(isPro()) return false;             // платный или пробный — не наше дело
+  // Считаем ВСЕ свои проекты, включая архивные, — ровно как сторож
+  // check_active_project в базе: `count(*) from projects where owner_id`.
+  // Условие обязано совпадать с ним слово в слово, иначе приложение
+  // разрешит там, где база откажет.
   return myProjectsCount() > 1;         // один проект — выбирать нечего
 }
 
 function openActiveProjectPicker(){
+  // Сначала проверяем надобность, потом уже — не открыто ли.
+  // Обратный порядок оставлял окно висеть, когда надобность отпала:
+  // открылось до загрузки тарифа, а через секунду выяснилось, что выбор
+  // давно сделан, — и закрыть его было некому.
+  if(!needActiveProjectPick()){
+    if(uiPickerOpen) closeActiveProjectPicker();
+    return;
+  }
   if(uiPickerOpen) return;
-  if(!needActiveProjectPick()) return;
   uiPickerOpen = true;
   renderActiveProjectPicker();
 }
