@@ -2675,7 +2675,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-10-40';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-10-41';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -12601,6 +12601,58 @@ function updateDerived(proj){
   const ctw = document.querySelector(`[data-cust-total-words="${proj.id}"]`);
   if(ct) ct.textContent = fmtMoney(total);
   if(ctw) ctw.textContent = rublesToWords(total);
+  refreshPayoutBlock(proj);
+}
+
+// Пересчитать «Расклад по деньгам» на месте (с 2026-08-10-41).
+// Количество в строках правится точечно, без полной перерисовки —
+// иначе поле ввода теряло бы курсор на каждой цифре. Расклад считается
+// при отрисовке, поэтому обновлять его надо здесь же, рядом с суммами.
+// Раньше он ждал, пока страницу перерисует что-нибудь другое —
+// сохранение, приход правки от напарника, — и цифры отставали на минуты.
+function refreshPayoutBlock(proj){
+  const box = document.querySelector(`[data-pay-acc="${proj.id}"]`);
+  const html = renderPayoutBlock(proj);
+  if(!box){
+    // Блока не было: первое назначение только что появилось. Вставляем
+    // перед сметой — там его место.
+    if(!html) return;
+    const sm = document.getElementById('smetaBlock');
+    if(sm && sm.parentNode){
+      const el = payoutFromHtml(html, proj);
+      if(el) sm.parentNode.insertBefore(el, sm);
+    }
+    return;
+  }
+  if(!html){ box.remove(); return; }   // назначений не осталось
+  const fresh = payoutFromHtml(html, proj);
+  if(fresh) box.replaceWith(fresh);
+}
+
+// Собрать блок из разметки и навесить ЕМУ ОДНОМУ обработчик раскрытия.
+// Полное attachHandlers() здесь звать нельзя: эта функция работает
+// на каждую введённую цифру количества, а она перевешивает обработчики
+// по всей странице.
+function payoutFromHtml(html, proj){
+  const tmp = document.createElement('div');
+  tmp.innerHTML = html;
+  const el = tmp.firstElementChild;
+  if(!el) return null;
+  // Раскрытость сохраняем: человек мог открыть блок и смотреть в него,
+  // пока правит количество. Схлопнуть его под пальцем — то же, что
+  // мигание бригады, которое чинили вчера.
+  el.classList.toggle('open', !!uiPayoutOpen[proj.id]);
+  const btn = el.querySelector('[data-pay-toggle]');
+  if(btn) btn.addEventListener('click', ()=>{
+    const open = !uiPayoutOpen[proj.id];
+    uiPayoutOpen[proj.id] = open;
+    const body = el.querySelector('.cust-body');
+    accBeforeToggle(body, open);
+    el.classList.toggle('open', open);
+    accAfterToggle(body);
+    btn.setAttribute('aria-expanded', open);
+  });
+  return el;
 }
 
 function nextProjectSeq(){
