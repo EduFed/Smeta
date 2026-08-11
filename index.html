@@ -2531,7 +2531,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-10-20';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-10-21';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -4881,6 +4881,7 @@ function applyViewerMode(){
       btn.hasAttribute('data-team-copy')    ||   // ссылка приглашения (её и так нет)
       btn.hasAttribute('data-team-leave')   ||   // выйти из проекта — можно
       btn.hasAttribute('data-room-toggle')  ||   // свернуть/развернуть помещение
+      btn.hasAttribute('data-mat-toggle')   ||   // раскрыть «Материалы»
       btn.hasAttribute('data-applies-toggle')||  // раскрывающийся список — только смотрит
       btn.hasAttribute('data-more')         ||
       btn.hasAttribute('data-panel')        ||   // раскрыть панель документов
@@ -10311,7 +10312,13 @@ function renderCustomerBlock(proj){
   // с ролью «смотрит» читал, что он правит, пока приложение молча отказывало.
   // Пишем ту роль, которая есть на самом деле.
   const foreign = proj.ownerId && currentUser && proj.ownerId !== currentUser.id;
-  const roleNote = (proj.myRole === 'viewer')
+  // У мастера с долей плашка про роль сбивала: он читал «вы как смотрит»,
+  // а ниже приложение говорило «это наряд, цены здесь ваши» — два сообщения
+  // об одном и том же, и первое спорило со вторым. Роль в его случае
+  // ничего не объясняет: он не наблюдатель, он работает по заданию.
+  const roleNote = isNaryad(proj)
+    ? `<div class="role-note">👷 <b>Это наряд от прораба.</b> Работы и объёмы задаёт он — здесь они только для просмотра. Цены в наряде ваши, по вашей доле. Замерили иначе или нашли работу, которой нет в списке, — скажите прорабу.</div>`
+    : (proj.myRole === 'viewer')
     ? `<div class="role-note">👁 Вы в этом проекте как «смотрит» — смету видно, но менять её нельзя. Права выдаёт владелец.</div>`
     : (foreign
         ? `<div class="role-note">👷 Чужой проект — вы в бригаде как «${escapeHtml(ROLE_NAME[proj.myRole] || proj.myRole)}». Тариф действует владельца проекта.</div>` : '');
