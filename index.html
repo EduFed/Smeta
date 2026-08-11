@@ -2039,6 +2039,65 @@
     select, textarea{ font-size:16px !important; }
   }
 
+  /* ============================================================
+     НАРЯД: ЧТО МАСТЕРУ НЕ ПОКАЗЫВАЕМ (сборка 2026-08-10-20)
+     ============================================================
+     Признак `naryad-mode` вешается на страницу при отрисовке, когда
+     у человека в этом проекте задана доля. Прячем показом, а не
+     вырезанием из разметки: вырезание уже уронило приложение в -19,
+     потому что обработчик не нашёл кнопку, которой не стало.
+
+     Что убираем и почему:
+     · данные для договора и сам договор с актами — бумаги прораба
+       с заказчиком, там паспорта обеих сторон. У мастера отношения
+       с прорабом, а не с заказчиком;
+     · список закупки — материалы покупает заказчик;
+     · условия объекта — надбавки уже сидят в его пересчитанной цене,
+       а по самим процентам можно вычислить наценку прораба;
+     · состав бригады — чужие почты это персональные данные третьих
+       лиц, и с кем работает прораб, вместе с заданием не раздаётся.
+       Свою строку мастер видит: там его доля и выход из проекта;
+     · «Дублировать» — копия чужого объекта у того, кто видел от него
+       только свою часть;
+     · цены материалов — расходы заказчика, к деньгам мастера
+       отношения не имеют. Сам перечень остаётся: мастеру полезно
+       знать, какой клей и хватит ли его.
+     ============================================================ */
+  .naryad-mode #duplicateProject{display:none;}
+  .naryad-mode .cust-acc[data-cust-acc]{display:none;}
+  .naryad-mode [data-panel-box="dogovor"],
+  .naryad-mode [data-panel-box="zakupka"]{display:none;}
+  .naryad-mode .conds-box{display:none;}
+  .naryad-mode .team-member-other{display:none;}
+  .naryad-mode .pm-price,
+  .naryad-mode .pm-total,
+  .naryad-mode .mat-head-sum{display:none;}
+  /* Колонка цены исчезла — сетка строки материалов на одну уже.
+     Заголовок таблицы прячем целиком: подписи разъехались бы. */
+  .naryad-mode .pm-row{grid-template-columns:1fr 90px 90px 200px 34px;}
+  .naryad-mode .pm-head{display:none;}
+
+  /* Сбой в коде — видимой плашкой внизу. Красная, но не на весь экран:
+     приложение при этом обычно частично работает, и загораживать его
+     нельзя. */
+  .fatal-note{
+    position:fixed;left:12px;right:12px;
+    bottom:calc(12px + env(safe-area-inset-bottom, 0px));
+    z-index:9000;display:flex;flex-direction:column;gap:6px;
+    padding:14px 16px;border-radius:12px;
+    background:var(--white);border:1px solid var(--red);
+    box-shadow:0 10px 30px rgba(0,0,0,.25);
+  }
+  .fatal-note b{color:var(--red);font-size:14px;}
+  .fatal-note span{font-family:'JetBrains Mono',monospace;font-size:11px;
+    line-height:1.5;color:var(--ink);word-break:break-word;}
+  .fatal-note i{font-style:normal;font-size:11px;color:var(--ink-soft);}
+  .fatal-note button{
+    align-self:flex-start;margin-top:4px;padding:6px 12px;
+    border:1px solid var(--paper-line);border-radius:7px;
+    background:var(--paper);color:var(--ink);font-size:12px;cursor:pointer;
+  }
+
   /* Текст для поисковых систем и чтения с экрана: не показывается,
      но и не скрыт от программ чтения, в отличие от display:none */
   .sr-only{
@@ -2472,7 +2531,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-10-16';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-10-20';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -4505,7 +4564,7 @@ function teamAccHtml(proj){
       // и его настройки были соседями на одном уровне, разделёнными
       // только тонкими линиями: при двух-трёх мастерах всё сливалось
       // в сплошную стену, и было не понять, чей тумблер чей.
-      return `<div class="team-member">
+      return `<div class="team-member${me ? '' : ' team-member-other'}">
       <div class="team-row">
         <div class="team-who">
           <b>${escapeHtml(m.email || 'участник')}</b>${me ? ' <span class="team-me">это вы</span>' : ''}
@@ -4779,6 +4838,21 @@ function applyViewerMode(){
   // невозможное.
   const ro = !!(proj && proj.myRole === 'viewer') || isFrozenProject(proj) || isNaryad(proj);
   main.classList.toggle('viewer-mode', ro);
+
+  // НАРЯД: ЛИШНЕЕ ПРЯЧЕТСЯ СТИЛЯМИ, А НЕ ВЫРЕЗАЕТСЯ ИЗ РАЗМЕТКИ
+  // (с 2026-08-10-20). В сборке -19 я убирал блоки прямо при отрисовке —
+  // и уронил приложение: обработчик обратился к кнопке «Дублировать»,
+  // которой у мастера уже не было, вся дальнейшая настройка страницы
+  // оборвалась, поля остались открытыми, замки не встали.
+  // Теперь разметка одна для всех, а прячет правило оформления. Стили
+  // не выполняются и уронить ничего не могут; обработчикам по-прежнему
+  // есть за что зацепиться.
+  // ВАЖНО: это именно про показ. Всё, что нельзя мастеру ПО СУЩЕСТВУ,
+  // держит сервер: цену заказчика он не отдаёт вовсе, чужие строки
+  // не показывает, запись отбивает. Спрятанное стилями — то, что ему
+  // просто не нужно и мешает.
+  main.classList.toggle('naryad-mode', isNaryad(proj));
+
   if(!ro) return;
 
   // Все поля ввода — только чтение.
@@ -11056,11 +11130,23 @@ function attachHandlers(){
 
   matProjHandlers(main, proj);
 
-  document.getElementById('projName').addEventListener('input', (e)=>{
+  // ЭЛЕМЕНТ МОЖЕТ НЕ СУЩЕСТВОВАТЬ — ПРОВЕРЯТЬ (уточнено 2026-08-10-20).
+  // Ниже уже стоит защита для экранов настроек: «обращение к ним роняло
+  // attachHandlers с TypeError». Ровно это и повторилось 11 августа
+  // внутри экрана проекта: у мастера на наряде убрали кнопку
+  // «Дублировать», обработчик её не нашёл, настройка страницы
+  // оборвалась на полуслове — и дальше не встали ни замки лимитов,
+  // ни режим «только чтение». Поля остались открытыми, а выглядело
+  // это как «сломалась синхронизация».
+  // Правило: любой элемент, который хоть при каком-то условии может
+  // не отрисоваться, берётся с проверкой. Дешевле одной строки.
+  const nameInput = document.getElementById('projName');
+  if(nameInput) nameInput.addEventListener('input', (e)=>{
     proj.name = e.target.value; scheduleSave(); renderSidebar();
     document.querySelectorAll('.proj-meta')[0] && (document.querySelectorAll('.proj-meta')[0].textContent = `${proj.rooms.length} помещ. · создан ${new Date(proj.createdAt).toLocaleDateString('ru-RU')}`);
   });
-  document.getElementById('duplicateProject').onclick = ()=>{
+  const dupBtn = document.getElementById('duplicateProject');
+  if(dupBtn) dupBtn.onclick = ()=>{
     if(!allow('project')) return;
     const copy = JSON.parse(JSON.stringify(proj));
     copy.id = uid('p'); copy.name = proj.name + ' (копия)'; copy.createdAt = Date.now();
@@ -11925,6 +12011,47 @@ document.addEventListener('click', (e)=>{
 document.addEventListener('click', (e)=>{
   if(e.target.closest('.mode-dd')) return;
   document.querySelectorAll('.mode-dd.open').forEach(x=>x.classList.remove('open'));
+});
+
+// ============================================================
+//  ОШИБКА В КОДЕ ДОЛЖНА БЫТЬ ВИДНА (с 2026-08-10-20)
+// ============================================================
+// До сих пор ошибка проходила молча: приложение обрывало настройку
+// страницы на полуслове, а человек видел живой на вид интерфейс,
+// который не работает. 11 августа на поиск такой ошибки ушёл вечер —
+// консоли на планшете нет, и оставалось гадать по косвенным признакам:
+// пропавшему замку на кнопке, открытым полям.
+// Теперь ошибка показывается прямо на экране, с местом в коде.
+// Это не для пользователя — это чтобы владелец мог прислать снимок
+// вместо описания «всё сломалось».
+// Показываем ПЕРВУЮ и молчим дальше: при поломке отрисовки ошибки
+// сыплются десятками, и экран, залитый ими, бесполезен.
+let fatalShown = false;
+function showFatalError(text){
+  if(fatalShown) return;
+  fatalShown = true;
+  try{
+    const box = document.createElement('div');
+    box.className = 'fatal-note no-print';
+    box.innerHTML =
+      '<b>Сбой в приложении</b>'
+      + '<span>' + escapeHtml(String(text || '')).slice(0, 300) + '</span>'
+      + '<i>Сборка ' + APP_BUILD + '. Пришлите этот текст — по нему видно, где сломалось.</i>'
+      + '<button type="button">Скрыть</button>';
+    box.querySelector('button').onclick = ()=> box.remove();
+    document.body.appendChild(box);
+  }catch(_){ /* если и это не вышло — молчим, хуже не сделаем */ }
+}
+
+window.addEventListener('error', (e)=>{
+  const where = (e.filename ? String(e.filename).split('/').pop() : '') +
+                (e.lineno ? (':' + e.lineno) : '');
+  showFatalError((e.message || 'ошибка') + (where ? ' — ' + where : ''));
+});
+
+window.addEventListener('unhandledrejection', (e)=>{
+  const r = e && e.reason;
+  showFatalError('не завершилось: ' + ((r && r.message) || r || 'без описания'));
 });
 
 // ---------- PWA: офлайн-режим и установка на телефон ----------
