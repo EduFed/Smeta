@@ -520,12 +520,49 @@
   /* «Работает по наряду» — не выбор, а состояние: выбирать нечего,
      пока задана доля. Выглядит как спокойная подпись, а не как
      заблокированное поле, чтобы не читалось как поломка. */
-  .team-mode{
-    display:inline-flex;align-items:center;padding:6px 10px;
-    border:1px solid var(--paper-line);border-radius:7px;
-    background:var(--paper);color:var(--ink-soft);
-    font-size:12px;white-space:nowrap;cursor:help;
+  /* СПОСОБ РАБОТЫ — СВОЙ СПИСОК, НЕ СИСТЕМНЫЙ (с 2026-08-10-15).
+     Системный список на телефоне открывается барабаном снизу экрана
+     и выглядит чужеродно; в приложении от них ушли ещё в июле.
+     Устройство — как у «применяется к»: кнопка со стрелкой и всплывающий
+     список под ней. Третий вид выпадашки заводить не стал. */
+  .mode-dd{position:relative;}
+  .mode-btn{
+    display:flex;align-items:center;justify-content:space-between;gap:8px;
+    min-width:190px;padding:8px 10px;
+    font-family:'Inter',sans-serif;font-size:13px;
+    border:1px solid var(--paper-line);border-radius:var(--radius);
+    background:var(--white);color:var(--ink);cursor:pointer;text-align:left;
   }
+  .mode-btn:hover{border-color:var(--orange);}
+  .mode-btn .chev{font-size:11px;color:var(--ink-soft);}
+  .mode-list{
+    display:none;position:absolute;top:100%;right:0;z-index:40;margin-top:4px;
+    min-width:210px;padding:6px;
+    background:var(--white);border:1px solid var(--paper-line);
+    border-radius:var(--radius);box-shadow:0 6px 18px rgba(0,0,0,.14);
+  }
+  .mode-dd.open{z-index:45;}
+  .mode-dd.open .mode-list{display:block;}
+  .mode-item{
+    display:block;width:100%;text-align:left;
+    padding:8px 10px;border:none;background:none;border-radius:var(--radius);
+    font-family:'Inter',sans-serif;font-size:13px;color:var(--ink);cursor:pointer;
+  }
+  .mode-item:hover{background:var(--paper);}
+  .mode-item.on{color:var(--orange);font-weight:600;}
+
+  /* Доля — со стрелками, шаг 5. Мастера считают долю круглыми числами:
+     половина, сорок, шестьдесят. Набирать их на телефоне цифрами дольше,
+     чем дважды нажать стрелку, а промахнуться мимо цифры — легче. */
+  .share-step{display:inline-flex;align-items:center;gap:6px;}
+  .share-step button{
+    width:32px;height:32px;flex:0 0 auto;
+    border:1px solid var(--paper-line);border-radius:7px;
+    background:var(--white);color:var(--ink);
+    font-size:16px;line-height:1;cursor:pointer;
+  }
+  .share-step button:hover{border-color:var(--orange);color:var(--orange);}
+  .share-step input{width:58px;text-align:center;}
   /* Мастеру, которому ещё не отдали работы. Не тревожная плашка:
      ничего не сломалось, просто ждём прораба. */
   .assign-empty{
@@ -2435,7 +2472,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-10-14';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-10-15';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -4489,22 +4526,35 @@ function teamAccHtml(proj){
                 Долю при выборе наряда НЕ проставляю сам: это деньги.
                 Пока она пуста, мастер цен не видит вовсе — молчание
                 закрывает, а не открывает. */''}
-          <select data-team-mode="${proj.id}|${m.user_id}">
-            <option value="together" ${(m.role==='editor' && !(m.share_pct != null && m.share_pct < 100))?'selected':''}>работает вместе</option>
-            <option value="naryad"   ${(m.share_pct != null && m.share_pct < 100)?'selected':''}>работает по наряду</option>
-            <option value="watch"    ${(m.role==='viewer' && !(m.share_pct != null && m.share_pct < 100))?'selected':''}>только смотрит</option>
-          </select>
+          ${(()=>{
+            const naryad = (m.share_pct != null && m.share_pct < 100);
+            const cur = naryad ? 'naryad' : (m.role === 'editor' ? 'together' : 'watch');
+            const NAMES = { together:'работает вместе', naryad:'работает по наряду', watch:'только смотрит' };
+            const item = (k)=> `<button type="button" class="mode-item ${cur===k?'on':''}" data-mode-pick="${proj.id}|${m.user_id}|${k}">${NAMES[k]}</button>`;
+            return `<div class="mode-dd" data-mode-dd="${proj.id}|${m.user_id}">
+              <button type="button" class="mode-btn" data-mode-toggle="${proj.id}|${m.user_id}">
+                <span>${NAMES[cur]}</span><span class="chev">▾</span>
+              </button>
+              <div class="mode-list">${item('together')}${item('naryad')}${item('watch')}</div>
+            </div>`;
+          })()}
           <button type="button" class="team-x" data-team-del="${proj.id}|${m.user_id}" title="Убрать из проекта">✕</button>
         </div>` : ''}
       </div>
-      ${canTouch && canShare ? `<div class="team-sub">
+      ${/* Доля показывается только у того, кто работает по наряду.
+            Раньше поле висело у всех, и у напарника, который видит
+            настоящие цены, оно означало пустоту — лишний вопрос без
+            ответа. Показываем и тому, у кого доля задана, но режим
+            уже сменили: иначе заданную долю нельзя было бы снять. */''}
+      ${canTouch && canShare && (m.share_pct != null && m.share_pct < 100) ? `<div class="team-sub">
         <span>Его доля от сметы
-          <i>сколько процентов строки получает мастер. Пусто — цен не видит,
-             100 — видит настоящие, как напарник</i></span>
-        <span class="team-share">
+          <i>сколько процентов строки получает мастер. Пусто — цен не видит вовсе</i></span>
+        <span class="team-share share-step">
+          <button type="button" data-share-step="${proj.id}|${m.user_id}|-5" title="Меньше на 5">−</button>
           <input type="text" inputmode="numeric" maxlength="3"
                  value="${escapeAttr(m.share_pct == null ? '' : m.share_pct)}"
                  placeholder="—" data-team-share="${proj.id}|${m.user_id}">
+          <button type="button" data-share-step="${proj.id}|${m.user_id}|5" title="Больше на 5">+</button>
           <i>%</i>
         </span>
       </div>` : ''}
@@ -4739,7 +4789,7 @@ function applyViewerMode(){
   const PREVIEW_FIELDS = ['data-contract-type','data-contract-date','data-contract-days',
                           'data-stageno','data-settlement'];
   main.querySelectorAll('input, textarea, select').forEach(el=>{
-    if(el.hasAttribute('data-team-role') || el.hasAttribute('data-team-email')) return;
+    if(el.hasAttribute('data-team-email')) return;
     if(PREVIEW_FIELDS.some(a=> el.hasAttribute(a))) return;
     el.disabled = true;
     el.title = isNaryad(proj)
@@ -11335,34 +11385,68 @@ function attachHandlers(){
   // «Вместе» — правит смету, доли нет. «По наряду» — не правит, доля
   // задаётся отдельным полем (сам её не проставляю: это деньги).
   // «Только смотрит» — не правит, доли нет.
-  main.querySelectorAll('[data-team-mode]').forEach(el=>{
-    el.addEventListener('change', async ()=>{
-      const [pid, uidv] = el.getAttribute('data-team-mode').split('|');
-      const mode = el.value;
+  // Кнопка открывает список способов работы.
+  main.querySelectorAll('[data-mode-toggle]').forEach(el=>{
+    el.onclick = (e)=>{
+      e.stopPropagation();
+      const dd = el.closest('.mode-dd');
+      main.querySelectorAll('.mode-dd').forEach(x=>{ if(x!==dd) x.classList.remove('open'); });
+      if(dd) dd.classList.toggle('open');
+    };
+  });
+
+  // Выбор способа работы. Роль и доля меняются вместе — это одна
+  // настройка, а не две независимые.
+  main.querySelectorAll('[data-mode-pick]').forEach(el=>{
+    el.onclick = async ()=>{
+      const [pid, uidv, mode] = el.getAttribute('data-mode-pick').split('|');
+      const dd = el.closest('.mode-dd');
+      if(dd) dd.classList.remove('open');
+      const t0 = teamCache[pid];
+      const m0 = ((t0 && t0.members) || []).find(x=> x.user_id === uidv) || {};
       try{
         await DB.setRole(pid, uidv, mode === 'together' ? 'editor' : 'viewer');
-        // Уходим с наряда — доля снимается: иначе человек остался бы
-        // с чужой ценой на экране при совместной работе.
-        // Переходим на наряд — долю не трогаем. Была задана раньше:
-        // продолжает действовать. Не была: мастер цен не видит, пока
-        // прораб не назначит долю осознанно.
-        if(mode !== 'naryad'){
-          const t = teamCache[pid];
-          const m = ((t && t.members) || []).find(x=> x.user_id === uidv);
-          if(m && m.share_pct != null) await DB.setMemberShare(pid, uidv, '');
+
+        if(mode === 'naryad'){
+          // Долю ставим половиной, если её ещё нет. Половина — самое
+          // частое в подряде, и без неё наряда не существует: мастер
+          // не увидел бы ни одной цены, а поле правки не показалось бы
+          // вовсе (оно есть только у того, кто уже на наряде).
+          // Число не тайное: оно сразу на виду и правится стрелками,
+          // и о нём говорится вслух.
+          if(m0.share_pct == null){
+            await DB.setMemberShare(pid, uidv, 50);
+            toast('Доля 50% — поправьте стрелками, если у вас другая');
+          }
+        } else {
+          // Уходим с наряда — доля снимается: иначе человек остался бы
+          // с урезанной ценой там, где должен видеть настоящую.
+          if(m0.share_pct != null) await DB.setMemberShare(pid, uidv, '');
         }
+
         await DB.touchProject(pid);   // смена должна дойти до мастера сразу
         await teamLoad(pid);
-        if(mode === 'naryad'){
-          const t = teamCache[pid];
-          const m = ((t && t.members) || []).find(x=> x.user_id === uidv);
-          if(!m || m.share_pct == null){
-            toast('Укажите долю мастера — без неё он не увидит цен');
-          }
-        }
       }
       catch(e){ alert((e && e.message) || 'Не удалось изменить.'); }
-    });
+    };
+  });
+
+  // Доля стрелками, шаг 5. Держим в границах 1..99: сотня — это уже
+  // не наряд, а равноправный напарник, и ставится она сменой способа
+  // работы, а не стрелкой.
+  main.querySelectorAll('[data-share-step]').forEach(el=>{
+    el.onclick = async ()=>{
+      const [pid, uidv, d] = el.getAttribute('data-share-step').split('|');
+      const t = teamCache[pid];
+      const m = ((t && t.members) || []).find(x=> x.user_id === uidv) || {};
+      const now = m.share_pct == null ? 50 : Number(m.share_pct);
+      const next = Math.min(99, Math.max(1, now + Number(d)));
+      if(next === now) return;
+      try{
+        await DB.setMemberShare(pid, uidv, next);
+        await teamLoad(pid);
+      }catch(e){ alert((e && e.message) || 'Не удалось изменить долю.'); }
+    };
   });
 
   // «Выбрать проект» с плашки — запасной выход, если окно закрыли
@@ -11816,6 +11900,12 @@ document.addEventListener('click', (e)=>{
   if(e.target.closest('.applies-dd')) return;
   document.querySelectorAll('.applies-dd.open').forEach(x=>x.classList.remove('open'));
   syncCatalogOverflow();
+});
+
+// то же для списка способов работы в бригаде
+document.addEventListener('click', (e)=>{
+  if(e.target.closest('.mode-dd')) return;
+  document.querySelectorAll('.mode-dd.open').forEach(x=>x.classList.remove('open'));
 });
 
 // ---------- PWA: офлайн-режим и установка на телефон ----------
