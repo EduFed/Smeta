@@ -517,9 +517,14 @@
   /* Приписка у роли, когда доля её перекрывает. Не ошибка и не тревога —
      просто честное «это ничего не меняет», чтобы прораб не ждал от роли
      того, чего она не даёт. */
-  .team-role-note{
-    display:block;margin-top:4px;font-style:normal;
-    font-size:10px;line-height:1.35;color:var(--amber);
+  /* «Работает по наряду» — не выбор, а состояние: выбирать нечего,
+     пока задана доля. Выглядит как спокойная подпись, а не как
+     заблокированное поле, чтобы не читалось как поломка. */
+  .team-mode{
+    display:inline-flex;align-items:center;padding:6px 10px;
+    border:1px solid var(--paper-line);border-radius:7px;
+    background:var(--paper);color:var(--ink-soft);
+    font-size:12px;white-space:nowrap;cursor:help;
   }
   /* Мастеру, которому ещё не отдали работы. Не тревожная плашка:
      ничего не сломалось, просто ждём прораба. */
@@ -2430,7 +2435,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-10-12';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-10-13';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -4364,7 +4369,21 @@ setInterval(()=>{
 let uiTeamOpen = {};      // какой проект раскрыт
 let teamCache  = {};      // projectId -> { members, invites, canList, loading, err }
 
-const ROLE_NAME = { owner:'владелец', editor:'правит', viewer:'смотрит' };
+// Способ работы, а не звание (с 2026-08-10-13). «Правит / смотрит» описывало
+// права в базе, а человеку надо понимать отношения: работаем над одной сметой
+// или я отдал кусок на подряд. Метка под почтой показывает то же, что и выбор
+// рядом, поэтому слова должны совпадать — иначе они спорят друг с другом.
+const ROLE_NAME = { owner:'владелец', editor:'работает вместе', viewer:'только смотрит' };
+
+// Что показывать под почтой участника: у кого задана доля, тот работает
+// по наряду, чем бы ни была его роль в базе. Роль там остаётся прежней —
+// сервер и так не пустит его править, — но обещать ему правку незачем.
+function memberModeName(m){
+  if(!m) return '';
+  if(m.role === 'owner') return ROLE_NAME.owner;
+  if(m.share_pct != null && m.share_pct < 100) return 'работает по наряду';
+  return ROLE_NAME[m.role] || m.role;
+}
 
 // Владелец — только тот, чей номер записан в проекте. Раньше проект без
 // записанного владельца считался своим; для чужого проекта, где поле почему-то
@@ -4452,15 +4471,27 @@ function teamAccHtml(proj){
       <div class="team-row">
         <div class="team-who">
           <b>${escapeHtml(m.email || 'участник')}</b>${me ? ' <span class="team-me">это вы</span>' : ''}
-          <div class="team-role">${ROLE_NAME[m.role] || m.role}</div>
+          <div class="team-role">${memberModeName(m)}</div>
         </div>
         ${canTouch ? `<div class="team-act">
-          <select data-team-role="${proj.id}|${m.user_id}">
-            <option value="editor" ${m.role==='editor'?'selected':''}>правит</option>
-            <option value="viewer" ${m.role==='viewer'?'selected':''}>смотрит</option>
-          </select>
-          ${(m.share_pct != null && m.share_pct < 100 && m.role === 'editor')
-            ? `<i class="team-role-note" title="Смета — ваш документ с заказчиком. Мастер, меняя объёмы, двигал бы ваши деньги, видя только свою долю цены.">роль не действует: у него наряд</i>` : ''}
+          ${(m.share_pct != null && m.share_pct < 100)
+            // РАБОТАЕТ ПО НАРЯДУ — ВЫБОРА РОЛИ НЕТ (с 2026-08-10-13).
+            // Пока у человека задана доля, он получает наряд: свои работы
+            // по своей цене, смета не его документ. Правка ему всё равно
+            // не пройдёт — база отбивает её правилом доступа. Раньше здесь
+            // стоял обычный выбор «правит / смотрит», и «правит» обещало
+            // то, чего не бывает: поля открывались, суммы пересчитывались
+            // на экране, а запись отбивалась. Приписка про недействующую
+            // роль это объясняла, но объяснять невозможный выбор — плохая
+            // замена тому, чтобы его не предлагать.
+            // Способ работы, а не звание: сегодня человек взял кусок
+            // на подряд, завтра работает наравне — метку менять не надо,
+            // достаточно убрать долю.
+            ? `<span class="team-mode" title="Смета — ваш документ с заказчиком. Мастер, меняя в ней объёмы, двигал бы ваши деньги, видя только свою долю цены. Уберите долю — сможет работать наравне.">работает по наряду</span>`
+            : `<select data-team-role="${proj.id}|${m.user_id}">
+                 <option value="editor" ${m.role==='editor'?'selected':''}>работает вместе</option>
+                 <option value="viewer" ${m.role==='viewer'?'selected':''}>только смотрит</option>
+               </select>`}
           <button type="button" class="team-x" data-team-del="${proj.id}|${m.user_id}" title="Убрать из проекта">✕</button>
         </div>` : ''}
       </div>
