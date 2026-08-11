@@ -514,6 +514,13 @@
     background:var(--orange-soft);color:var(--orange);font-weight:600;
   }
   .am-note{padding:8px 10px 6px;font-size:11px;color:var(--ink-soft);line-height:1.45;}
+  /* Приписка у роли, когда доля её перекрывает. Не ошибка и не тревога —
+     просто честное «это ничего не меняет», чтобы прораб не ждал от роли
+     того, чего она не даёт. */
+  .team-role-note{
+    display:block;margin-top:4px;font-style:normal;
+    font-size:10px;line-height:1.35;color:var(--amber);
+  }
   /* Мастеру, которому ещё не отдали работы. Не тревожная плашка:
      ничего не сломалось, просто ждём прораба. */
   .assign-empty{
@@ -2423,7 +2430,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-10-11';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-10-12';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -4452,6 +4459,8 @@ function teamAccHtml(proj){
             <option value="editor" ${m.role==='editor'?'selected':''}>правит</option>
             <option value="viewer" ${m.role==='viewer'?'selected':''}>смотрит</option>
           </select>
+          ${(m.share_pct != null && m.share_pct < 100 && m.role === 'editor')
+            ? `<i class="team-role-note" title="Смета — ваш документ с заказчиком. Мастер, меняя объёмы, двигал бы ваши деньги, видя только свою долю цены.">роль не действует: у него наряд</i>` : ''}
           <button type="button" class="team-x" data-team-del="${proj.id}|${m.user_id}" title="Убрать из проекта">✕</button>
         </div>` : ''}
       </div>
@@ -4672,7 +4681,20 @@ function applyViewerMode(){
   //   2) свой проект, который на бесплатном тарифе не выбран рабочим.
   // Второй случай обязан совпадать со сторожем в базе слово в слово,
   // иначе поля будут выглядеть рабочими, а запись — отбиваться.
-  const ro = !!(proj && proj.myRole === 'viewer') || isFrozenProject(proj);
+  // НАРЯД — ТОЛЬКО ДЛЯ ЧТЕНИЯ, ЧТО БЫ НИ СТОЯЛО В РОЛИ (с 2026-08-10-12).
+  // Мастеру с долей роль «правит» ничего не давала: база отбивала каждую
+  // правку правилом доступа (код 42501), а приложение открывало поля,
+  // считало новые суммы на экране и обновляло итог по проекту. Человек
+  // работал впустую и узнавал об этом по красной плашке.
+  // Сервер тут прав, а роль врала. Смета — документ прораба с заказчиком:
+  // мастер, меняя объёмы, двигает не свой наряд, а чужие деньги, видя
+  // при этом только свою долю цены. Наряд — это задание, а задание,
+  // которое исполнитель правит сам, перестаёт быть заданием.
+  // Поэтому развилка не по роли, а по доле: доля задана — просмотр.
+  // Это та же грабля №20 («роль клиент угадывать не должен»), только
+  // с другой стороны: там клиент разрешал запрещённое, здесь обещал
+  // невозможное.
+  const ro = !!(proj && proj.myRole === 'viewer') || isFrozenProject(proj) || isNaryad(proj);
   main.classList.toggle('viewer-mode', ro);
   if(!ro) return;
 
@@ -4687,7 +4709,9 @@ function applyViewerMode(){
     if(el.hasAttribute('data-team-role') || el.hasAttribute('data-team-email')) return;
     if(PREVIEW_FIELDS.some(a=> el.hasAttribute(a))) return;
     el.disabled = true;
-    el.title = 'Только просмотр — права выдаёт владелец проекта';
+    el.title = isNaryad(proj)
+      ? 'Наряд от прораба — объёмы и состав работ меняет он'
+      : 'Только просмотр — права выдаёт владелец проекта';
   });
 
   // Кнопки: запрещаем ВСЁ, кроме белого списка. Так надёжнее, чем перечислять
@@ -9918,6 +9942,14 @@ function renderProjectView(proj){
         для просмотра, ничего не удалится.</span>
       <button class="btn btn-primary" data-pick-open="1">Выбрать проект</button>
     </div>`) : ''}
+    ${isNaryad(proj) ? `
+    <div class="frozen-note no-print">
+      <span><b>Это наряд.</b> Работы и объёмы задаёт прораб — здесь они
+        только для просмотра. Цены в наряде ваши, по вашей доле.
+        Замерили иначе, чем в задании, или нашли работу, которой нет
+        в списке, — скажите прорабу: он пересчитает и, если нужно,
+        согласует с заказчиком.</span>
+    </div>` : ''}
     <div class="proj-header">
       <div>
         <input class="proj-title-input" id="projName" value="${escapeAttr(proj.name)}" placeholder="Название проекта">
