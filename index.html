@@ -563,6 +563,18 @@
   }
   .share-step button:hover{border-color:var(--orange);color:var(--orange);}
   .share-step input{width:58px;text-align:center;}
+  /* Подпись участника — поле пошире доли: там имя, а не число */
+  .team-label input{
+    width:190px;max-width:100%;padding:7px 9px;
+    border:1px solid var(--paper-line);border-radius:7px;
+    background:var(--white);color:var(--ink);font-size:13px;
+  }
+  /* Почта под подписью — мелким и приглушённым: по ней различают,
+     но читают в первую очередь подпись */
+  .team-email{
+    font-family:'JetBrains Mono',monospace;font-size:11px;
+    color:var(--ink-soft);margin-top:2px;word-break:break-all;
+  }
   /* Мастеру, которому ещё не отдали работы. Не тревожная плашка:
      ничего не сломалось, просто ждём прораба. */
   .assign-empty{
@@ -2547,7 +2559,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-10-28';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-10-29';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -4549,19 +4561,25 @@ function canAssign(proj){
 // Короткое имя для метки на строке: почта целиком не влезает на телефоне,
 // а часть до собачки узнаётся с одного взгляда. Полная почта остаётся
 // в подсказке при наведении и в меню выбора.
-function shortWho(s){
-  const v = String(s || '');
-  const at = v.indexOf('@');
-  const head = at > 0 ? v.slice(0, at) : v;
-  return head.length > 12 ? head.slice(0, 11) + '…' : head;
-}
-
 function assigneeLabel(proj, userId){
   if(!userId) return '';
   const t = proj && teamCache[proj.id];
+  // Подпись, если владелец её задал: «Серёга, плиточник» узнаётся
+  // быстрее, чем zxc123@mail.ru. Нет подписи — почта, как раньше.
+  const lab = (t && t.labels || {})[userId];
+  if(lab) return lab;
   const m = (t && t.members || []).find(x=> x.user_id === userId);
   if(m && m.email) return m.email;
   return (currentUser && userId === currentUser.id) ? 'вам' : 'назначено';
+}
+
+// Для метки на строке сметы: подпись показываем целиком (её писал
+// человек и делал короткой), а почту режем до собачки.
+function shortWho(sOrLabel){
+  const v = String(sOrLabel || '');
+  if(v.indexOf('@') < 0) return v.length > 16 ? v.slice(0, 15) + '…' : v;
+  const head = v.slice(0, v.indexOf('@'));
+  return head.length > 12 ? head.slice(0, 11) + '…' : head;
 }
 
 function inviteLink(token){
@@ -4607,7 +4625,14 @@ function teamAccHtml(proj){
       return `<div class="team-member${other ? ' team-member-other' : ''}">
       <div class="team-row">
         <div class="team-who">
-          <b>${escapeHtml(m.email || 'участник')}</b>${me ? ' <span class="team-me">это вы</span>' : ''}
+          ${/* Подпись — крупно, почта под ней мелким серым. Почта никуда
+                не девается: по ней прораб отличит двух Серёг, а мастеру
+                она нужна, чтобы понять, чей это адрес. Подписи нет —
+                крупно почта, как было раньше. */''}
+          ${(t.labels && t.labels[m.user_id])
+            ? `<b>${escapeHtml(t.labels[m.user_id])}</b>${me ? ' <span class="team-me">это вы</span>' : ''}
+               <div class="team-email">${escapeHtml(m.email || '')}</div>`
+            : `<b>${escapeHtml(m.email || 'участник')}</b>${me ? ' <span class="team-me">это вы</span>' : ''}`}
           <div class="team-role">${memberModeName(m)}</div>
         </div>
         ${canTouch ? `<div class="team-act">
@@ -4645,6 +4670,21 @@ function teamAccHtml(proj){
             настоящие цены, оно означало пустоту — лишний вопрос без
             ответа. Показываем и тому, у кого доля задана, но режим
             уже сменили: иначе заданную долю нельзя было бы снять. */''}
+      ${/* ПОДПИСЬ — ТОЛЬКО ВЛАДЕЛЬЦУ (с 2026-08-10-29).
+            Личная заметка прораба о подрядчике: «Серёга, плиточник».
+            Мастер её не видит и увидеть не может — правило живёт
+            в политиках отдельной таблицы, а не в показе.
+            Именно поэтому текст здесь может быть любым, вплоть
+            до «переделывал дважды»: он не уедет тому, о ком написан. */''}
+      ${canTouch ? `<div class="team-sub">
+        <span>Как называть
+          <i>только для вас: «Серёга, плиточник». Мастер этой подписи не видит</i></span>
+        <span class="team-label">
+          <input type="text" maxlength="60" placeholder="—"
+                 value="${escapeAttr((t.labels && t.labels[m.user_id]) || '')}"
+                 data-team-label="${proj.id}|${m.user_id}">
+        </span>
+      </div>` : ''}
       ${canTouch && canShare && (m.share_pct != null && m.share_pct < 100) ? `<div class="team-sub">
         <span>Его доля от сметы
           <i>сколько процентов строки получает мастер. Пусто — цен не видит вовсе</i></span>
@@ -5664,7 +5704,45 @@ const DB = {
       .order('created_at', { ascending: false });
     if(!inv.error) out.invites = inv.data || [];
 
+    // ПОДПИСИ УЧАСТНИКОВ (с 2026-08-10-29). Отдельная таблица, а не поле
+    // в списке участников: политика чтения project_members пускает любого
+    // участника ко всем строкам проекта, и подпись утекла бы мастеру
+    // прямым запросом. Здесь правило видимости одно на все действия —
+    // только владелец проекта, — и обойти его нечем.
+    // Мастеру придёт пустой список, и это не ошибка: ему не положено.
+    // Поэтому молча, без сообщений — иначе он увидит «не удалось
+    // загрузить» там, где всё правильно.
+    const lab = await sb.from('project_member_labels')
+      .select('user_id, label')
+      .eq('project_id', projectId);
+    out.labels = (lab.error || !lab.data) ? {} :
+      lab.data.reduce((acc, r)=>{ acc[r.user_id] = r.label || ''; return acc; }, {});
+
     return out;
+  },
+
+  // Подписать участника. Одна строка на пару «проект + человек»,
+  // поэтому upsert: подписываем впервые и переписываем одинаково.
+  // Пустая подпись — это снять её, а не сохранить пустоту: строка
+  // с пустым текстом ничем не лучше отсутствующей, а место занимает.
+  async setMemberLabel(projectId, userId, label){
+    const text = String(label || '').trim().slice(0, 60);
+    if(!text){
+      const { error } = await sb.from('project_member_labels')
+        .delete().eq('project_id', projectId).eq('user_id', userId);
+      if(error) throw error;
+      return '';
+    }
+    const { data, error } = await sb.from('project_member_labels')
+      .upsert({ project_id: projectId, user_id: userId, label: text },
+              { onConflict: 'project_id,user_id' })
+      .select('label');
+    if(error) throw error;
+    // Пустой ответ значит, что политика ничего не тронула, — а не успех
+    // (грабля №44). У INSERT отказ настоящий, но upsert может уйти
+    // и в UPDATE, где отказа не бывает вовсе (грабля №45).
+    if(!data || !data.length) throw new Error('Подписывать участников может только владелец проекта.');
+    return data[0].label || '';
   },
 
   // Приглашение — строкой в таблице. Письмо не шлём: владелец копирует
@@ -11679,6 +11757,28 @@ function attachHandlers(){
 
 
   // доля мастера — только у владельца проекта
+  // Подпись участника. Сохраняем по уходу из поля, а не на каждую букву:
+  // это заметка, а не расчёт, и слать запрос на каждое нажатие незачем.
+  main.querySelectorAll('[data-team-label]').forEach(el=>{
+    el.addEventListener('change', async ()=>{
+      const [pid, uidv] = el.getAttribute('data-team-label').split('|');
+      const t = teamCache[pid];
+      const was = (t && t.labels || {})[uidv] || '';
+      const val = el.value.trim();
+      if(val === was) return;
+      try{
+        const saved = await DB.setMemberLabel(pid, uidv, val);
+        if(t){ t.labels = t.labels || {};
+          if(saved) t.labels[uidv] = saved; else delete t.labels[uidv]; }
+        // Рисуем один раз и на месте: teamLoad мигал бы «Загружаем
+        // бригаду…» и складывал блок под пальцем.
+        render();
+      }catch(e){
+        el.value = was;
+        alert((e && e.message) || 'Не удалось сохранить подпись.');
+      }
+    });
+  });
   main.querySelectorAll('[data-team-share]').forEach(el=>{
     el.addEventListener('change', async ()=>{
       const [pid, uidv] = el.getAttribute('data-team-share').split('|');
