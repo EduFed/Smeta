@@ -498,6 +498,32 @@
   .wd-item.wd-used{cursor:default;color:var(--ink-soft);opacity:.55;}
   .wd-item.wd-used:hover{background:none;}
   .wd-used-mark{font-size:11px;color:var(--ink-soft);white-space:nowrap;}
+  /* МЕТКА ИСПОЛНИТЕЛЯ У СТРОКИ СМЕТЫ (наряды, с 2026-08-10-11).
+     Не назначено — бледная надпись «назначить», чтобы не спорила
+     за внимание с ценой и количеством. Назначено — имя цветом акцента:
+     прораб должен видеть розданное с одного взгляда, не вчитываясь. */
+  .sel-work-assign{
+    background:none;border:1px dashed var(--paper-line);border-radius:7px;
+    padding:3px 8px;font-family:inherit;font-size:11px;line-height:1.4;
+    color:var(--ink-soft);cursor:pointer;white-space:nowrap;max-width:120px;
+    overflow:hidden;text-overflow:ellipsis;
+  }
+  .sel-work-assign:hover{border-color:var(--orange);color:var(--ink);}
+  .sel-work-assign.on{
+    border-style:solid;border-color:var(--orange);
+    background:var(--orange-soft);color:var(--orange);font-weight:600;
+  }
+  .am-note{padding:8px 10px 6px;font-size:11px;color:var(--ink-soft);line-height:1.45;}
+  /* Мастеру, которому ещё не отдали работы. Не тревожная плашка:
+     ничего не сломалось, просто ждём прораба. */
+  .assign-empty{
+    display:flex;flex-direction:column;gap:6px;
+    margin:16px 0;padding:18px 20px;
+    background:var(--white);border:1px solid var(--paper-line);
+    border-radius:var(--radius);
+  }
+  .assign-empty b{font-size:15px;color:var(--ink);}
+  .assign-empty span{font-size:13px;color:var(--ink-soft);line-height:1.55;}
   .wd-unit{color:var(--ink-soft);font-family:'JetBrains Mono',monospace;font-size:11px;white-space:nowrap;}
   .wd-empty{padding:10px 12px;color:var(--ink-soft);font-size:12px;}
   .opening-row{
@@ -2397,7 +2423,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-10-10';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-10-11';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -4345,6 +4371,40 @@ function isProjectOwner(proj){
   return !!proj._justCreated;
 }
 
+// МОЖНО ЛИ НАЗНАЧАТЬ ИСПОЛНИТЕЛЯ В ЭТОМ ПРОЕКТЕ (наряды, с 2026-08-10-11).
+// Условие ровно то же, по которому показывается доля мастера: свой проект
+// и тариф «Прораб» у владельца, либо идёт пробный период (он даёт полный
+// доступ, иначе главную функцию тарифа нельзя попробовать до покупки).
+// Список, а не сравнение с одной строкой: на сравнении здесь уже обжигались.
+// ЭТО ТОЛЬКО ПОКАЗ. Настоящая проверка — сторож check_assigned_to в базе,
+// и он проверяет заново всё то же самое. Клиент показывает, база стережёт.
+function canAssign(proj){
+  if(!proj || !isProjectOwner(proj)) return false;
+  return SHARE_PLANS.includes(proj.ownerPlan) || trialDaysLeft() > 0;
+}
+
+// Кому назначена строка — человеческим именем. Почта участника лежит
+// в teamCache, он подгружается для блока «Бригада»; пока не подгрузился,
+// показываем нейтральное «назначено», а не пустоту — иначе строка
+// выглядит как никому не отданная.
+// Короткое имя для метки на строке: почта целиком не влезает на телефоне,
+// а часть до собачки узнаётся с одного взгляда. Полная почта остаётся
+// в подсказке при наведении и в меню выбора.
+function shortWho(s){
+  const v = String(s || '');
+  const at = v.indexOf('@');
+  const head = at > 0 ? v.slice(0, at) : v;
+  return head.length > 12 ? head.slice(0, 11) + '…' : head;
+}
+
+function assigneeLabel(proj, userId){
+  if(!userId) return '';
+  const t = proj && teamCache[proj.id];
+  const m = (t && t.members || []).find(x=> x.user_id === userId);
+  if(m && m.email) return m.email;
+  return (currentUser && userId === currentUser.id) ? 'вам' : 'назначено';
+}
+
 function inviteLink(token){
   return location.origin + location.pathname + '?invite=' + token;
 }
@@ -5033,6 +5093,10 @@ const DB = {
   workFromRow(w, price){
     return {
       lid: w.lid,
+      // Кому назначена строка (наряды, с 2026-08-10-11). Пусто — никому.
+      // Мастеру сервер отдаёт только назначенные ему строки, поэтому
+      // у него здесь всегда он сам; смысл поле имеет для владельца.
+      assignedTo: w.assigned_to || null,
       workId: w.is_ref_lay ? REF_LAY_ID : (w.work_id || ('ghost_' + w.lid)),
       manualQty: w.manual_qty === null ? '' : w.manual_qty,
       manualUnit: w.manual_unit || undefined,
@@ -5473,6 +5537,50 @@ const DB = {
       .select('user_id');
     if(error) throw error;
     if(!data || !data.length) throw new Error('Не удалось изменить долю: недостаточно прав.');
+  },
+
+  // НАЗНАЧЕНИЕ ИСПОЛНИТЕЛЯ НА СТРОКУ СМЕТЫ (наряды, с 2026-08-10-11).
+  //
+  // Пишется ОТДЕЛЬНЫМ узким запросом, а не вместе с обычным сохранением,
+  // и это не мелочь. Приложение сохраняет строки пачкой, перечисляя все
+  // их колонки разом (workToRow). Поля assigned_to в этом наборе нет —
+  // и добавлять его туда нельзя: у строк, которые человек не назначал,
+  // оно ушло бы пустым и стёрло назначения по всему проекту одним
+  // сохранением. Тот же приём, что с ценами: то, что правит не каждый
+  // и не всегда, ходит своей дорогой.
+  //
+  // Сервер сам решает, можно ли: сторож check_assigned_to проверяет,
+  // что назначает владелец проекта, что тариф «Прораб» и что человек
+  // состоит в этом проекте. Клиент только показывает — стережёт база.
+  //
+  // select после update — не за данными, а чтобы отличить «записалось»
+  // от «политика доступа молча ничего не тронула»: тот же приём, что
+  // в setMemberShare.
+  async setWorkAssignee(lid, userId){
+    const { data, error } = await sb.from('room_works')
+      .update({ assigned_to: userId || null })
+      .eq('lid', lid)
+      .select('lid, assigned_to');
+    if(error) throw error;
+    if(!data || !data.length){
+      throw new Error('Строка не найдена или назначать её вы не вправе.');
+    }
+    return data[0];
+  },
+
+  // То же для всех работ помещения разом. Прораб раздаёт объект
+  // помещениями — санузел одному, кухня другому, — поэтому пачка
+  // здесь естественнее, чем выделение строк галочками.
+  // Один запрос = одна транзакция: отобьётся хоть одна строка —
+  // не применится ни одна, и помещение не останется наполовину
+  // розданным.
+  async setRoomAssignee(roomId, userId){
+    const { data, error } = await sb.from('room_works')
+      .update({ assigned_to: userId || null })
+      .eq('room_id', roomId)
+      .select('lid');
+    if(error) throw error;
+    return (data || []).length;
   },
 
   // Закрыть персональные данные заказчика лично от одного мастера.
@@ -9557,6 +9665,145 @@ function projMenu(id, x, y){
   }, 0);
 }
 
+// ВСПЛЫВАЮЩЕЕ МЕНЮ НАЗНАЧЕНИЯ (наряды, с 2026-08-10-11).
+// Каркас — показ, позиционирование и закрытие первым нажатием мимо —
+// повторяет openStatusMenu намеренно, а не переиспользует его: там
+// в закрытии сидит разбор случая, который стоил отдельной правки
+// (нажатие мимо гасилось не полностью, и меню исчезало, а под ним
+// сразу открывалось то, во что ткнули). Трогать работающее ради
+// красоты не стал.
+function openAssignMenu(x, y, proj, ids, roomId){
+  const prev = document.getElementById('assignMenu');
+  if(prev) prev.style.display = 'none';
+  let m = document.getElementById('assignMenu');
+  if(!m){
+    m = document.createElement('div');
+    m.id = 'assignMenu';
+    m.className = 'status-menu no-print';
+    document.body.appendChild(m);
+  }
+
+  const t = teamCache[proj.id];
+  const members = ((t && t.members) || []).filter(x=> x.role !== 'owner');
+  const cur = (ids.length === 1) ? (findWorkByLid(proj, ids[0])||{}).assignedTo : null;
+
+  if(!t || t.loading){
+    m.innerHTML = `<div class="am-note">Загружаем бригаду…</div>`;
+    teamLoad(proj.id);
+  } else if(!members.length){
+    m.innerHTML = `<div class="am-note">В проекте пока некому назначать.<br>Позовите мастера в разделе «Бригада».</div>`;
+  } else {
+    m.innerHTML =
+        `<div class="am-note">${roomId ? 'Все работы помещения — кому:' : 'Кому назначить:'}</div>`
+      + members.map(x=>
+          `<button data-uid="${escapeAttr(x.user_id)}" class="${cur===x.user_id?'on':''}"><i class="none"></i>${escapeHtml(x.email||'участник')}</button>`).join('')
+      + `<div class="sm-sep"></div>`
+      + `<button data-uid="" class="${cur?'':'on'}"><i class="none"></i>Снять назначение</button>`;
+  }
+
+  const close = ()=>{ m.style.display = 'none'; };
+
+  m.querySelectorAll('[data-uid]').forEach(b=>{
+    b.onclick = async ()=>{
+      const uid_ = b.getAttribute('data-uid') || null;
+      close();
+      await applyAssign(proj, ids, roomId, uid_);
+    };
+  });
+
+  m.style.visibility = 'hidden';
+  m.style.display = 'block';
+  m.style.left = '0px'; m.style.top = '0px';
+  const r = m.getBoundingClientRect();
+  m.style.left = Math.min(Math.max(8, x), Math.max(8, window.innerWidth  - r.width  - 8)) + 'px';
+  m.style.top  = Math.min(Math.max(8, y), Math.max(8, window.innerHeight - r.height - 8)) + 'px';
+  m.style.visibility = '';
+
+  const swallow = (e)=>{
+    e.preventDefault(); e.stopPropagation();
+    if(e.stopImmediatePropagation) e.stopImmediatePropagation();
+  };
+  const offClick = (e)=>{
+    if(m.contains(e.target)) return;
+    swallow(e);
+    document.removeEventListener('click', offClick, true);
+  };
+  const off = (e)=>{
+    if(m.contains(e.target)) return;
+    swallow(e);
+    close();
+    document.removeEventListener('pointerdown', off, true);
+    setTimeout(()=> document.removeEventListener('click', offClick, true), 350);
+  };
+  setTimeout(()=>{
+    document.addEventListener('pointerdown', off, true);
+    document.addEventListener('click', offClick, true);
+  }, 0);
+}
+
+function findWorkByLid(proj, lid){
+  let found = null;
+  (proj.rooms||[]).forEach(r=> (r.works||[]).forEach(w=>{ if(w.lid === lid) found = w; }));
+  return found;
+}
+
+// Отправить назначение и привести местное состояние в согласие с базой.
+// Слепок сервера правим тоже: иначе следующее обычное сохранение сочтёт
+// строку изменившейся и отправит её целиком без нужды.
+async function applyAssign(proj, ids, roomId, userId){
+  try{
+    setSync('saving', 'назначаем…');
+    let touched;
+    if(roomId){
+      touched = await DB.setRoomAssignee(roomId, userId);
+    } else {
+      await DB.setWorkAssignee(ids[0], userId);
+      touched = 1;
+    }
+
+    const mark = (w)=>{ if(w) w.assignedTo = userId || null; };
+    if(roomId){
+      const room = (proj.rooms||[]).find(r=> r.id === roomId);
+      (room && room.works || []).forEach(mark);
+    } else {
+      mark(findWorkByLid(proj, ids[0]));
+    }
+    if(serverSnap){
+      const sp = (serverSnap.projects||[]).find(p=> p.id === proj.id);
+      (sp && sp.rooms || []).forEach(r=>{
+        if(roomId && r.id !== roomId) return;
+        (r.works||[]).forEach(w=>{
+          if(roomId || ids.indexOf(w.lid) >= 0) w.assignedTo = userId || null;
+        });
+      });
+      saveServerSnap();
+    }
+
+    setSync('saved', 'сохранено в облаке');
+    toast(userId
+      ? (roomId ? ('Помещение назначено · работ: ' + touched) : 'Работа назначена')
+      : (roomId ? 'Назначения сняты' : 'Назначение снято'));
+    render();
+  }catch(e){
+    console.error('assign failed', e);
+    setSync('error', 'не удалось назначить');
+    // Текст сервера показываем как есть: коды сторожа осмысленные
+    // (ASSIGN_OWNER_ONLY, PRORAB_ONLY_ASSIGN, ASSIGN_NOT_MEMBER), и по ним
+    // видно, в чём дело. Одно исключение объясняем словами: сторож
+    // активного проекта на бесплатном тарифе срабатывает РАНЬШЕ
+    // проверки исполнителя и отвечает совсем не про назначение —
+    // 10 августа на этом уже потеряли время.
+    const msg = String((e && e.message) || '');
+    if(/FREE_ONE_PROJECT/.test(msg)){
+      showLimit('Сначала выберите рабочий проект.',
+        'На бесплатном тарифе редактируется один проект, и пока выбран другой, ' +
+        'сервер не принимает никаких правок в этом — включая назначение исполнителя.');
+    } else {
+      showLimit('Не удалось назначить исполнителя.', msg || 'Сервер отклонил запись.');
+    }
+  }
+}
+
 // обработчики списка проектов
 function attachSidebarHandlers(){
   const list = document.getElementById('projList');
@@ -9634,7 +9881,23 @@ const ICON_SEND = `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" s
 const ICON_DL = `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`;
 
 function renderProjectView(proj){
-  const roomsHtml = proj.rooms.map(r=>renderRoom(r)).join('');
+  // ПУСТОЙ ЭКРАН У МАСТЕРА (наряды, с 2026-08-10-11).
+  // Когда прораб раздал работы, сервер отдаёт мастеру только назначенные
+  // ему строки — и вместе с ними только те помещения, где эти строки есть.
+  // Мастеру, которому пока ничего не назначили, проект приходит пустым:
+  // ни одного помещения. Без пояснения это читается как «сломалось»
+  // или «прораб удалил мою работу».
+  // Отличить «мне не назначено» от «проект и правда пустой» мастер
+  // не может — политика доступа не показывает ему чужого, — и для него
+  // это одно и то же: работы нет. Поэтому и текст один.
+  const emptyForWorker = !proj.rooms.length && !isProjectOwner(proj);
+  const roomsHtml = emptyForWorker
+    ? `<div class="assign-empty no-print">
+         <b>Работы ещё не назначены</b>
+         <span>Прораб распределяет задания по объекту. Как только он отдаст
+         работы вам, они появятся здесь — вместе с вашими ценами.</span>
+       </div>`
+    : proj.rooms.map(r=>renderRoom(r)).join('');
 
   return `
     ${proj.archived ? `
@@ -9906,6 +10169,8 @@ function renderCustomerBlock(proj){
 function renderRoomWorks(room){
   const byId = catalogById();
   const g = calcRoomGeometry(room);
+  const proj = currentProject();
+  const mayAssign = canAssign(proj);
   const selected = (room.works||[]).map(rw=>{
     const work = effWork(byId.get(rw.workId), rw);
     if(!work) return '';
@@ -9934,6 +10199,9 @@ function renderRoomWorks(room){
       ${line.over ? `<button class="btn-icon qty-reset" data-qty-reset="${room.id}|${rw.lid}" title="Вернуть расчёт из размеров помещения">↺</button>` : ''}
       ${unitField}
       <span class="wsum" data-wsum="${room.id}|${rw.lid}">${fmt(line.qty)} ${workUnitLabel(work,rw)} · ${fmtMoney(line.sum)}</span>
+      ${mayAssign ? `<button class="sel-work-assign${rw.assignedTo?' on':''}" data-assign="${rw.lid}"
+        title="${rw.assignedTo ? 'Назначено: ' + escapeAttr(assigneeLabel(proj, rw.assignedTo)) : 'Назначить исполнителя'}"
+        >${rw.assignedTo ? escapeHtml(shortWho(assigneeLabel(proj, rw.assignedTo))) : 'назначить'}</button>` : ''}
       <button class="btn-icon" data-remove-work="${room.id}|${rw.lid}" title="Убрать">✕</button>
     </div>`;
   }).join('');
@@ -10002,6 +10270,7 @@ function renderRoom(room){
           <button type="button" class="btn-icon" data-room-menu-btn="${room.id}" title="Действия">⋯</button>
           <div class="room-menu-pop" data-room-menu-pop="${room.id}">
             <button type="button" data-room-rename="${room.id}">Переименовать</button>
+            ${canAssign(currentProject()) ? `<button type="button" data-assign-room="${room.id}">Назначить все работы…</button>` : ''}
             <button type="button" class="danger" data-del-room="${room.id}">Удалить</button>
           </div>
         </div>
@@ -10677,6 +10946,19 @@ function attachHandlers(){
       if(pop) pop.classList.toggle('open');
     };
   });
+  // Назначить все работы помещения разом — из меню карточки.
+  main.querySelectorAll('[data-assign-room]').forEach(el=>{
+    el.onclick = (e)=>{
+      e.stopPropagation();
+      const id = el.getAttribute('data-assign-room');
+      const pop = main.querySelector(`[data-room-menu-pop="${id}"]`);
+      if(pop) pop.classList.remove('open');
+      const p = currentProject();
+      if(!p) return;
+      const r = el.getBoundingClientRect();
+      openAssignMenu(r.left, r.bottom + 6, p, [], id);
+    };
+  });
   main.querySelectorAll('[data-room-rename]').forEach(el=>{
     el.onclick = (e)=>{
       e.stopPropagation();
@@ -11227,6 +11509,15 @@ function attachHandlers(){
       const [roomId, lid] = el.getAttribute('data-remove-work').split('|');
       const r = proj.rooms.find(x=>x.id===roomId);
       if(r){ r.works = (r.works||[]).filter(w=>w.lid!==lid); scheduleSave(); render(); }
+    };
+  });
+  // Назначение исполнителя на одну строку.
+  main.querySelectorAll('[data-assign]').forEach(el=>{
+    el.onclick = (e)=>{
+      e.stopPropagation();
+      const lid = el.getAttribute('data-assign');
+      const r = el.getBoundingClientRect();
+      openAssignMenu(r.left, r.bottom + 6, proj, [lid], null);
     };
   });
   main.querySelectorAll('[data-qty-over]').forEach(el=>{
