@@ -487,6 +487,17 @@
   .work-search.open .work-dropdown{display:block;}
   .wd-item{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 12px;cursor:pointer;font-size:13px;color:var(--ink);}
   .wd-item:hover{background:var(--paper);}
+  /* УЖЕ В СМЕТЕ (сборка 2026-08-10-09).
+     Раньше добавленная работа просто пропадала из списка, и это читалось
+     как «не сработало» — особенно когда строка при этом не появлялась
+     в помещении. Теперь она остаётся на месте, приглушённая и неактивная:
+     видно, что работа добавлена, и второй раз её не нажать.
+     Запрет на повтор не про удобство, а про деньги: количество считается
+     от размеров помещения, и две одинаковые строки дали бы двойную
+     площадь и двойную сумму — молча. */
+  .wd-item.wd-used{cursor:default;color:var(--ink-soft);opacity:.55;}
+  .wd-item.wd-used:hover{background:none;}
+  .wd-used-mark{font-size:11px;color:var(--ink-soft);white-space:nowrap;}
   .wd-unit{color:var(--ink-soft);font-family:'JetBrains Mono',monospace;font-size:11px;white-space:nowrap;}
   .wd-empty{padding:10px 12px;color:var(--ink-soft);font-size:12px;}
   .opening-row{
@@ -2365,7 +2376,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-10-08';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-10-09';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -2826,10 +2837,19 @@ function refSearchItems(room){
       <span class="wd-unit">от ${fmtMoney(refBase())}/м²</span></div>`);
 
   REF_TILING.works.forEach(w=>{
-    if(used.has(w.id)) return;
-    const tail = `<span class="wd-unit">${fmtMoney(refWorkPrice(w))}/${UNIT_LABEL[w.unit]}</span>`;
+    // Добавленные не прячем, а гасим — см. пояснение к .wd-used.
+    // ОГОВОРКА: для позиций справочника эта пометка живёт только до
+    // перезагрузки страницы. Связь строки со справочником (refId) на
+    // сервер не уходит — колонки для неё в room_works нет, а в прайс
+    // такие работы не заводятся с 5 августа 2026. Пока колонка не
+    // появится, после перезагрузки перечень снова выглядит нетронутым.
+    const isUsed = used.has(w.id);
+    const tail = isUsed
+      ? `<span class="wd-used-mark">уже в смете</span>`
+      : `<span class="wd-unit">${fmtMoney(refWorkPrice(w))}/${UNIT_LABEL[w.unit]}</span>`;
     const key = (w.name + ' ' + (w.tags||'') + ' ' + refSecName(w.sec)).toLowerCase();
-    rows.push(`<div class="wd-item wd-ref" data-ref-add="${rid}|${w.id}" data-name="${escapeAttr(key)}">
+    const act = isUsed ? '' : ` data-ref-add="${rid}|${w.id}"`;
+    rows.push(`<div class="wd-item wd-ref${isUsed?' wd-used':''}"${act} data-name="${escapeAttr(key)}">
       <span class="wd-ref-mark">▦</span>${escapeHtml(w.name)}${tail}</div>`);
   });
   return rows.join('');
@@ -9871,8 +9891,15 @@ function renderRoomWorks(room){
   // нет. Она держится в памяти ради старых смет, где на неё ссылаются,
   // но предлагать её к добавлению в новую смету нельзя — человек удалил
   // её осознанно, а в списке она выглядела бы как живая.
-  const items = realCatalog().filter(w=>!selIds.has(w.id)).map(w=>
-    `<div class="wd-item" data-add-work-item="${room.id}|${w.id}" data-name="${escapeAttr((w.name||'').toLowerCase())}">${escapeHtml(w.name||'—')} <span class="wd-unit">${fmtMoney(w.price)}/${UNIT_LABEL[w.unit]}</span></div>`).join('');
+  // Уже добавленные не убираем из списка, а гасим: см. пояснение к .wd-used.
+  const items = realCatalog().map(w=>{
+    const used = selIds.has(w.id);
+    const tail = used
+      ? `<span class="wd-used-mark">уже в смете</span>`
+      : `<span class="wd-unit">${fmtMoney(w.price)}/${UNIT_LABEL[w.unit]}</span>`;
+    const act = used ? '' : ` data-add-work-item="${room.id}|${w.id}"`;
+    return `<div class="wd-item${used?' wd-used':''}"${act} data-name="${escapeAttr((w.name||'').toLowerCase())}">${escapeHtml(w.name||'—')} ${tail}</div>`;
+  }).join('');
   const refItems = refSearchItems(room);
   const q = uiWorkSearch[room.id] || '';
   return `
@@ -9881,7 +9908,7 @@ function renderRoomWorks(room){
       <div class="sel-works">${selected || '<div class="wd-empty">Работы не выбраны — начните вводить в поле ниже.</div>'}</div>
       <div class="work-search" data-worksearch="${room.id}">
         <input type="text" class="work-search-input" placeholder="Поиск и добавление вида работ…" value="${escapeAttr(q)}" data-worksearch-input="${room.id}">
-        <div class="work-dropdown" data-worksearch-list="${room.id}">${(items + refItems) || '<div class="wd-empty">Все виды работ уже добавлены</div>'}</div>
+        <div class="work-dropdown" data-worksearch-list="${room.id}">${(items + refItems) || '<div class="wd-empty">В прайсе пока нет ни одной позиции. Заведите их в разделе «Виды работ».</div>'}</div>
       </div>
     </div>`;
 }
