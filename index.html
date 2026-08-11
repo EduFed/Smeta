@@ -103,8 +103,11 @@
        · у каждой темы свой набор: на тёмном фоне те же оттенки тускнеют. */
     --who-1:#2C5F7C;   /* синий      */
     --who-2:#4A7C59;   /* зелёный    */
-    --who-3:#AD7C22;   /* янтарный   */
-    --who-4:#E8622C;   /* оранжевый  */
+    --who-3:#96691A;   /* янтарный, темнее смыслового: на плашке белый
+                          текст, а на #AD7C22 контраст всего 3,7 — мало
+                          для мелкого. Здесь 4,8 */
+    --who-4:#BE4D20;   /* оранжевый, темнее бренда по той же причине.
+                          Сам --orange не трогаем: он акцент кнопок */
     --who-5:#7B4B94;   /* фиолетовый */
     --who-6:#2E7D7D;   /* бирюзовый  */
     --who-7:#A34A6B;   /* вишнёвый   */
@@ -543,17 +546,24 @@
     overflow:hidden;text-overflow:ellipsis;
   }
   .sel-work-assign:hover{border-color:var(--orange);color:var(--ink);}
-  /* Назначено — метка цветом этого исполнителя. Цвет приходит
-     переменной --who прямо на кнопке: у каждого человека свой,
-     и прораб видит раскладку по объекту, не вчитываясь в имена.
-     Фон — тот же цвет прозрачностью, чтобы метка не спорила
-     с ценой и количеством по яркости. */
+  /* Назначено — плашка с ЗАЛИВКОЙ, а не рамка (уточнено 2026-08-10-37).
+     Сначала было тонкой рамкой с подложкой в 12% — и не работало:
+     чтобы понять, чья строка, приходилось приглядываться, а смысл
+     цвета был именно в том, чтобы видеть раскладку боковым зрением.
+     Заливка решает это сразу.
+     На светлой теме цвета группы тёмные — текст белый. На тёмной они
+     осветлены и белый текст на них не читается, поэтому там фон
+     приглушается фоном страницы, а текст берёт сам цвет: так плашка
+     остаётся заметной, но не выжигает глаза на чёрном. */
   .sel-work-assign.on{
-    border-style:solid;
-    border-color:var(--who, var(--orange));
-    color:var(--who, var(--orange));
-    background:color-mix(in srgb, var(--who, var(--orange)) 12%, transparent);
+    border-color:transparent;
+    background:var(--who, var(--orange));
+    color:#fff;
     font-weight:600;
+  }
+  [data-theme="dark"] .sel-work-assign.on{
+    background:color-mix(in srgb, var(--who, var(--orange)) 28%, var(--paper));
+    color:var(--who, var(--orange));
   }
   .am-note{padding:8px 10px 6px;font-size:11px;color:var(--ink-soft);line-height:1.45;}
   /* Строка выбора: подпись сверху, почта под ней мелким.
@@ -561,12 +571,21 @@
      цветной кружок 11×11, и почта в него схлопывалась — подписи
      наезжали друг на друга. */
   .status-menu button{align-items:flex-start;}
-  .am-who{display:flex;flex-direction:column;gap:2px;text-align:left;min-width:0;flex:1;}
-  .am-who b{font-weight:600;line-height:1.3;}
+  .am-who{display:flex;flex-direction:column;gap:3px;text-align:left;min-width:0;flex:1;align-items:flex-start;}
   .am-mail{font-family:'JetBrains Mono',monospace;font-size:10px;
     line-height:1.3;color:var(--ink-soft);word-break:break-all;}
-  /* Кружок цвета исполнителя — тот же размер, что у меток проекта */
-  .status-menu i.who-dot{margin-top:3px;}
+  /* Плашка в списке выглядит ровно так же, как встанет в смете:
+     человек выбирает метку, а не строчку текста */
+  .who-chip{
+    display:inline-block;max-width:100%;padding:3px 9px;border-radius:6px;
+    background:var(--who, var(--orange));color:#fff;
+    font-size:12px;font-weight:600;line-height:1.4;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  }
+  [data-theme="dark"] .who-chip{
+    background:color-mix(in srgb, var(--who, var(--orange)) 28%, var(--white));
+    color:var(--who, var(--orange));
+  }
   /* Приписка у роли, когда доля её перекрывает. Не ошибка и не тревога —
      просто честное «это ничего не меняет», чтобы прораб не ждал от роли
      того, чего она не даёт. */
@@ -2612,7 +2631,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-10-36';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-10-37';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -10235,10 +10254,15 @@ function openAssignMenu(x, y, proj, ids, roomId, kind){
           // Не подписан — почту, как раньше. Тот же порядок, что
           // в списке бригады: сначала то, что человек узнаёт,
           // потом то, чем он отличается от однофамильца.
-          ((lab)=> `<button data-uid="${escapeAttr(x.user_id)}" class="${cur===x.user_id?'on':''}"><i class="who-dot" style="background:${whoColor(proj, x.user_id)}"></i>${
-            lab ? `<span class="am-who"><b>${escapeHtml(lab)}</b><span class="am-mail">${escapeHtml(x.email||'')}</span></span>`
-                : `<span class="am-who"><b>${escapeHtml(x.email||'участник')}</b></span>`
-          }</button>`)((t && t.labels || {})[x.user_id])).join('')
+          // Плашка того же вида, что встанет на строке сметы: человек
+          // выбирает не имя из списка, а именно ту метку, которую потом
+          // увидит в смете. Почта — под ней, мелким.
+          ((lab)=> `<button data-uid="${escapeAttr(x.user_id)}" class="${cur===x.user_id?'on':''}">
+            <span class="am-who">
+              <span class="who-chip" style="--who:${whoColor(proj, x.user_id)}">${escapeHtml(lab || x.email || 'участник')}</span>
+              ${lab ? `<span class="am-mail">${escapeHtml(x.email||'')}</span>` : ''}
+            </span>
+          </button>`)((t && t.labels || {})[x.user_id])).join('')
       + `<div class="sm-sep"></div>`
       + `<button data-uid="" class="${cur?'':'on'}"><i class="none"></i>Снять назначение</button>`;
   }
