@@ -2564,7 +2564,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-10-32';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-10-34';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -4769,9 +4769,21 @@ function teamAccHtml(proj){
       </div>` : `
       <div class="team-form">
         <input type="email" placeholder="почта мастера" data-team-email="${proj.id}">
+        ${/* Те же слова, что и в карточке участника (с 2026-08-10-34).
+              Раньше звали «правит / смотрит», а настраивали «работает
+              вместе / по наряду / только смотрит» — одно и то же разными
+              словами в двух шагах одного дела.
+              «По наряду» приглашает БЕЗ права правки, как и «только
+              смотрит»: до принятия разницы нет и быть не может — строки
+              участника ещё не существует, задать долю некуда.
+              Разница в другом: выбрав его, прораб говорит себе, зачем
+              зовёт, а приложение напомнит про долю, когда человек примет.
+              Спешить с ней всё равно незачем: пока работы не назначены,
+              мастер и так видит смету целиком. */''}
         <select data-team-newrole="${proj.id}">
-          <option value="editor">правит</option>
-          <option value="viewer">смотрит</option>
+          <option value="editor">работает вместе</option>
+          <option value="naryad">работает по наряду</option>
+          <option value="viewer">только смотрит</option>
         </select>
         <button type="button" class="team-add" data-team-invite="${proj.id}">Пригласить</button>
       </div>
@@ -4826,7 +4838,15 @@ async function loadMyInvites(){
     const { data, error } = await sb.rpc('my_invites');
     if(error) throw error;
     myInvites = data || [];
-  }catch(_){ myInvites = []; }
+  }catch(e){
+    // Ошибку не глушим совсем: раньше здесь стоял пустой catch, и человек
+    // видел просто отсутствие приглашения — не отличить «его нет»
+    // от «не смогли спросить». Плашку не показываем: приглашение не то,
+    // ради чего стоит тревожить экран, но в журнале браузера след
+    // останется.
+    console.error('Не удалось получить приглашения', e);
+    myInvites = [];
+  }
   renderInviteBar();
 }
 
@@ -7159,9 +7179,24 @@ async function bootstrap(){
       const after = JSON.stringify([state.projects, state.catalog, state.executor]);
       if(after !== before) render();
     }
+
+    // ПРИГЛАШЕНИЯ — ПРИ КАЖДОМ ВОЗВРАЩЕНИИ (с 2026-08-10-33).
+    // Раньше приложение спрашивало их только при входе. Прораб зовёт
+    // человека, когда тот уже сидит в приложении, — и приглашение
+    // не появлялось, пока он не перезайдёт. Со стороны выглядит как
+    // «не дошло», а на деле никто не спрашивал.
+    // Живым обновлением это не решается: project_invites в подписку
+    // не входит, а событие приходит только тому, кому строка видна.
+    // Спрашивать при возвращении дёшево: один короткий запрос,
+    // и ровно в тот момент, когда человек снова смотрит на экран.
+    loadMyInvites();
   });
   window.addEventListener('focus', ()=>{
-    if(currentUser && (syncOffline || (readLocal() || {}).dirty)) reconnectSync();
+    if(!currentUser) return;
+    if(syncOffline || (readLocal() || {}).dirty) reconnectSync();
+    // На компьютере вкладку не сворачивают — переключаются между окнами,
+    // и событие возврата приходит сюда, а не в visibilitychange.
+    loadMyInvites();
   });
   window.addEventListener('pagehide', flushSave);
 }
@@ -11647,12 +11682,22 @@ function attachHandlers(){
         return;
       }
       el.disabled = true; el.textContent = 'Готовим…';
+      // «По наряду» — это приглашение БЕЗ права правки. Доля задаётся
+      // потом, в карточке участника: до принятия её записать некуда.
+      const mode = role ? role.value : 'editor';
+      const inviteRole = (mode === 'editor') ? 'editor' : 'viewer';
       try{
-        const token = await DB.invite(pid, email, role ? role.value : 'editor');
+        const token = await DB.invite(pid, email, inviteRole);
         // ссылку кладём в буфер молча: она нужна только если мастер ещё
         // не зарегистрирован. Тот, кто уже работает в приложении, увидит
         // приглашение сам — плашкой сверху.
         try{ await navigator.clipboard.writeText(inviteLink(token)); }catch(_){}
+        // Про долю напоминаем сразу, пока прораб думает об этом человеке.
+        // Иначе он вспомнит о ней через неделю, когда мастер спросит,
+        // почему в наряде нет цен.
+        if(mode === 'naryad'){
+          toast('Приглашён. Долю зададите, когда он примет приглашение');
+        }
         await teamLoad(pid);
       }catch(e){
         // лимит мест приходит с сервера человеческим текстом
