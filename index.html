@@ -2113,6 +2113,10 @@
   .pm-total b{font-size:16px;}
   .pm-total i{display:block;font-style:normal;font-size:11px;color:var(--ink-soft);margin-top:2px;}
   .mat-head-sum{margin-left:auto;font-size:12px;color:var(--ink-soft);}
+  /* «Остаётся вам» — главная цифра блока, а не примечание к заголовку:
+     цвет обычного текста и вес чуть выше. Не крупнее, чтобы не спорить
+     с самим заголовком. */
+  .pay-head-sum{color:var(--ink);font-weight:600;}
   .pm-head{display:grid;grid-template-columns:1fr 90px 90px 90px 200px 34px;gap:8px;
     font-size:11px;color:var(--ink-soft);margin-bottom:5px;padding:0 2px;}
   .pm-row{display:grid;grid-template-columns:1fr 90px 90px 90px 200px 34px;gap:8px;align-items:center;margin-bottom:6px;}
@@ -2685,7 +2689,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-10-43';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-10-44';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -10986,6 +10990,21 @@ function renderPayoutBlock(proj){
   const open = !!uiPayoutOpen[proj.id];
   const t = teamCache[proj.id];
 
+  // ЧТО СТОИТ В ШАПКЕ СВЁРНУТОГО БЛОКА (с 2026-08-10-44).
+  // Была маржа с бригады. Она отвечала не на тот вопрос, с которым сюда
+  // приходят: если прораб половину работ делает сам, маржа про его
+  // заработок молчит, а без бригады шапка вообще пустая.
+  // Теперь первой стоит сумма «остаётся вам» — итог по объекту.
+  // Процент маржи оставлен рядом: это единственная цифра, по которой
+  // видно, выгодно ли отдавать работы, а не сколько денег вышло.
+  // Тильда перед суммой — тихий знак «роздано не всё». «Остаётся вам»
+  // включает не розданное, и пока оно есть, цифра завышена: раздадите —
+  // упадёт. Внутри блока это видно отдельной строкой, а в шапке одна
+  // сумма читалась бы как окончательная.
+  const headSum = (d.unassigned ? '~' : '') + fmtMoney(d.leftToMe);
+  const headTxt = 'вам ' + headSum +
+    (d.marginAll ? ' · маржа ' + d.marginPct + ' %' : '');
+
   const rows = d.crew.map(c=>{
     const lab = (t && t.labels || {})[c.userId];
     const m = ((t && t.members) || []).find(x=> x.user_id === c.userId) || {};
@@ -11004,7 +11023,8 @@ function renderPayoutBlock(proj){
       <button type="button" class="cust-head no-print" data-pay-toggle="${proj.id}" aria-expanded="${open}">
         <span class="chev">▾</span>
         <span>💰 Расклад по деньгам</span>
-        <span class="mat-head-sum">${d.marginAll ? 'маржа ' + fmtMoney(d.marginAll) + ' · ' + d.marginPct + ' %' : ''}</span>
+        <span class="mat-head-sum pay-head-sum"${d.unassigned
+          ? ' title="Роздано не всё — сумма изменится, когда остальные работы уйдут мастерам"' : ''}>${headTxt}</span>
       </button>
       <div class="cust-body">
         <div class="pay-note">Видите только вы. Мастер видит свой наряд и свои цены.</div>
