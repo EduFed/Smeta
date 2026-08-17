@@ -543,10 +543,22 @@
   .pv-btn:disabled{ opacity:.25; cursor:default; }
   .pv-bar{
     position:absolute; left:0; right:0; bottom:0; padding:12px 16px calc(12px + env(safe-area-inset-bottom));
-    display:flex; justify-content:space-between; gap:12px;
+    display:flex; flex-direction:column; gap:8px;
     color:#fff; font-family:'JetBrains Mono',monospace; font-size:12px;
-    background:linear-gradient(transparent, rgba(0,0,0,.6));
+    background:linear-gradient(transparent, rgba(0,0,0,.75));
   }
+  .pv-meta{ display:flex; justify-content:space-between; gap:12px; }
+  .pv-note{
+    width:100%; padding:10px 12px; min-height:44px;
+    border:1px solid rgba(255,255,255,.28); border-radius:var(--radius);
+    background:rgba(0,0,0,.35); color:#fff;
+    font-family:inherit; font-size:13px;
+  }
+  .pv-note::placeholder{ color:rgba(255,255,255,.45); }
+  .pv-note:focus{ outline:none; border-color:var(--orange); }
+  /* Тот, кто только смотрит, подпись видит, но не правит.
+     Прячем правку стилями, а не вырезанием из разметки. */
+  .viewer-mode .pv-note{ pointer-events:none; opacity:.75; }
   .ph-wait{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--ink-soft);text-align:center;padding:4px;}
   .ph-del{
     position:absolute;top:4px;right:4px;width:22px;height:22px;line-height:1;
@@ -2490,8 +2502,16 @@
   <img class="pv-img" id="pvImg" alt="Фотография помещения">
   <button type="button" class="pv-btn pv-next" id="pvNext" title="Следующий снимок" aria-label="Следующий">›</button>
   <div class="pv-bar">
-    <span id="pvCount"></span>
-    <span id="pvWhen"></span>
+    <div class="pv-meta">
+      <span id="pvCount"></span>
+      <span id="pvWhen"></span>
+    </div>
+    <!-- Подпись к снимку. Колонка note в attachments заведена ещё
+         31 июля 2026 и всё это время пустовала. Пишем прямо здесь:
+         человек разглядывает снимок и тут же подписывает, что на нём. -->
+    <input type="text" class="pv-note" id="pvNote" maxlength="200"
+           placeholder="Подпись к снимку: что здесь важно…"
+           autocomplete="off" enterkeyhint="done">
   </div>
 </div>
 
@@ -2784,7 +2804,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-10-50';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-10-51';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -7100,8 +7120,17 @@ async function photoViewerShow(){
   const img = document.getElementById('pvImg');
   const cnt = document.getElementById('pvCount');
   const when = document.getElementById('pvWhen');
+  const note = document.getElementById('pvNote');
   if(cnt)  cnt.textContent  = (pvIdx + 1) + ' из ' + pvList.length;
   if(when) when.textContent = photoTitle(a);
+  // Подпись подставляем ДО показа картинки: она приходит из уже
+  // загруженных данных, а картинка — из сети. Иначе на медленной
+  // связи в поле секунду висела бы подпись от предыдущего снимка,
+  // и человек мог бы дописать её не туда.
+  if(note){
+    note.value = a.note || '';
+    note.dataset.forId = a.id;      // к какому снимку относится то, что в поле
+  }
   const prev = document.getElementById('pvPrev');
   const next = document.getElementById('pvNext');
   // Один снимок — листать некуда, кнопки не показываем вовсе
@@ -7115,19 +7144,52 @@ async function photoViewerShow(){
   }
 }
 
-function photoViewerStep(d){
+// Перед тем как уйти со снимка — дописать подпись, если её правили.
+// Иначе человек напишет и пролистнёт (или закроет), а подпись пропадёт:
+// потерянная правка выглядит как «не сохранилось» и подрывает доверие
+// ко всему остальному.
+async function photoViewerFlushNote(){
+  const note = document.getElementById('pvNote');
+  if(!note || !note.dataset.forId) return;
+  try{ await photoSaveNote(note.dataset.forId, note.value); }
+  catch(e){ console.error('Note save failed', e); }
+}
+
+async function photoViewerStep(d){
   if(!pvList.length) return;
+  await photoViewerFlushNote();
   // по кругу: с последнего на первый и обратно
   pvIdx = (pvIdx + d + pvList.length) % pvList.length;
   photoViewerShow();
 }
 
-function photoViewerClose(){
+// ПОДПИСЬ К СНИМКУ.
+// Пишется сразу в базу, а не общим сохранением: снимки в saveDiff
+// не участвуют вовсе (см. блок ФОТОГРАФИИ). Одна строка — один запрос,
+// и отказ по ней не отменяет ничего другого (грабля 10).
+async function photoSaveNote(id, text){
+  const proj = currentProject();
+  const a = projectPhotos(proj).find(x => x.id === id);
+  if(!a) return;
+  const val = (text || '').trim().slice(0, 200);
+  if(val === (a.note || '')) return;          // не изменилось — не тревожим сервер
+  const upd = await sb.from('attachments').update({ note: val }).eq('id', id);
+  if(upd.error) throw upd.error;
+  a.note = val;
+}
+
+async function photoViewerClose(){
+  // Сначала дописать подпись, потом закрывать: человек мог печатать
+  // и нажать «закрыть», не убрав палец с поля.
+  await photoViewerFlushNote();
   const box = document.getElementById('photoViewer');
   if(box) box.style.display = 'none';
   const img = document.getElementById('pvImg');
   if(img) img.removeAttribute('src');   // не держим картинку в памяти
+  const note = document.getElementById('pvNote');
+  if(note){ note.value = ''; delete note.dataset.forId; }
   pvList = []; pvIdx = 0;
+  render();          // подписи видны в подсказках миниатюр — перерисуем
 }
 
 // ---------- УДАЛЕНИЕ ----------
@@ -10034,6 +10096,36 @@ document.getElementById('previewClose') && document.getElementById('previewClose
     else if(dy > 60 && Math.abs(dy) > Math.abs(dx)) photoViewerClose();
   }, { passive:true });
 
+  // Подпись сохраняем, когда человек ушёл из поля или нажал «готово».
+  // Сохраняем по тому номеру, который лежал в поле, а НЕ по текущему
+  // снимку: если пролистнуть с открытой клавиатурой, подпись уехала бы
+  // на соседний снимок.
+  const note = document.getElementById('pvNote');
+  if(note){
+    const save = async ()=>{
+      const id = note.dataset.forId;
+      if(!id) return;
+      try{
+        await photoSaveNote(id, note.value);
+      }catch(e){
+        console.error('Note save failed', e);
+        // Причина висит на месте, а не мелькает (грабля 12)
+        const when = document.getElementById('pvWhen');
+        if(when) when.textContent = navigator.onLine
+          ? 'Подпись не сохранилась' : 'Нет связи — подпись не сохранилась';
+      }
+    };
+    note.addEventListener('blur', save);
+    note.addEventListener('keydown', e=>{
+      if(e.key === 'Enter'){ e.preventDefault(); note.blur(); }
+      // стрелки в поле ввода двигают текст, а не листают снимки
+      e.stopPropagation();
+    });
+    // свайп по полю не должен листать снимок
+    note.addEventListener('touchstart', e=> e.stopPropagation(), { passive:true });
+    note.addEventListener('touchend',   e=> e.stopPropagation(), { passive:true });
+  }
+
   // Клавиши — для работы за компьютером
   document.addEventListener('keydown', e=>{
     if(box.style.display === 'none') return;
@@ -11878,7 +11970,7 @@ function renderRoomPhotos(room){
       </div>
       <div class="ph-grid" data-ph-grid="${room.id}">
         ${list.map(a=>`
-          <div class="ph-item" data-ph-id="${a.id}" title="${escapeAttr(photoTitle(a))}">
+          <div class="ph-item" data-ph-id="${a.id}" title="${escapeAttr(photoHint(a))}">
             <div class="ph-thumb" data-ph-thumb="${a.id}"><span class="ph-wait">…</span></div>
             <button type="button" class="ph-del no-print" data-ph-del="${a.id}" title="Удалить снимок">✕</button>
           </div>`).join('')}
@@ -11899,6 +11991,14 @@ function photoTitle(a){
   if(!a.takenAt) return 'Дата съёмки не известна';
   return 'Снято ' + new Date(a.takenAt).toLocaleString('ru-RU',
     { day:'numeric', month:'long', year:'numeric', hour:'2-digit', minute:'2-digit' });
+}
+
+// Подсказка на миниатюре: подпись впереди даты — она важнее.
+// Дата всегда есть или честно отсутствует, а подпись человек написал
+// сам, значит в ней и есть смысл снимка.
+function photoHint(a){
+  const t = photoTitle(a);
+  return a.note ? (a.note + ' · ' + t) : t;
 }
 
 // Подставить картинки в уже нарисованные рамки.
