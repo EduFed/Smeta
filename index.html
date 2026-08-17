@@ -2716,7 +2716,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-10-45';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-10-46';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -5323,6 +5323,29 @@ function onRemoteChange(payload){
     // 1,2 с ожидания заметны на глаз. 350 мс всё ещё склеивают пачку
     // изменений в один запрос, но правка напарника приезжает почти сразу.
   }, 350);
+}
+
+// ИМЕНА ИСПОЛНИТЕЛЕЙ НУЖНЫ РАНЬШЕ, ЧЕМ ОТКРЫТА ВКЛАДКА «БРИГАДА»
+// (с 2026-08-10-46). Раньше список участников грузился только при
+// раскрытии этой вкладки, а метки на строках сметы рисуются всегда —
+// и после перезагрузки страницы человек видел «назначено» без имени.
+// Открывал бригаду — имена появлялись разом на всех строках, будто
+// починилось само.
+//
+// Это грабля 48: отсутствие сведений принималось за сведение. Строка
+// не «отдана неизвестно кому», она отдана конкретному человеку, просто
+// мы ещё не спросили, как его зовут.
+//
+// Грузим не всегда, а только когда в проекте ЕСТЬ назначения: у того,
+// кто работает один, лишнего запроса не будет. Повторного вызова тоже:
+// teamLoad сразу ставит в кэш отметку loading, и условие ниже перестаёт
+// выполняться — цикла из render → teamLoad → render не возникает.
+function teamLoadIfAssigned(proj){
+  if(!proj || !proj.id || teamCache[proj.id]) return;
+  const inRooms = (proj.rooms || []).some(r =>
+    (r.works || []).some(w => w.assignedTo));
+  const inExtra = (proj.extraWorks || []).some(e => e.assignedTo);
+  if(inRooms || inExtra) teamLoad(proj.id);
 }
 
 async function teamLoad(projectId){
@@ -12532,6 +12555,11 @@ function attachHandlers(){
   main.querySelectorAll('.ph-block[data-ph-room]').forEach(box=>{
     photoFillThumbs(box.getAttribute('data-ph-room'));
   });
+
+  // Имена исполнителей на метках строк — см. teamLoadIfAssigned.
+  // Без этого вызова метка остаётся нейтральным «назначено» до тех пор,
+  // пока человек не откроет вкладку «Бригада».
+  teamLoadIfAssigned(proj);
 
   // --- Документы ---
   main.querySelectorAll('[data-panel]').forEach(el=>{
