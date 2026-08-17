@@ -513,7 +513,40 @@
     aspect-ratio:1/1;border:1px solid var(--paper-line);border-radius:var(--radius);
     background:var(--paper);overflow:hidden;display:flex;align-items:center;justify-content:center;
   }
-  .ph-thumb img{width:100%;height:100%;object-fit:cover;display:block;}
+  .ph-thumb{cursor:pointer;}
+  .ph-thumb img{
+    width:100%;height:100%;object-fit:cover;display:block;
+    /* Долгое нажатие на телефоне вызывало меню «Сохранить изображение»
+       и мешало открыть снимок. Нам это меню не нужно: снимок открывается
+       нажатием, а скачивать его из галереи незачем. */
+    -webkit-touch-callout:none; -webkit-user-select:none; user-select:none;
+    pointer-events:none;   /* нажатие ловит рамка, а не сама картинка */
+  }
+
+  /* ПРОСМОТР НА ВЕСЬ ЭКРАН */
+  .photo-viewer{
+    position:fixed; inset:0; z-index:9999; background:rgba(0,0,0,.94);
+    display:flex; align-items:center; justify-content:center;
+    touch-action:none;   /* чтобы свайп листал, а не скроллил страницу */
+  }
+  .pv-img{max-width:100%; max-height:100%; object-fit:contain; display:block;}
+  .pv-btn{
+    position:absolute; border:none; background:rgba(255,255,255,.14); color:#fff;
+    border-radius:50%; cursor:pointer; line-height:1; padding:0;
+    display:flex; align-items:center; justify-content:center;
+  }
+  /* Кнопки крупные: на объекте в перчатках и с грязными руками
+     мелкая цель не нажимается. */
+  .pv-close{ top:14px; right:14px; width:44px; height:44px; font-size:20px; }
+  .pv-prev, .pv-next{ top:50%; transform:translateY(-50%); width:52px; height:52px; font-size:30px; }
+  .pv-prev{ left:10px; } .pv-next{ right:10px; }
+  .pv-btn:disabled{ opacity:.25; cursor:default; }
+  .pv-bar{
+    position:absolute; left:0; right:0; bottom:0; padding:12px 16px calc(12px + env(safe-area-inset-bottom));
+    display:flex; justify-content:space-between; gap:12px;
+    color:#fff; font-family:'JetBrains Mono',monospace; font-size:12px;
+    background:linear-gradient(transparent, rgba(0,0,0,.6));
+  }
   .ph-wait{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--ink-soft);text-align:center;padding:4px;}
   .ph-del{
     position:absolute;top:4px;right:4px;width:22px;height:22px;line-height:1;
@@ -522,6 +555,26 @@
   }
   .ph-item:hover .ph-del{display:block;}
   .ph-count{font-family:'JetBrains Mono',monospace;text-transform:none;letter-spacing:0;}
+  /* КНОПКА «ДОБАВИТЬ ФОТО».
+     Раньше это была обычная ссылка-добавление, как «+ добавить окно», —
+     и терялась среди них. Здесь действие другое: человек стоит
+     на объекте с телефоном, и кнопку надо видеть сразу.
+     За образец взята «+ добавить помещение» из этого же приложения:
+     пунктирная рамка во всю ширину. Так заметно, но не кричит
+     и не спорит с остальным. */
+  .ph-add{
+    display:flex; align-items:center; justify-content:center; gap:8px;
+    /* Высота не меньше 44 точек: это цель для пальца, а нажимать
+       её будут на объекте, в перчатках и с грязными руками.
+       При padding 11px выходило 39 — мало. */
+    width:100%; padding:13px 12px; min-height:44px; margin-top:2px;
+    border:1px dashed var(--orange); border-radius:var(--radius);
+    background:transparent; color:var(--orange); cursor:pointer;
+    font-family:inherit; font-size:13px; letter-spacing:0.02em;
+  }
+  .ph-add:hover{ background:color-mix(in srgb, var(--orange) 8%, transparent); }
+  .ph-add:active{ background:color-mix(in srgb, var(--orange) 16%, transparent); }
+  .ph-add-ico{ font-size:15px; line-height:1; }
   .ph-msg{font-size:12px;color:var(--ink-soft);margin-top:4px;min-height:16px;}
   .ph-msg.err{color:var(--orange);}
   /* Тот, кто только смотрит, снимки видит, но не добавляет и не удаляет.
@@ -2427,6 +2480,21 @@
 </div>
 
 <!-- Предпросмотр документа (не покидает приложение — работает даже во встроенных браузерах) -->
+<!-- ПРОСМОТР СНИМКА НА ВЕСЬ ЭКРАН.
+     Отдельно от preview-overlay: тот показывает документы в рамке
+     (PDF, печать), и переиспользовать его под галерею значило бы
+     смешать две разные вещи в одном месте. -->
+<div class="photo-viewer no-print" id="photoViewer" style="display:none;">
+  <button type="button" class="pv-btn pv-close" id="pvClose" title="Закрыть" aria-label="Закрыть">✕</button>
+  <button type="button" class="pv-btn pv-prev" id="pvPrev" title="Предыдущий снимок" aria-label="Предыдущий">‹</button>
+  <img class="pv-img" id="pvImg" alt="Фотография помещения">
+  <button type="button" class="pv-btn pv-next" id="pvNext" title="Следующий снимок" aria-label="Следующий">›</button>
+  <div class="pv-bar">
+    <span id="pvCount"></span>
+    <span id="pvWhen"></span>
+  </div>
+</div>
+
 <div class="preview-overlay no-print" id="previewOverlay" style="display:none;">
   <div class="preview-bar">
     <span class="preview-title" id="previewTitle">Просмотр</span>
@@ -2716,7 +2784,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-10-49';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-10-50';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -7004,6 +7072,64 @@ async function photoUpload(proj, roomId, file, kind){
   return id;
 }
 
+// ---------- ПРОСМОТР НА ВЕСЬ ЭКРАН ----------
+// Снимок открывается нажатием на миниатюру, листается свайпом, кнопками
+// и стрелками. Без этого нажатие на миниатюру проваливалось, телефон
+// показывал своё меню для картинки, а фокус уезжал на счётчик —
+// выглядело как «тупит».
+//
+// Адрес снимка живёт минуты, поэтому перед показом ссылки обновляются
+// (photoViewUrls сам решает, какие устарели). Постоянного адреса
+// у снимка нет и быть не может: хранилище закрыто.
+let pvList = [];      // снимки текущего помещения
+let pvIdx  = 0;
+
+async function photoViewerOpen(roomId, id){
+  const proj = currentProject();
+  pvList = roomPhotos(proj, roomId);
+  pvIdx = Math.max(0, pvList.findIndex(a => a.id === id));
+  if(!pvList.length) return;
+  const box = document.getElementById('photoViewer');
+  if(box) box.style.display = 'flex';
+  await photoViewerShow();
+}
+
+async function photoViewerShow(){
+  const a = pvList[pvIdx];
+  if(!a) return;
+  const img = document.getElementById('pvImg');
+  const cnt = document.getElementById('pvCount');
+  const when = document.getElementById('pvWhen');
+  if(cnt)  cnt.textContent  = (pvIdx + 1) + ' из ' + pvList.length;
+  if(when) when.textContent = photoTitle(a);
+  const prev = document.getElementById('pvPrev');
+  const next = document.getElementById('pvNext');
+  // Один снимок — листать некуда, кнопки не показываем вовсе
+  if(prev) prev.style.display = pvList.length > 1 ? 'flex' : 'none';
+  if(next) next.style.display = pvList.length > 1 ? 'flex' : 'none';
+  try{
+    const urls = await photoViewUrls([a.id]);
+    if(img && urls[a.id]) img.src = urls[a.id];
+  }catch(e){
+    console.error('Photo view failed', e);
+  }
+}
+
+function photoViewerStep(d){
+  if(!pvList.length) return;
+  // по кругу: с последнего на первый и обратно
+  pvIdx = (pvIdx + d + pvList.length) % pvList.length;
+  photoViewerShow();
+}
+
+function photoViewerClose(){
+  const box = document.getElementById('photoViewer');
+  if(box) box.style.display = 'none';
+  const img = document.getElementById('pvImg');
+  if(img) img.removeAttribute('src');   // не держим картинку в памяти
+  pvList = []; pvIdx = 0;
+}
+
 // ---------- УДАЛЕНИЕ ----------
 // Пока удалять может любой, кто правит проект. Решение владельца
 // от 12 августа 2026 — «удаляет только владелец, остальные скрывают» —
@@ -9875,6 +10001,48 @@ function hidePreview(){
 }
 document.getElementById('previewClose') && document.getElementById('previewClose').addEventListener('click', hidePreview);
 
+// ---------- ПРОСМОТР СНИМКА: кнопки, свайп, клавиши ----------
+// Навешиваем ОДИН РАЗ на разметку, которая лежит в странице всегда.
+// Если вешать при каждой отрисовке, обработчики будут копиться.
+(function(){
+  const box  = document.getElementById('photoViewer');
+  if(!box) return;
+  const on = (id, fn)=>{ const el = document.getElementById(id); if(el) el.addEventListener('click', e=>{ e.stopPropagation(); fn(); }); };
+  on('pvClose', photoViewerClose);
+  on('pvPrev',  ()=>photoViewerStep(-1));
+  on('pvNext',  ()=>photoViewerStep(1));
+
+  // Нажатие мимо снимка закрывает — привычно и не требует целиться
+  // в крестик. Нажатие по самому снимку не закрывает: на объекте легко
+  // задеть экран, и снимок захлопывался бы посреди разглядывания.
+  box.addEventListener('click', e=>{ if(e.target === box) photoViewerClose(); });
+
+  // Свайп. Порог в 40 точек: меньше — и снимок будет листаться
+  // от случайного касания.
+  let x0 = null, y0 = null;
+  box.addEventListener('touchstart', e=>{
+    const t = e.changedTouches[0]; x0 = t.clientX; y0 = t.clientY;
+  }, { passive:true });
+  box.addEventListener('touchend', e=>{
+    if(x0 === null) return;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - x0, dy = t.clientY - y0;
+    x0 = null;
+    // Горизонтальный жест листает, вертикальный (вниз) закрывает —
+    // так же, как в галерее телефона.
+    if(Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy)) photoViewerStep(dx < 0 ? 1 : -1);
+    else if(dy > 60 && Math.abs(dy) > Math.abs(dx)) photoViewerClose();
+  }, { passive:true });
+
+  // Клавиши — для работы за компьютером
+  document.addEventListener('keydown', e=>{
+    if(box.style.display === 'none') return;
+    if(e.key === 'Escape')     { photoViewerClose(); }
+    if(e.key === 'ArrowLeft')  { photoViewerStep(-1); }
+    if(e.key === 'ArrowRight') { photoViewerStep(1); }
+  });
+})();
+
 
 // ---------- ВАЛИДАЦИЯ ПОЛЕЙ ЗАКАЗЧИКА ----------
 function validateCustomer(field, v){
@@ -11716,7 +11884,9 @@ function renderRoomPhotos(room){
           </div>`).join('')}
       </div>
       <input type="file" accept="image/*" multiple class="ph-file" data-ph-file="${room.id}" hidden>
-      <button type="button" class="add-link ph-add no-print" data-ph-add="${room.id}">+ добавить фото</button>
+      <button type="button" class="ph-add no-print" data-ph-add="${room.id}">
+        <span class="ph-add-ico" aria-hidden="true">📷</span> Добавить фото
+      </button>
       <div class="ph-msg" data-ph-msg="${room.id}"></div>
     </div>
   `;
@@ -12592,6 +12762,17 @@ function attachHandlers(){
         render();
         photoFillThumbs(roomId);
       }
+    };
+  });
+
+  // Нажатие на миниатюру — открыть на весь экран.
+  // Ловим на рамке, а не на самой картинке: у картинки отключены
+  // события, чтобы телефон не перехватывал долгое нажатие своим меню.
+  main.querySelectorAll('[data-ph-thumb]').forEach(el=>{
+    el.onclick = ()=>{
+      const id = el.getAttribute('data-ph-thumb');
+      const box = el.closest('.ph-block[data-ph-room]');
+      if(box) photoViewerOpen(box.getAttribute('data-ph-room'), id);
     };
   });
 
