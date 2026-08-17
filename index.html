@@ -2716,7 +2716,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-10-46';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-10-47';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -6836,6 +6836,23 @@ async function compressPhoto(file){
   return { blob, w, h };
 }
 
+// Номер снимка — uuid, потому что колонка attachments.id имеет тип uuid.
+// randomUUID есть во всех современных браузерах, но на старом телефоне
+// его может не быть, а падать из-за этого нельзя: человек стоит
+// на объекте и снимает. Запасной путь собирает тот же формат вручную
+// из криптостойких случайных байтов.
+function photoNewId(){
+  try{
+    if(crypto && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+  }catch(_){}
+  const b = new Uint8Array(16);
+  crypto.getRandomValues(b);
+  b[6] = (b[6] & 0x0f) | 0x40;      // версия 4
+  b[8] = (b[8] & 0x3f) | 0x80;      // вариант
+  const h = Array.from(b, x => x.toString(16).padStart(2,'0')).join('');
+  return h.slice(0,8)+'-'+h.slice(8,12)+'-'+h.slice(12,16)+'-'+h.slice(16,20)+'-'+h.slice(20);
+}
+
 // Время съёмки. Разбор EXIF своими руками сознательно НЕ пишем: формат
 // устроен на смещениях внутри файла, ошибиться легко, а проверить нечем
 // (решение 1 августа 2026). Для только что снятого фото время файла
@@ -6893,7 +6910,16 @@ async function photoUpload(proj, roomId, file, kind){
   }
 
   const { blob, w, h } = await compressPhoto(file);
-  const id = uid('a');
+  // НОМЕР СНИМКА — НАСТОЯЩИЙ UUID, а не наш обычный uid('a').
+  // Колонка attachments.id имеет тип uuid, и текстовый номер вида
+  // «a_msxmkpsypseyc» база отбивает: invalid input syntax for type uuid.
+  // Поймано на телефоне владельца 17 августа 2026, сборка -46.
+  // Свои текстовые номера у нас у проектов (p_…), помещений (r_…)
+  // и строк сметы (l_…) — там колонки text. У снимков иначе, и это
+  // единственное место, где формат номера отличается.
+  // Номер нужен ДО вставки: из него строится путь к файлу в хранилище,
+  // поэтому положиться на умолчание gen_random_uuid() нельзя.
+  const id = photoNewId();
   // Путь ОБЯЗАН начинаться с номера проекта и косой черты — этого требует
   // ограничение attachments_path_v_svoey_papke в базе. Оно же не даёт
   // завести у себя запись, указывающую на чужой файл.
@@ -6904,6 +6930,8 @@ async function photoUpload(proj, roomId, file, kind){
     kind: kind || 'progress', storage_path: path,
     width: w, height: h, size_bytes: blob.size,
     taken_at: photoTakenAt(file),
+    // кто загрузил: пригодится, когда удалять сможет только владелец
+    created_by: currentUser ? currentUser.id : null,
     position: projectPhotos(proj).length
   };
 
