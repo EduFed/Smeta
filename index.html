@@ -502,6 +502,33 @@
     font-family:'JetBrains Mono',monospace;font-size:11px;text-transform:uppercase;letter-spacing:0.1em;
     color:var(--ink-soft);margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;
   }
+  /* ФОТОГРАФИИ ПОМЕЩЕНИЯ.
+     Цвета берём из тем — своих исключений для тёмной темы здесь нет
+     намеренно: тема сама переключает --ink и --paper, а правило вида
+     [data-theme="dark"] для цвета линий почти всегда лишнее и однажды
+     покрасило схемы почти в цвет фона (грабля 38). */
+  .ph-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px;margin-bottom:10px;}
+  .ph-item{position:relative;}
+  .ph-thumb{
+    aspect-ratio:1/1;border:1px solid var(--paper-line);border-radius:var(--radius);
+    background:var(--paper);overflow:hidden;display:flex;align-items:center;justify-content:center;
+  }
+  .ph-thumb img{width:100%;height:100%;object-fit:cover;display:block;}
+  .ph-wait{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--ink-soft);text-align:center;padding:4px;}
+  .ph-del{
+    position:absolute;top:4px;right:4px;width:22px;height:22px;line-height:1;
+    border:none;border-radius:50%;background:rgba(0,0,0,.55);color:#fff;
+    font-size:12px;cursor:pointer;display:none;
+  }
+  .ph-item:hover .ph-del{display:block;}
+  .ph-count{font-family:'JetBrains Mono',monospace;text-transform:none;letter-spacing:0;}
+  .ph-msg{font-size:12px;color:var(--ink-soft);margin-top:4px;min-height:16px;}
+  .ph-msg.err{color:var(--orange);}
+  /* Тот, кто только смотрит, снимки видит, но не добавляет и не удаляет.
+     Прячем стилями, а не вырезанием из разметки. */
+  .viewer-mode .ph-add,
+  .viewer-mode .ph-del{display:none !important;}
+
   /* ВИДЫ РАБОТ — выбор через поиск */
   .sel-works{display:flex;flex-direction:column;gap:6px;margin-bottom:10px;}
   .sel-work{display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--paper-line);border-radius:var(--radius);background:var(--paper);font-size:13px;flex-wrap:wrap;}
@@ -2689,7 +2716,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-10-44';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-10-45';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -3828,7 +3855,10 @@ async function sendLead(){
 // ---------- ЛИМИТЫ БЕСПЛАТНОГО ТАРИФА ----------
 // ВАЖНО: эти же числа продублированы в триггере в базе.
 // Здесь — только для удобного интерфейса, реальная защита на сервере.
-const FREE_LIMITS = { projects: 1, rooms: 3, catalog: 10, materials: 5 };
+// photos — предел снимков НА ПРОЕКТ (в базе max_photos_per_project).
+// Считается по одному списку с показом, иначе клиент начнёт отказывать
+// тому, кому сервер разрешает (грабля 42).
+const FREE_LIMITS = { projects: 1, rooms: 3, catalog: 10, materials: 5, photos: 5 };
 
 // ---------- ОДИН РАБОЧИЙ ПРОЕКТ НА БЕСПЛАТНОМ ТАРИФЕ ----------
 // Сервер разрешает бесплатному человеку править ОДИН свой проект — тот,
@@ -5374,6 +5404,13 @@ const DB = {
         'project_customers(*),' +
         'project_extra_works(*),' +
         'project_materials(*),' +
+        // Снимки едут ВЛОЖЕННЫМ полем проекта, а не отдельным запросом
+        // в общий список выше. Причина — предупреждение из этого же файла:
+        // 5 августа новый запрос вставили в середину массива, а в разбор
+        // дописали в конец, всё сместилось на позицию, и у владельца
+        // обнулилась смета. Вложенное поле порядок массива не меняет,
+        // значит смещаться нечему.
+        'attachments(*),' +
         'rooms(id,name,shape,calc_mode,width,length,height,dims,position,' +
               'room_openings(*),room_works(*))'
       ),
@@ -5561,6 +5598,31 @@ const DB = {
           id: m.id, matId: m.mat_id || '', name: m.name||'', unit: m.unit||'',
           qty: m.qty === null ? '' : m.qty, note: m.note||'',
           price: m.price === null || m.price === undefined ? '' : m.price
+        })),
+        // ФОТОГРАФИИ ПРОЕКТА ОДНИМ СПИСКОМ — и это нарочно.
+        // Снимок цепляется к помещению или к строке сметы (targetType +
+        // targetId), но лежит здесь весь, целиком по проекту. Так сделано
+        // потому, что предел тарифа считается НА ПРОЕКТ: если показывать
+        // из одного списка, а считать из другого, клиент начнёт отказывать
+        // тому, кому сервер разрешает, — грабля 42. Один список для показа,
+        // для счётчика и для замка.
+        // Ссылки на файлы здесь НЕТ и быть не может: хранилище закрыто,
+        // адрес выдаётся обработчиком на минуты и живёт только в памяти
+        // страницы (см. блок «ФОТОГРАФИИ»).
+        photos: (p.attachments || []).slice().sort(bySort).map(a=>({
+          id: a.id,
+          targetType: a.target_type || 'room',
+          targetId: a.target_id || '',
+          kind: a.kind || 'progress',
+          path: a.storage_path || '',
+          w: a.width || null, h: a.height || null,
+          size: a.size_bytes || null,
+          // время съёмки, а не загрузки: пусто означает «в файле даты не было».
+          // Подставлять сюда «сейчас» нельзя — это выдумывание доказательства
+          // (решение владельца 12 августа 2026)
+          takenAt: a.taken_at || null,
+          note: a.note || '',
+          position: Number(a.position) || 0
         })),
         _srvAt: p.updated_at || null   // для проверки, не изменил ли кто-то проект
       };
@@ -6646,6 +6708,234 @@ async function loadFromCloud(){
     state.currentProjectId = firstOpenableProjectId();
   }
   loadMyInvites();      // не ждём: плашка появится, когда сервер ответит
+}
+
+// ============================================================
+//  ФОТОГРАФИИ
+// ============================================================
+// Зачем: снимок — доказательная база в споре с заказчиком, прежде всего
+// скрытые работы (гидроизоляция, разводка) до того, как их закрыли
+// плиткой. Потом не переснять, а спорят именно об этом.
+//
+// КАК УСТРОЕНО ХРАНЕНИЕ. Проверено живьём на сервере 17 августа 2026,
+// разбор в server-reports/2026-08-12-foto-skvoznaya-proverki.md:
+//   1) строка в attachments создаётся ПЕРВОЙ — она и есть право на файл;
+//   2) обработчик photo-url выдаёт подпись, спрашивая права у базы
+//      пропуском пришедшего, а не решая сам (service_role он не трогает);
+//   3) файл уходит прямо в хранилище, минуя наш сервер;
+//   4) на просмотр — такая же подпись, живёт 10 минут.
+//
+// ПОСТОЯННОЙ ССЫЛКИ НА СНИМОК НЕ СУЩЕСТВУЕТ. Хранилище закрыто, прямой
+// адрес отдаёт 403 — проверено. Адреса живут только в памяти страницы
+// и в базу не пишутся никогда.
+//
+// И ещё одно, о чём надо знать: подпись НЕ привязана к личности. Две
+// ссылки, выданные разным людям на один файл, побайтово одинаковы.
+// Это не дыра (её выдают только тому, кому база разрешила, и на минуты),
+// но переслав ссылку, человек передаёт доступ.
+
+const PHOTO_MAX_SIDE = 1600;          // длинная сторона после сжатия
+const PHOTO_QUALITY  = 0.7;           // снимок 4 МБ становится ~300 КБ
+const PHOTO_VIEW_TTL = 8 * 60 * 1000; // подпись живёт 10 минут — обновляем раньше
+
+// Адреса на просмотр: только в памяти страницы, id → { url, at }.
+// Перезагрузка страницы их теряет, и это правильно.
+const photoUrlCache = new Map();
+
+// Предел снимков на проект.
+//
+// ТАРИФ БЕРЁМ ВЛАДЕЛЬЦА ПРОЕКТА, а не смотрящего — через isProAt(proj).
+// Иначе мастер, приглашённый в оплаченный проект, получил бы замок
+// по своему бесплатному тарифу и не смог снять то, за что заказчик
+// уже платит. Сервер меряет по тарифу владельца, и клиент обязан
+// мерить так же, иначе разойдутся (грабля 42, зеркало грабли 20).
+//
+// ПОКА ТАРИФ НЕИЗВЕСТЕН — замок не ставим вовсе (грабля 48):
+// «не знаю, оплачено ли» превращать в «не оплачено» нельзя. Настоящий
+// предел всё равно стережёт триггер в базе, а замок в приложении нужен
+// лишь чтобы человек видел границу заранее.
+function photoLimit(proj){
+  const p = proj || (typeof currentProject === 'function' ? currentProject() : null);
+  if(!p) return null;
+  // В ЧУЖОМ ПРОЕКТЕ ЗАМОК НЕ СТАВИМ ВОВСЕ, и это не лень.
+  // Тариф владельца приходит полем ownerPro как `!!acc.owner_pro` — то есть
+  // «сведения не приехали» там уже неотличимо от «владелец не платит».
+  // Строить замок на таком признаке значит однажды отказать мастеру
+  // в оплаченном проекте — а клиент, отказывающий тому, кому сервер
+  // разрешает, это грабля 42 (и зеркало грабли 20).
+  // Из двух неверных выбираем менее вредное (грабля 48): лишний раз
+  // разрешить безопасно — предел стережёт триггер в базе, и человек
+  // увидит настоящую причину от сервера, а не выдуманную нами.
+  if(p.ownerId && currentUser && p.ownerId !== currentUser.id) return null;
+  if(!userPlan) return null;            // свой тариф ещё не приехал — не решаем
+  return isProAt(p) ? 500 : FREE_LIMITS.photos;
+}
+
+// ОДИН ИСТОЧНИК СПИСКА — и для показа, и для счётчика, и для замка.
+// Порознь они разойдутся, и клиент откажет тому, кому сервер разрешает
+// (грабля 42).
+function projectPhotos(proj){
+  return Array.isArray(proj && proj.photos) ? proj.photos : [];
+}
+function roomPhotos(proj, roomId){
+  return projectPhotos(proj)
+    .filter(a => a.targetType === 'room' && a.targetId === roomId)
+    .sort((a,b)=> (a.position||0) - (b.position||0));
+}
+
+// ---------- СЖАТИЕ И ОЧИСТКА EXIF ----------
+// Приём: снимок перерисовывается через canvas. Canvas хранит только точки
+// изображения — метаданных в нём физически нет, поэтому геометки исчезают
+// сами, как побочный результат сжатия. Отдельный «чистильщик EXIF» не нужен.
+// Геометка — это адрес объекта заказчика, то есть его персональные данные,
+// и мы их не спрашивали.
+//
+// ЕДИНСТВЕННОЕ ТОНКОЕ МЕСТО — ПОВОРОТ. Телефон не поворачивает снимок,
+// а пишет в EXIF «повёрнуто на 90°». Раз EXIF выбрасывается, поворот надо
+// применить ЗАРАНЕЕ, иначе портретные снимки лягут набок.
+async function compressPhoto(file){
+  let bmp;
+  try{
+    bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
+  }catch(_){
+    // старый браузер не знает imageOrientation — рисуем как есть.
+    // Лучше снимок набок, чем никакого
+    bmp = await createImageBitmap(file);
+  }
+  const k = Math.min(1, PHOTO_MAX_SIDE / Math.max(bmp.width, bmp.height));
+  const w = Math.max(1, Math.round(bmp.width * k));
+  const h = Math.max(1, Math.round(bmp.height * k));
+  const cv = document.createElement('canvas');
+  cv.width = w; cv.height = h;
+  cv.getContext('2d').drawImage(bmp, 0, 0, w, h);
+  try{ bmp.close(); }catch(_){}
+  const blob = await new Promise(res => cv.toBlob(res, 'image/jpeg', PHOTO_QUALITY));
+  return { blob, w, h };
+}
+
+// Время съёмки. Разбор EXIF своими руками сознательно НЕ пишем: формат
+// устроен на смещениях внутри файла, ошибиться легко, а проверить нечем
+// (решение 1 августа 2026). Для только что снятого фото время файла
+// и есть время съёмки.
+// Если даты нет — оставляем ПУСТО. Подставлять время загрузки нельзя:
+// это выдумывание доказательства (решение владельца 12 августа 2026).
+function photoTakenAt(file){
+  const t = file && file.lastModified;
+  return t ? new Date(t).toISOString() : null;
+}
+
+// ---------- ОБРАЩЕНИЕ К ОБРАБОТЧИКУ ----------
+// Пропуск подставляет сама библиотека. Обработчик его не проверяет —
+// он передаёт пропуск дальше в базу, и решение принимает база через
+// свои политики. Поэтому «нет доступа» здесь означает именно то, что
+// сказала база, а не то, что решил обработчик.
+async function photoAsk(body){
+  const { data, error } = await sb.functions.invoke('photo-url', { body });
+  if(error) throw error;
+  if(!data || data.ok === false) throw new Error((data && data.error) || 'Хранилище не ответило');
+  return data;
+}
+
+// Подписи на просмотр — пачкой (обработчик берёт до 50 за раз).
+// Просим только те, чей адрес истёк или неизвестен: каждая просьба —
+// это запрос к базе от имени человека.
+async function photoViewUrls(ids){
+  const now = Date.now();
+  const need = ids.filter(id=>{
+    const c = photoUrlCache.get(id);
+    return !c || (now - c.at) > PHOTO_VIEW_TTL;
+  });
+  if(need.length){
+    const data = await photoAsk({ action:'view', attachment_ids: need.slice(0,50) });
+    const links = (data && data.links) || {};
+    Object.keys(links).forEach(id => photoUrlCache.set(id, { url: links[id], at: now }));
+  }
+  const out = {};
+  ids.forEach(id=>{ const c = photoUrlCache.get(id); if(c) out[id] = c.url; });
+  return out;
+}
+
+// ---------- ЗАГРУЗКА ----------
+// Порядок шагов обязателен и проверен: строка → подпись → файл.
+// Строка создаётся первой, потому что подпись выдаётся ПО НЕЙ: обработчик
+// читает её из базы пропуском пришедшего и этим же проверяет право.
+// Если файл не доехал — строку убираем, иначе в галерее останется
+// снимок, которого нет в хранилище.
+async function photoUpload(proj, roomId, file, kind){
+  const lim = photoLimit(proj);
+  if(lim !== null && projectPhotos(proj).length >= lim){
+    showLimit('В этом тарифе — до ' + lim + ' фотографий на проект.',
+              'Снимок, который негде сохранить, хуже неснятого: человек уверен, что доказательство у него есть.');
+    return null;
+  }
+
+  const { blob, w, h } = await compressPhoto(file);
+  const id = uid('a');
+  // Путь ОБЯЗАН начинаться с номера проекта и косой черты — этого требует
+  // ограничение attachments_path_v_svoey_papke в базе. Оно же не даёт
+  // завести у себя запись, указывающую на чужой файл.
+  const path = proj.id + '/' + id + '.jpg';
+
+  const row = {
+    id, project_id: proj.id, target_type: 'room', target_id: roomId,
+    kind: kind || 'progress', storage_path: path,
+    width: w, height: h, size_bytes: blob.size,
+    taken_at: photoTakenAt(file),
+    position: projectPhotos(proj).length
+  };
+
+  // returning:'minimal' — у только что созданной строки политика чтения
+  // может не пустить нас к ней обратно, и запись отбилась бы сообщением
+  // про «нарушение при вставке» (грабля 1)
+  const ins = await sb.from('attachments').insert(row, { returning: 'minimal' });
+  if(ins.error) throw ins.error;
+
+  try{
+    const sign = await photoAsk({ action:'upload', attachment_id: id });
+    const put = await fetch(sign.url, {
+      method: 'PUT',
+      // ТИП ОБЯЗАТЕЛЕН. Хранилище запоминает его таким, каким прислали,
+      // и потом так же отдаёт. Без заголовка снимок приезжает
+      // как application/x-www-form-urlencoded, и браузер предлагает
+      // его скачать вместо показа. Наступали на это 1 августа 2026.
+      headers: { 'Content-Type': 'image/jpeg' },
+      body: blob
+    });
+    if(!put.ok) throw new Error('Хранилище отказало: ' + put.status);
+  }catch(e){
+    // файла нет — значит и записи быть не должно
+    try{ await sb.from('attachments').delete().eq('id', id); }catch(_){}
+    throw e;
+  }
+
+  // В общем сохранении снимки НЕ участвуют — ни в saveDiff, ни в projHead.
+  // Это нарочно: файл в хранилище и строка в базе — связка, которую
+  // пачечная отправка не выразит, а одна плохая строка отменила бы
+  // всю пачку целиком (грабля 10).
+  proj.photos.push({
+    id, targetType:'room', targetId: roomId, kind: row.kind, path,
+    w, h, size: blob.size, takenAt: row.taken_at, note:'', position: row.position
+  });
+  return id;
+}
+
+// ---------- УДАЛЕНИЕ ----------
+// Пока удалять может любой, кто правит проект. Решение владельца
+// от 12 августа 2026 — «удаляет только владелец, остальные скрывают» —
+// в базе ещё не реализовано: под него нужна колонка «скрыт» и триггер,
+// и это отдельная задача с полной цепочкой (правка прав).
+// Здесь спрашиваем подтверждение, потому что снимок скрытых работ,
+// удалённый по ошибке, не восстановить, а спор может начаться
+// через полгода.
+async function photoDelete(proj, id){
+  const del = await sb.from('attachments').delete().eq('id', id);
+  if(del.error) throw del.error;
+  const i = projectPhotos(proj).findIndex(a=>a.id === id);
+  if(i >= 0) proj.photos.splice(i,1);
+  photoUrlCache.delete(id);
+  // Файл в хранилище остаётся сиротой: удалить его может только сервер,
+  // подписи на удаление обработчик не выдаёт. Это осознанный долг,
+  // а не забывчивость — уборка сирот делается на сервере отдельно.
 }
 
 // ---------- AUTH ----------
@@ -8124,6 +8414,12 @@ function normalizeProjects(){
     if(!Array.isArray(p.extraWorks)) p.extraWorks = [];
     if(!p.conds || typeof p.conds !== 'object') p.conds = {};   // условия объекта
     if(!Array.isArray(p.materials)) p.materials = [];           // материалы объекта
+    // Снимки. Поле появилось позже проектов, поэтому у проекта из старой
+    // сборки, из копии на устройстве или из «дублировать» его нет вовсе —
+    // а показ и счётчик лимита ждут массив. Пропущенное приведение здесь
+    // роняет карточку помещения целиком (та же семья, что грабля 47:
+    // обязательное поле, не заданное при создании).
+    if(!Array.isArray(p.photos)) p.photos = [];                 // фотографии
     if(p.archived !== true) p.archived = false;
     if(!PROJ_STATUS[p.status]) p.status = '';
     (p.rooms||[]).forEach(r=>{
@@ -11283,6 +11579,8 @@ function renderRoom(room){
 
         ${renderRoomWorks(room)}
 
+        ${renderRoomPhotos(room)}
+
         <div class="room-summary">
           <div class="badge">Периметр: <b data-out="perimeter">${fmt(g.perimeter)} м.п.</b></div>
           <div class="badge">Площадь стен (с вычетом проёмов): <b data-out="wallArea">${fmt(g.wallArea)} м²</b></div>
@@ -11293,6 +11591,87 @@ function renderRoom(room){
       </div>
     </div>
   `;
+}
+
+// БЛОК ФОТОГРАФИЙ ПОМЕЩЕНИЯ.
+// Цепляем снимки к помещению, а не к проекту: решение владельца
+// от 5 августа 2026 — кнопка там, где человек и так стоит с телефоном
+// в руках. К проекту целиком не цепляем, через месяц это свалка
+// из двухсот снимков.
+//
+// Разметка рисуется ВСЕГДА, даже тому, кто только смотрит: лишнее
+// прячется стилями. Вырезание блоков при отрисовке уже роняло настройку
+// страницы целиком (сборка 2026-08-10-20) — обработчик искал кнопку,
+// которой не нарисовали, и обрывался вместе со всеми замками.
+//
+// Миниатюры рисуются БЕЗ адресов. Постоянных ссылок на снимки нет:
+// хранилище закрыто, адрес выдаётся обработчиком на минуты. Поэтому
+// сначала ставим рамки, а картинки подставляет photoFillThumbs,
+// когда сервер ответит.
+function renderRoomPhotos(room){
+  const proj = currentProject();
+  const list = roomPhotos(proj, room.id);
+  const lim  = photoLimit(proj);
+  const total = projectPhotos(proj).length;
+  // Счётчик показываем только когда предел известен. Пока тариф не приехал,
+  // «0 из 5» соврало бы платящему (грабля 48).
+  const cnt = (lim === null)
+    ? (total ? String(list.length) : '')
+    : (list.length + ' · всего ' + total + ' из ' + lim);
+  return `
+    <div class="subsection ph-block" data-ph-room="${room.id}">
+      <div class="subsection-title">
+        Фотографии ${cnt ? `<span class="ph-count">${escapeHtml(cnt)}</span>` : ''}
+      </div>
+      <div class="ph-grid" data-ph-grid="${room.id}">
+        ${list.map(a=>`
+          <div class="ph-item" data-ph-id="${a.id}" title="${escapeAttr(photoTitle(a))}">
+            <div class="ph-thumb" data-ph-thumb="${a.id}"><span class="ph-wait">…</span></div>
+            <button type="button" class="ph-del no-print" data-ph-del="${a.id}" title="Удалить снимок">✕</button>
+          </div>`).join('')}
+      </div>
+      <input type="file" accept="image/*" multiple class="ph-file" data-ph-file="${room.id}" hidden>
+      <button type="button" class="add-link ph-add no-print" data-ph-add="${room.id}">+ добавить фото</button>
+      <div class="ph-msg" data-ph-msg="${room.id}"></div>
+    </div>
+  `;
+}
+
+// Подпись к снимку: дата съёмки, если она была в файле. Пусто означает
+// «даты в файле не было» — подставлять время загрузки нельзя, это
+// выдумывание доказательства (решение владельца 12 августа 2026).
+function photoTitle(a){
+  if(!a.takenAt) return 'Дата съёмки не известна';
+  return 'Снято ' + new Date(a.takenAt).toLocaleString('ru-RU',
+    { day:'numeric', month:'long', year:'numeric', hour:'2-digit', minute:'2-digit' });
+}
+
+// Подставить картинки в уже нарисованные рамки.
+// Ищем строго ВНУТРИ своего блока — иначе, когда на странице окажется
+// несколько помещений, «первая на странице» перестанет быть «той самой»
+// (грабля 49).
+async function photoFillThumbs(roomId){
+  const proj = currentProject();
+  const list = roomPhotos(proj, roomId);
+  if(!list.length) return;
+  const box = document.querySelector(`.ph-block[data-ph-room="${roomId}"] .ph-grid`);
+  if(!box) return;
+  try{
+    const urls = await photoViewUrls(list.map(a=>a.id));
+    list.forEach(a=>{
+      const cell = box.querySelector(`[data-ph-thumb="${a.id}"]`);
+      if(!cell) return;
+      const url = urls[a.id];
+      if(!url){ cell.innerHTML = '<span class="ph-wait">нет доступа</span>'; return; }
+      cell.innerHTML = `<img alt="Фотография помещения" loading="lazy" src="${escapeAttr(url)}">`;
+    });
+  }catch(e){
+    // Отказ сервера не должен выглядеть обрывом связи, и причина должна
+    // висеть на месте, а не мелькать в строке состояния (грабля 12)
+    box.querySelectorAll('.ph-thumb').forEach(c=>{
+      if(!c.querySelector('img')) c.innerHTML = '<span class="ph-wait">не загрузилось</span>';
+    });
+  }
 }
 
 function renderGeometryBlock(room){
@@ -12074,6 +12453,84 @@ function attachHandlers(){
       const r = proj.rooms.find(x=>x.id===roomId);
       if(r){ r[kind][parseInt(idx)][field] = el.value; scheduleSave(); updateDerived(proj); }
     });
+  });
+
+  // ---------- ФОТОГРАФИИ ----------
+  // Замок ставим ДО открытия камеры, а не после съёмки: снимок, сделанный
+  // и не сохранённый, хуже несделанного — человек уверен, что доказательство
+  // у него есть (решение владельца 12 августа 2026).
+  main.querySelectorAll('[data-ph-add]').forEach(el=>{
+    el.onclick = ()=>{
+      const roomId = el.getAttribute('data-ph-add');
+      const lim = photoLimit(proj);
+      if(lim !== null && projectPhotos(proj).length >= lim){
+        showLimit('В этом тарифе — до ' + lim + ' фотографий на проект.',
+                  'Снимок, который негде сохранить, хуже неснятого.');
+        return;
+      }
+      const inp = main.querySelector(`[data-ph-file="${roomId}"]`);
+      if(inp) inp.click();
+    };
+  });
+
+  main.querySelectorAll('[data-ph-file]').forEach(el=>{
+    el.onchange = async ()=>{
+      const roomId = el.getAttribute('data-ph-file');
+      const files = Array.from(el.files || []);
+      el.value = '';                       // чтобы тот же файл можно было выбрать снова
+      if(!files.length) return;
+      // Причина и ход дела висят на месте, а не мелькают в строке состояния:
+      // прочитать сообщение, которое сменяется каждые пару секунд,
+      // невозможно (грабля 12).
+      const msg = main.querySelector(`[data-ph-msg="${roomId}"]`);
+      const say = (t, err)=>{ if(msg){ msg.textContent = t; msg.classList.toggle('err', !!err); } };
+      let done = 0;
+      for(const f of files){
+        try{
+          say('Отправляю ' + (done+1) + ' из ' + files.length + '…');
+          const id = await photoUpload(proj, roomId, f, 'progress');
+          if(!id) break;                   // упёрлись в предел — дальше не пробуем
+          done++;
+        }catch(e){
+          console.error('Photo upload failed', e);
+          // У ответа сервера есть код, у оборванной сети кода нет —
+          // не выдаём одно за другое (грабля 12)
+          say(navigator.onLine
+                ? ('Не отправилось: ' + (e && e.message ? e.message : 'сервер отказал'))
+                : 'Нет связи. Снимок не отправлен — попробуйте, когда появится сеть.',
+              true);
+          break;
+        }
+      }
+      if(done){
+        say(done === files.length ? '' : ('Отправлено ' + done + ' из ' + files.length));
+        render();
+        photoFillThumbs(roomId);
+      }
+    };
+  });
+
+  main.querySelectorAll('[data-ph-del]').forEach(el=>{
+    el.onclick = async ()=>{
+      const id = el.getAttribute('data-ph-del');
+      // Спрашиваем всегда: снимок скрытых работ, удалённый по ошибке,
+      // не восстановить, а спор с заказчиком может начаться через полгода.
+      if(!confirm('Удалить снимок? Восстановить его будет нельзя.')) return;
+      try{
+        await photoDelete(proj, id);
+        render();
+      }catch(e){
+        console.error('Photo delete failed', e);
+        alert('Не удалось удалить снимок: ' + (e && e.message ? e.message : 'сервер отказал'));
+      }
+    };
+  });
+
+  // Подставить картинки в нарисованные рамки. Идём по блокам, а не по
+  // всей странице: помещений на экране несколько, и «первый найденный»
+  // блок перестал бы быть «тем самым» (грабля 49).
+  main.querySelectorAll('.ph-block[data-ph-room]').forEach(box=>{
+    photoFillThumbs(box.getAttribute('data-ph-room'));
   });
 
   // --- Документы ---
