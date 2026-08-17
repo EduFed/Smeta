@@ -2716,7 +2716,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-10-48';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-10-49';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -6943,7 +6943,19 @@ async function photoUpload(proj, roomId, file, kind){
 
   try{
     const sign = await photoAsk({ action:'upload', attachment_id: id });
-    const put = await fetch(sign.url, {
+    // ССЫЛКА ЛЕЖИТ В links[номер снимка], А НЕ В url.
+    // Обработчик отвечает одинаково на просмотр и на загрузку: он умеет
+    // выдавать до 50 ссылок за раз, поэтому всегда возвращает словарь
+    // «номер → адрес», даже когда снимок один.
+    // Раньше здесь стояло sign.url — поля с таким именем в ответе нет,
+    // получалось fetch(undefined). Браузер понимал это как адрес
+    // на нашем же сайте, слал туда PUT и получал 405 от GitHub Pages.
+    // Со стороны выглядело как отказ ХРАНИЛИЩА, и полдня чинилось не то:
+    // проверки с сервера уходили в настоящее хранилище и проходили,
+    // а телефон стучался в собственный сайт. Поймано 17 августа 2026.
+    const upUrl = sign && sign.links && sign.links[id];
+    if(!upUrl) throw new Error('Обработчик не выдал адрес для загрузки');
+    const put = await fetch(upUrl, {
       method: 'PUT',
       // ТИП ОБЯЗАТЕЛЕН. Хранилище запоминает его таким, каким прислали,
       // и потом так же отдаёт. Без заголовка снимок приезжает
@@ -6970,7 +6982,7 @@ async function photoUpload(proj, roomId, file, kind){
       }catch(_){}
       let where = '';
       try{
-        const u = new URL(sign.url);
+        const u = new URL(upUrl);
         where = ' (' + u.host + u.pathname + ')';
       }catch(_){}
       throw new Error('Хранилище отказало: ' + put.status + why + where);
