@@ -2716,7 +2716,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-10-47';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-10-48';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -6952,7 +6952,29 @@ async function photoUpload(proj, roomId, file, kind){
       headers: { 'Content-Type': 'image/jpeg' },
       body: blob
     });
-    if(!put.ok) throw new Error('Хранилище отказало: ' + put.status);
+    if(!put.ok){
+      // ПРИЧИНУ ОТКАЗА СПРАШИВАЕМ У ХРАНИЛИЩА, А НЕ ВЫВОДИМ ИЗ КОДА.
+      // Раньше показывался только номер («отказало: 405»), и по нему
+      // причину пришлось искать пробами с сервера — а они все проходили,
+      // потому что воспроизводили не то. S3 кладёт разбор в тело ответа
+      // (<Code>…</Code>), и это единственное место, где написано,
+      // что именно ему не понравилось.
+      // Заодно показываем, КУДА шёл запрос — но только адрес и путь,
+      // без строки запроса: в ней лежит подпись, а она не должна
+      // попадать ни в текст на экране, ни в снимок экрана.
+      let why = '';
+      try{
+        const body = await put.text();
+        const m = body && body.match(/<Code>([^<]+)<\/Code>/);
+        if(m) why = ' — ' + m[1];
+      }catch(_){}
+      let where = '';
+      try{
+        const u = new URL(sign.url);
+        where = ' (' + u.host + u.pathname + ')';
+      }catch(_){}
+      throw new Error('Хранилище отказало: ' + put.status + why + where);
+    }
   }catch(e){
     // файла нет — значит и записи быть не должно
     try{ await sb.from('attachments').delete().eq('id', id); }catch(_){}
