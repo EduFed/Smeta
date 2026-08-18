@@ -2909,7 +2909,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-10-73';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-10-74';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -5868,6 +5868,9 @@ const DB = {
       assignedTo: w.assigned_to || null,
       workId: w.is_ref_lay ? REF_LAY_ID : (w.work_id || ('ghost_' + w.lid)),
       manualQty: w.manual_qty === null ? '' : w.manual_qty,
+      // null из базы -> пустое поле («считать из размеров»),
+      // число -> число. Ноль остаётся нулём.
+      qtyOver: (w.qty_over === null || w.qty_over === undefined) ? '' : w.qty_over,
       manualUnit: w.manual_unit || undefined,
       cfg: w.cfg || undefined,
       // applies_to — часть снимка: без него приглашённый мастер не может
@@ -6537,6 +6540,21 @@ const DB = {
       _price: price,          // не колонка таблицы, забирается вызывающим
       is_ref_lay: isRef,
       manual_qty: num(rw.manualQty), manual_unit: txt(rw.manualUnit),
+      // ПЕРЕБИТОЕ КОЛИЧЕСТВО (с 2026-08-10-74).
+      // Человек может заменить посчитанное из размеров число своим:
+      // плитка не на все стены, пол кроме зоны под ванной. Раньше поле
+      // работало на экране, но НИКУДА НЕ СОХРАНЯЛОСЬ — после перезагрузки
+      // возвращалась автоматическая цифра. Владелец поймал это на своём
+      // проекте, колонка добавлена миграцией 18 августа 2026.
+      //
+      // Через num() гнать нельзя, и это главное здесь: num('') = 0,
+      // а пусто и ноль тут РАЗНЫЕ вещи. Пусто значит «считать
+      // из размеров помещения», ноль значит «этой работы тут нет».
+      // Прогони через num() — и сбросить поле обратно на автоматический
+      // расчёт станет нельзя: вместо пустоты уедет ноль, и человек
+      // увидит нулевую сумму вместо посчитанной.
+      qty_over: (rw.qtyOver === '' || rw.qtyOver === null || rw.qtyOver === undefined)
+                  ? null : num(rw.qtyOver),
       cfg: rw.cfg || null, position: position
     };
   }
