@@ -2062,7 +2062,11 @@
 
   /* канва черчения контура */
   .poly-actions{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:12px 0;}
-  .pd-overlay{display:none;position:fixed;inset:0;z-index:130;background:rgba(0,0,0,.45);align-items:center;justify-content:center;padding:12px;}
+  /* Слой ВЫШЕ бокового меню (у него 1000) и его кнопки (1100).
+     Пока окно было узким, оно до меню просто не доставало; когда
+     выросло до размера экрана — уехало под него, и половина полей
+     оказалась закрыта. Окно поверх меню, как и положено модальному. */
+  .pd-overlay{display:none;position:fixed;inset:0;z-index:1200;background:rgba(0,0,0,.45);align-items:center;justify-content:center;padding:12px;}
   /* два быстрых нажатия по кнопке планшет принимает за жест увеличения —
      manipulation отключает его, прокрутку не трогает */
   .pd-modal button, .pd-step, .pd-btns .btn{ touch-action:manipulation; }
@@ -2831,7 +2835,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-10-53';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-10-54';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -8488,17 +8492,34 @@ function polyDrawClose(){
 // заново от самого контура, а не от нуля.
 function pdView(){
   const st = polyDraw.step, p = polyDraw.pts;
-  let minX = 0, maxX = (POLY_COLS-1)*st;
-  let minY = 0, maxY = (POLY_ROWS-1)*st;
-  if(p.length){
+  let minX, maxX, minY, maxY;
+  if(p.length >= 2){
+    // ЕСТЬ КОНТУР — ОБЛАСТЬ СЧИТАЕМ ПО НЕМУ, а не по сетке «на всякий
+    // случай». Сначала я оставлял в области ещё и стандартные 7×5 метров,
+    // и контур в полтора метра выглядел крошечным посреди пустого поля:
+    // окно большое, а чертить неудобно. Область должна облегать контур —
+    // тогда он занимает холст целиком, а мелкие детали видно без прищура.
     const xs = p.map(g=>g[0]), ys = p.map(g=>g[1]);
-    minX = Math.min(minX, ...xs); maxX = Math.max(maxX, ...xs);
-    minY = Math.min(minY, ...ys); maxY = Math.max(maxY, ...ys);
+    minX = Math.min(...xs); maxX = Math.max(...xs);
+    minY = Math.min(...ys); maxY = Math.max(...ys);
+  }else{
+    // пусто или одна точка — показываем сетку по умолчанию,
+    // иначе не с чего начать
+    minX = 0; maxX = (POLY_COLS-1)*st;
+    minY = 0; maxY = (POLY_ROWS-1)*st;
   }
-  // ровно по узлам сетки плюс запас, чтобы вершина не липла к краю
-  const pad = st * 2;
+  // Запас — одна клетка. Две было слишком щедро: у контура в полтора
+  // метра поля съедали половину холста, и чертёж снова выходил мелким.
+  // Одной хватает, чтобы вершина не липла к краю и её можно было
+  // подцепить пальцем.
+  const pad = st;
   minX = Math.floor((minX - pad)/st)*st;  maxX = Math.ceil((maxX + pad)/st)*st;
   minY = Math.floor((minY - pad)/st)*st;  maxY = Math.ceil((maxY + pad)/st)*st;
+  // Не даём области схлопнуться: у контура в одну стену запас должен
+  // остаться, иначе следующую точку некуда поставить.
+  const MIN_CELLS = 6;
+  while(Math.round((maxX-minX)/st) < MIN_CELLS){ maxX += st; minX -= st; }
+  while(Math.round((maxY-minY)/st) < MIN_CELLS){ maxY += st; minY -= st; }
   const cols = Math.round((maxX-minX)/st) + 1;
   const rows = Math.round((maxY-minY)/st) + 1;
   return { minX, minY, maxX, maxY, cols, rows,
