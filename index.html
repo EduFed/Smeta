@@ -2909,7 +2909,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-10-76';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-10-78';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -8754,9 +8754,17 @@ function polyDrawSVG(){
     const cxm = p.reduce((t,g)=>t+g[0],0)/p.length;
     const cym = p.reduce((t,g)=>t+g[1],0)/p.length;
     const EPS = 0.004;                       // 4 мм — что считать одной линией
+    // УЖЕ НАПИСАННЫЕ ЧИСЛА. Владелец: «размер 0,2 не нужно дублировать,
+    // он одинаковый с двух сторон». Одно и то же число, написанное дважды
+    // рядом, ничего не добавляет — только загромождает чертёж и заставляет
+    // искать, чем эти два отличаются.
+    const napisano = [];
+    const uzhe = (txt, x, y)=> napisano.some(z =>
+      z.txt === txt && Math.hypot(z.x - x, z.y - y) < 90);
 
     // разложим стены: осевые идут в цепи, наклонные — отдельно
-    const gorNiz = [], gorVerh = [], vertLev = [], vertPrav = [], kosye = [];
+    const gorizontalnye = [], vertikalnye = [], kosye = [];
+    const gorNiz = [], gorVerh = [], vertLev = [], vertPrav = [], vglubine = [];
     const last = p.length >= 3 ? p.length : p.length-1;
     for(let i=0;i<last;i++){
       const a = p[i], b = p[(i+1)%p.length];
@@ -8765,14 +8773,40 @@ function polyDrawSVG(){
       if(L <= 0.01) continue;
       hit += `<line x1="${pdX(a[0])}" y1="${pdY(a[1])}" x2="${pdX(b[0])}" y2="${pdY(b[1])}"
         class="pd-side ${polyDraw.sel===i?'on':''}"/>`;
-      if(dy <= EPS)      ((a[1]+b[1])/2 <= cym ? gorNiz : gorVerh).push({i,a,b,L});
-      else if(dx <= EPS) ((a[0]+b[0])/2 <= cxm ? vertLev : vertPrav).push({i,a,b,L});
+      if(dy <= EPS)      gorizontalnye.push({i,a,b,L});
+      else if(dx <= EPS) vertikalnye.push({i,a,b,L});
       else               kosye.push({i,a,b,L});
     }
 
     const xs = p.map(g=>g[0]), ys = p.map(g=>g[1]);
     const minXm = Math.min(...xs), maxXm = Math.max(...xs);
     const minYm = Math.min(...ys), maxYm = Math.max(...ys);
+
+    // РАЗМЕР ЖИВЁТ У СВОЕЙ СТЕНЫ, И ТОЛЬКО КРАЙНИЕ ИДУТ В ЦЕПИ.
+    //
+    // Владелец объяснил логику по референсу: сначала размеры пишутся
+    // прямо возле своих стен, и только те, что лежат по краю габарита,
+    // собираются в общие цепи по периметру. Стены, утопленные вглубь —
+    // выступы, ниши, короб — подписываются там же, где они есть:
+    // внутри чертежа для них полно места, а таскать их на периферию
+    // значит рвать связь размера со стеной.
+    //
+    // Стена «по краю», если её линия совпадает с границей габарита.
+    // Всё остальное — «в глубине», и получает свою размерную линию
+    // рядом с собой.
+    const KRAY = 0.02;   // 2 см — что считать «лежит на границе»
+    gorizontalnye.forEach(st=>{
+      const y = (st.a[1]+st.b[1])/2;
+      if(Math.abs(y - minYm) <= KRAY)      gorNiz.push(st);
+      else if(Math.abs(y - maxYm) <= KRAY) gorVerh.push(st);
+      else                                  vglubine.push(st);
+    });
+    vertikalnye.forEach(st=>{
+      const x = (st.a[0]+st.b[0])/2;
+      if(Math.abs(x - minXm) <= KRAY)      vertLev.push(st);
+      else if(Math.abs(x - maxXm) <= KRAY) vertPrav.push(st);
+      else                                  vglubine.push(st);
+    });
 
     // одна цепь: выносные линии, общая линия, засечки, подписи отрезков
     //
@@ -8784,6 +8818,7 @@ function polyDrawSVG(){
     //   4) от каждой характерной точки контура до размерной линии идёт
     //      ВЫНОСНАЯ ЛИНИЯ. Без неё числа висят сами по себе, и откуда
     //      докуда мерили — непонятно. Это было главным замечанием.
+    const OT = 30;
     const cep = (steny, gorizont, uroven, storonaZnak)=>{
       if(!steny.length) return;
       const tochki = [];
@@ -8841,12 +8876,17 @@ function polyDrawSVG(){
         // ЧИСЛО НАД ЛИНИЕЙ — со стороны контура, отступ 9 точек
         const nad = uroven - 9*storonaZnak;
         let tx, ty, sdvig = 0;
-        // не помещается между засечками — выносим за отрезок, как в референсе
+        // НЕ ПОМЕЩАЕТСЯ — ЗАВОДИМ ВНУТРЬ КОНТУРА.
+        // Владелец: «размер 0,15 внизу не нужно выносить, непонятно что
+        // получается, его лучше завести внутрь контура». И правда:
+        // вынесенное вбок число липнет к соседнему и спорит с ним,
+        // а внутри фигуры места вдоволь. Заходим за линию контура
+        // и ставим число там, напротив своего отрезка.
+        const vnutr = uroven - (OT + 18)*storonaZnak;
         if(mesto < w + 4){
-          sdvig = (w/2 + mesto/2 + 3);
-          const kuda = (k === 0) ? -1 : 1;      // первый отрезок — влево, прочие вправо
-          if(gorizont){ tx = seredina + kuda*sdvig; ty = nad; }
-          else        { ty = seredina + kuda*sdvig; tx = nad; }
+          sdvig = 1;
+          if(gorizont){ tx = seredina; ty = vnutr; }
+          else        { ty = seredina; tx = vnutr; }
         }else{
           if(gorizont){ tx = seredina; ty = nad; }
           else        { ty = seredina; tx = nad; }
@@ -8862,10 +8902,15 @@ function polyDrawSVG(){
           return s1 <= v1 + EPS && s2 >= v2 - EPS;
         });
         const on = svoya && polyDraw.sel === svoya.i;
+        // такое же число уже написано рядом — второй раз не пишем.
+        // Выбранную стену показываем всегда: там открыто поле правки.
+        if(!on && uzhe(txt, tx, ty)) continue;
+        napisano.push({ txt, x:tx, y:ty });
         // выноска к отодвинутому числу — чтобы было видно, к какому отрезку оно
+        // поводок от размерной линии к заведённому внутрь числу
         const povodok = sdvig ? (gorizont
-          ? `<line x1="${seredina}" y1="${uroven}" x2="${tx}" y2="${ty + (h/2)*storonaZnak}" class="pd-dim-ext"/>`
-          : `<line x1="${uroven}" y1="${seredina}" x2="${tx + (h/2)*storonaZnak}" y2="${ty}" class="pd-dim-ext"/>`) : '';
+          ? `<line x1="${seredina}" y1="${uroven}" x2="${seredina}" y2="${ty + (h/2)*storonaZnak}" class="pd-dim-ext"/>`
+          : `<line x1="${uroven}" y1="${seredina}" x2="${tx + (h/2)*storonaZnak}" y2="${seredina}" class="pd-dim-ext"/>`) : '';
 
         if(on){
           lbls += `<g class="pd-lbl-g on">${povodok}
@@ -8883,26 +8928,42 @@ function polyDrawSVG(){
     };
 
     // четыре цепи по сторонам габарита, каждая на своём отступе
-    const OT = 30;
     cep(gorNiz,  true,  pdY(minYm) + OT,  1);   // цепь ниже контура
     cep(gorVerh, true,  pdY(maxYm) - OT, -1);   // выше контура
     cep(vertLev, false, pdX(minXm) - OT, -1);   // слева
     cep(vertPrav,false, pdX(maxXm) + OT,  1);   // справа
 
-    // наклонные стены — своей линией вдоль стены: в цепь они не ложатся
-    kosye.forEach(({i,a,b,L})=>{
+    // СТЕНЫ В ГЛУБИНЕ — своей размерной линией рядом с собой.
+    // Наружу от контура здесь означает «в сторону от центра фигуры»,
+    // то есть в свободное место внутри чертежа.
+    vglubine.concat(kosye).forEach(({i,a,b,L})=>{
       const ax=pdX(a[0]), ay=pdY(a[1]), bx=pdX(b[0]), by=pdY(b[1]);
       const lp = Math.hypot(bx-ax,by-ay) || 1;
       let ux = -(by-ay)/lp, uy = (bx-ax)/lp;
       const mX=(ax+bx)/2, mY=(ay+by)/2, cX=pdX(cxm), cY=pdY(cym);
       if((mX-cX)*ux + (mY-cY)*uy < 0){ ux=-ux; uy=-uy; }
       const txt = fmtLen(L);
-      const w = Math.max(30, txt.length*8 + 10), h = 20;
-      const tx = mX + ux*(h/2 + 10), ty = mY + uy*(h/2 + 10);
+      const w = txt.length*7 + 8, h = 15;
+      // короткая стена — число уводим за её конец, иначе оно накроет
+      // саму размерную линию
+      const tesno = lp < w + 6;
+      const sx = (bx-ax)/lp, sy = (by-ay)/lp;
+      const OT2 = 13;
+      const tx = mX + ux*(OT2 + h/2) + (tesno ? sx*(lp/2 + w/2 + 4) : 0);
+      const ty = mY + uy*(OT2 + h/2) + (tesno ? sy*(lp/2 + w/2 + 4) : 0);
       const on = polyDraw.sel === i;
-      lbls += `<line x1="${ax+ux*13}" y1="${ay+uy*13}" x2="${bx+ux*13}" y2="${by+uy*13}" class="pd-dim-line"/>
-        <line x1="${ax}" y1="${ay}" x2="${ax+ux*13}" y2="${ay+uy*13}" class="pd-dim-ext"/>
-        <line x1="${bx}" y1="${by}" x2="${bx+ux*13}" y2="${by+uy*13}" class="pd-dim-ext"/>`;
+      if(!on && uzhe(txt, tx, ty)) return;      // такое же число рядом уже есть
+      napisano.push({ txt, x:tx, y:ty });
+      // ориентация числа по линии — как у цепей: вертикальные читаются снизу вверх
+      const vert = Math.abs(by-ay) > Math.abs(bx-ax);
+      const povorot = vert ? ` transform="rotate(-90, ${tx}, ${ty})"` : '';
+      // засечки на концах размерной линии
+      const zas = (x,y)=>`<line x1="${x-(sx+ux)*4}" y1="${y-(sy+uy)*4}"
+                                x2="${x+(sx+ux)*4}" y2="${y+(sy+uy)*4}" class="pd-dim-tick"/>`;
+      lbls += `<line x1="${ax+ux*OT2}" y1="${ay+uy*OT2}" x2="${bx+ux*OT2}" y2="${by+uy*OT2}" class="pd-dim-line"/>
+        <line x1="${ax}" y1="${ay}" x2="${ax+ux*(OT2+4)}" y2="${ay+uy*(OT2+4)}" class="pd-dim-ext"/>
+        <line x1="${bx}" y1="${by}" x2="${bx+ux*(OT2+4)}" y2="${by+uy*(OT2+4)}" class="pd-dim-ext"/>
+        ${zas(ax+ux*OT2, ay+uy*OT2)}${zas(bx+ux*OT2, by+uy*OT2)}`;
       if(on){
         lbls += `<g class="pd-lbl-g on">
           <foreignObject x="${tx-w/2-14}" y="${ty-h/2-4}" width="${w+28}" height="${h+8}">
@@ -8911,9 +8972,9 @@ function polyDrawSVG(){
           </foreignObject></g>`;
       }else{
         lbls += `<g data-pd-lbl="${i}" class="pd-lbl-g">
-          <rect x="${tx-w/2}" y="${ty-h/2}" width="${w}" height="${h}" rx="4" class="pd-lbl-bg"/>
+          <rect x="${tx-w/2}" y="${ty-h/2}" width="${w}" height="${h}" class="pd-lbl-bg"${povorot}/>
           <text x="${tx}" y="${ty}" text-anchor="middle" dominant-baseline="central"
-                class="pd-lbl">${txt}</text></g>`;
+                class="pd-lbl"${povorot}>${txt}</text></g>`;
       }
     });
   }
