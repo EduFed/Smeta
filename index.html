@@ -2052,7 +2052,7 @@
   .poly-deg{font-size:12px;color:var(--ink-soft);}
   .poly-warn{margin:12px 0;padding:11px 13px;border-radius:8px;background:rgba(232,98,44,.12);font-size:13px;line-height:1.5;color:var(--ink);}
   .poly-close-btn{display:block;margin-top:10px;}
-  .room-plan{display:block;margin:0 auto;max-height:210px;color:var(--ink);}
+  .room-plan{display:block;margin:0 auto;max-height:300px;color:var(--ink);}
   .room-plan .plan-poly{fill:currentColor;fill-opacity:.07;stroke:currentColor;stroke-width:2;stroke-linejoin:round;}
   .room-plan.bad .plan-poly{stroke:var(--orange);}
   .room-plan .plan-open{fill:none;stroke:currentColor;stroke-width:2;stroke-linejoin:round;}
@@ -2061,6 +2061,7 @@
   .room-plan .plan-dim{stroke:currentColor;stroke-width:1;opacity:.55;}
   .room-plan .plan-dot{fill:currentColor;opacity:.5;}
   .room-plan .plan-lbl{font-family:'JetBrains Mono',monospace;font-size:10px;fill:currentColor;opacity:.75;}
+  .room-plan .plan-lbl-bg{fill:var(--white);fill-opacity:.85;stroke:none;}
 
   /* канва черчения контура */
   .poly-actions{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:12px 0;}
@@ -2909,7 +2910,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-18-86';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-18-87';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -8320,7 +8321,12 @@ function roomPlanSVG(segs, dir0, drawn){
   const w = Math.max(...xs)-Math.min(...xs), h = Math.max(...ys)-Math.min(...ys);
   if(!(w > 0.05) && !(h > 0.05)) return '';
 
-  const W = 320, H = 200, PAD = 26;
+  // СХЕМА КРУПНЕЕ, ЧЕМ БЫЛА (320×200 до 2026-08-18-87).
+  // Размеры теперь раскладываются как в чертеже — цепями по краям
+  // габарита, — и им нужны поля. На прежнем холсте 23 числа боевого
+  // контура давали девять наложений и восемь чисел, выдавленных
+  // к самому краю: замерено, а не на глаз.
+  const W = 420, H = 300, PAD = 46;
   const k = Math.min((W-PAD*2)/Math.max(w,0.05), (H-PAD*2)/Math.max(h,0.05));
   const ox = (W - w*k)/2 - Math.min(...xs)*k;
   const oy = (H + h*k)/2 + Math.min(...ys)*k;
@@ -8330,8 +8336,6 @@ function roomPlanSVG(segs, dir0, drawn){
   // кольцо — те же вершины без замыкающего повтора
   const ring = (Array.isArray(drawn) && drawn.length >= 3) ? drawn : polyPoints(segs, dir0);
   const bad = polySelfIntersects(ring);
-  const cx = ring.reduce((s,p)=>s+p[0],0)/Math.max(ring.length,1);
-  const cy = ring.reduce((s,p)=>s+p[1],0)/Math.max(ring.length,1);
 
   const shape = okClosed
     ? `<polygon points="${ring.map(p=>X(p[0])+','+Y(p[1])).join(' ')}" class="plan-poly"/>`
@@ -8345,52 +8349,30 @@ function roomPlanSVG(segs, dir0, drawn){
   // чтобы на него посмотреть и понять комнату, — значит на нём должны
   // быть числа, которыми меряют.
   //
-  // Длину берём ИЗ НАРИСОВАННЫХ ВЕРШИН, а не из сохранённых длин:
-  // подпись обязана описывать то, что видно. Разойдись они однажды —
-  // человек поверит подписи, а не чертежу.
-  // РАЗМЕРЫ НА СХЕМЕ — ТОЖЕ НА ОБЩИХ ЛИНИЯХ, как в окне черчения.
-  // Здесь разведения не было вовсе, и на контуре из полутора десятков
-  // стен числа слипались в нечитаемый ком — владелец прислал снимок.
-  // Горизонтальные стены подписываются сверху и снизу, вертикальные —
-  // слева и справа; налегающие сдвигаются вдоль своей линии.
-  // Размеры — вдоль своих стен, как в чертёжных программах:
-  // короткая размерная линия параллельно стене, выноски от концов,
-  // засечки, число посередине. Вынос на общие линии по краям читался
-  // тяжело: связь числа со стеной приходилось прослеживать глазами.
-  const zanyato = [];
-  const labels = (segs||[]).map((sg,i)=>{
-    const p = pts[i], q = pts[i+1];
-    if(!p || !q) return '';
-    const Lm = Math.hypot(q[0]-p[0], q[1]-p[1]);
-    if(Lm < 0.06) return '';
-    const txt = fmtLen(Lm);
-    const lw = txt.length*6 + 8, lh = 13;
-    const ax = X(p[0]), ay = Y(p[1]), bx = X(q[0]), by = Y(q[1]);
-    const lp = Math.hypot(bx-ax, by-ay) || 1;
-    let ux = -(by-ay)/lp, uy = (bx-ax)/lp;
-    const mX = (ax+bx)/2, mY = (ay+by)/2;
-    if((mX - X(cx))*ux + (mY - Y(cy))*uy < 0){ ux = -ux; uy = -uy; }
-    const OFF = 9;
-    const d1x = ax+ux*OFF, d1y = ay+uy*OFF, d2x = bx+ux*OFF, d2y = by+uy*OFF;
-    let tx = (d1x+d2x)/2 + ux*(lh/2+1), ty = (d1y+d2y)/2 + uy*(lh/2+1);
-    const tesno = lp < lw + 4;
-    if(tesno){ tx += ux*lh; ty += uy*lh; }
-    for(let g=0; g<10; g++){
-      const hit = zanyato.find(z => Math.abs(z.x-tx) < (z.w+lw)/2 + 2 &&
-                                    Math.abs(z.y-ty) < (z.h+lh)/2 + 2);
-      if(!hit) break;
-      tx += ux*(lh+2); ty += uy*(lh+2);
-    }
-    tx = Math.min(Math.max(tx, lw/2+1), W - lw/2 - 1);
-    ty = Math.min(Math.max(ty, lh/2+1), H - lh/2 - 1);
-    zanyato.push({ x:tx, y:ty, w:lw, h:lh });
-    return `<line x1="${ax}" y1="${ay}" x2="${d1x}" y2="${d1y}" class="plan-tick"/>
-      <line x1="${bx}" y1="${by}" x2="${d2x}" y2="${d2y}" class="plan-tick"/>
-      <line x1="${d1x}" y1="${d1y}" x2="${d2x}" y2="${d2y}" class="plan-dim"/>
-      ${tesno ? `<line x1="${(d1x+d2x)/2}" y1="${(d1y+d2y)/2}" x2="${tx}" y2="${ty}" class="plan-tick"/>` : ''}
-      <text x="${tx}" y="${ty}" text-anchor="middle"
-        dominant-baseline="central" class="plan-lbl">${txt}</text>`;
-  }).join('');
+  // РАСКЛАДКА ТА ЖЕ, ЧТО В ОКНЕ ЧЕРЧЕНИЯ, и это главное. Своя здесь была
+  // до 18 августа 2026 и осталась от первого, отброшенного замысла;
+  // держать два свода правил на одну картинку — верный способ развести
+  // их за неделю (грабля 43).
+  //
+  // Длину раскладка берёт из нарисованных вершин, а не из сохранённых
+  // длин: подпись обязана описывать то, что видно. Разойдись они
+  // однажды — человек поверит подписи, а не чертежу.
+  const labels = razmeryKontura(ring, {
+    X, Y,
+    mx: x => (x - ox)/k, my: y => (oy - y)/k,
+    W, H,
+    shirina: t => t.length*6 + 8, vys: 13,
+    // отступы мельче, чем в окне черчения: холст меньше и буквы мельче
+    OT: 20, OT2: 9, GL_TXT: 11, GL_SHAG: 13,
+    kl: { ext:'plan-tick', line:'plan-dim', tick:'plan-dim' },
+    sel: null,
+    // на схеме число не нажимается — это картинка для чтения.
+    // Подложка нужна: числа ложатся на заливку контура.
+    chislo: ({ txt, tx, ty, w, h, povorot })=>
+      `<rect x="${tx-w/2}" y="${ty-h/2}" width="${w}" height="${h}" class="plan-lbl-bg"${povorot}/>
+       <text x="${tx}" y="${ty}" text-anchor="middle" dominant-baseline="central"
+             class="plan-lbl"${povorot}>${txt}</text>`
+  });
 
   return `<svg viewBox="0 0 ${W} ${H}" width="100%" class="room-plan ${bad?'bad':''}">
     ${shape}
@@ -8784,6 +8766,454 @@ function pdZamorozit(){
   polyDraw.view = { x:v.minX, y:v.minY, w:v.maxX-v.minX, h:v.maxY-v.minY };
 }
 
+// РАЗМЕРЫ КОНТУРА — ОДНА РАСКЛАДКА НА ДВА МЕСТА (с 2026-08-18-87).
+//
+// Раньше их было две: своя в окне черчения и своя на схеме в карточке.
+// Схема так и осталась с первым, отброшенным замыслом — размер вдоль
+// каждой стены, число уводится «в сторону от центра фигуры». На боевом
+// контуре из 23 стен это давало 23 числа на холсте 320×200: девять
+// наложений и восемь чисел, выдавленных к самому краю.
+//
+// Чинить её отдельно значило завести второй свод правил, который завтра
+// разойдётся с первым. Ровно это уже случалось — грабля 43: источник
+// объявили в одном месте, читать продолжили в другом, и один путь чинил
+// за другим, пока расхождение не всплыло на человеке.
+//
+// Поэтому раскладка одна, а различия приходят средой `sr`:
+//   X(mx), Y(my)   — метры в точки картинки;
+//   mx(x), my(y)   — обратно, нужно для проверки «внутри контура»;
+//   W, H           — размер картинки, чтобы число не вылезло за край;
+//   shirina(txt)   — ширина числа в точках, vys — высота;
+//   OT             — отступ цепи от габарита;
+//   OT2            — отступ размерной линии от стены в глубине;
+//   GL_TXT, GL_SHAG— на сколько число уходит внутрь и на сколько глубже,
+//                    если место занято;
+//   kl             — имена классов линий: ext, line, tick;
+//   sel            — номер выбранной стены или null;
+//   chislo({...})  — разметка одного числа: в окне черчения она
+//                    кликабельная и умеет превращаться в поле ввода,
+//                    на схеме — простая надпись.
+function razmeryKontura(p, sr){
+  let lbls = '';
+  const kl = sr.kl;
+  // РАЗМЕРНЫЕ ЦЕПИ — КАК НА СТРОИТЕЛЬНОМ ЧЕРТЕЖЕ.
+  //
+  // Сначала я рисовал каждой стене свою размерную линию рядом с ней.
+  // На плотном контуре они не помещались и уходили лесенкой наружу —
+  // владелец прислал референс и объяснил: на одной стороне должна быть
+  // ОДНА линия, разбитая засечками на отрезки, и каждый отрезок
+  // подписан. Так и делают в чертежах: снизу «100 / 600 / 600 / 385»,
+  // слева «150 / 740 / 1950».
+  //
+  // Устройство: вершины проецируются на четыре стороны габарита.
+  // Снизу и сверху — разбивка по X, слева и справа — по Y. Между
+  // соседними проекциями получается отрезок цепи со своим размером.
+  // У комнат стены идут по осям, поэтому отрезок цепи и есть длина
+  // стены; наклонные стены в цепь не ложатся, им остаётся отдельная
+  // размерная линия вдоль самой стены.
+  // ТОЧКА ВНУТРИ КОНТУРА — луч вправо, считаем пересечения.
+  // Нужна, чтобы размер уходил в комнату, а не наружу: прежнее
+  // «в сторону от центра фигуры» врало на коробах и нишах у края —
+  // там от центра как раз наружу, и размеры вылезали за контур.
+  const vnutriKontura = (mx,my)=>{
+    if(p.length < 3) return false;
+    let da = false;
+    for(let i=0, j=p.length-1; i<p.length; j=i++){
+      const xi=p[i][0], yi=p[i][1], xj=p[j][0], yj=p[j][1];
+      if((yi > my) !== (yj > my) && mx < (xj-xi)*(my-yi)/(yj-yi) + xi) da = !da;
+    }
+    return da;
+  };
+  // нормаль (в экранных точках), смотрящая внутрь контура
+  const vnutrNormal = (mx,my,ux,uy)=>{
+    const sh = Math.abs(sr.mx(6) - sr.mx(0));   // 6 точек картинки в метрах
+    return vnutriKontura(mx + ux*sh, my - uy*sh) ? [ux,uy] : [-ux,-uy];
+  };
+  // то же самое, но по экранным точкам: куда встанет число, известно
+  // в экранных, а контур живёт в метрах
+  const vnutriEkr = (x,y)=> vnutriKontura(sr.mx(x), sr.my(y));
+  const EPS = 0.004;                       // 4 мм — что считать одной линией
+  // УЖЕ НАПИСАННЫЕ ЧИСЛА. Владелец: «размер 0,2 не нужно дублировать,
+  // он одинаковый с двух сторон». Одно и то же число, написанное дважды
+  // рядом, ничего не добавляет — только загромождает чертёж и заставляет
+  // искать, чем эти два отличаются.
+  const napisano = [];
+  // «РЯДОМ» МЕРЯЕТСЯ В МЕТРАХ, А НЕ В ТОЧКАХ КАРТИНКИ.
+  // Раньше здесь стояло 90 точек — и это работало, пока картинка была
+  // одна. На схеме в карточке масштаб мельче, и те же 90 точек накрывали
+  // уже целый метр: два РАЗНЫХ уступа по 10 см слипались в один, и один
+  // из них оставался без подписи. Считаем 0,65 метра, переведённые
+  // в точки той картинки, на которой рисуем.
+  const BLIZKO = 0.65 / Math.max(Math.abs(sr.mx(1) - sr.mx(0)), 1e-9);
+  const uzhe = (txt, x, y)=> napisano.some(z =>
+    z.txt === txt && Math.hypot(z.x - x, z.y - y) < BLIZKO);
+
+  // ЗАНЯТЫЕ МЕСТА ВНУТРИ КОНТУРА — общие на весь чертёж.
+  // Каждая цепь считает свои отступы сама и соседних не видит, а в углу
+  // заведённые внутрь числа встречаются: «0,1» сверху и «0,149» слева
+  // легли друг на друга. Поэтому занятость держим одну на всех — и цепи,
+  // и стены в глубине кладут числа в этот же список.
+  // Стены в глубине, чьё число цепь взяла на себя: у себя они
+  // подписываются повторно, и это был бы дубль.
+  const cepPodpisala = new Set();
+  const vnutriZanyato = [];
+  const svobodno = (x,y,w,h)=> !vnutriZanyato.some(z =>
+    Math.abs(z.x - x) < (z.w + w)/2 + 3 && Math.abs(z.y - y) < (z.h + h)/2 + 3);
+  const zanyat = (x,y,w,h)=> vnutriZanyato.push({x,y,w,h});
+
+  // ВСЕЙ КОРОБКОЙ, А НЕ СЕРЕДИНОЙ. Проверять одну точку мало: «0,149»
+  // повёрнуто вдоль стены и занимает 43 точки в длину, а полоса
+  // у верхнего левого угла — 13. Середина попадает внутрь, а число
+  // ложится поверх стен. Смотрим все четыре угла.
+  const korobkaVnutri = (x,y,w,h)=>
+    vnutriEkr(x-w/2+1, y-h/2+1) && vnutriEkr(x+w/2-1, y-h/2+1) &&
+    vnutriEkr(x-w/2+1, y+h/2-1) && vnutriEkr(x+w/2-1, y+h/2-1);
+
+  // ПОЛОЧКА — выноска для числа, которому негде встать.
+  // Референс владельца — чертёж пробки, размеры «Ø50» и «3x45°»:
+  // наклонная линия от места, где мерили, горизонтальная полка,
+  // и число на ней. Число на полке НЕ поворачивается: полка для того
+  // и нужна, чтобы читать не выворачивая голову.
+  //
+  // Куда вести: сначала в сторону середины чертежа — там место есть
+  // почти всегда, а у краёв и углов его нет по определению.
+  const polka = (x0, y0, txt, w, h)=>{
+    const kx = x0 <= sr.W/2 ? 1 : -1, ky = y0 <= sr.H/2 ? 1 : -1;
+    const storony = [[kx,ky],[kx,-ky],[-kx,ky],[-kx,-ky]];
+    for(const [dx,dy] of storony){
+      for(const L of [20, 32, 44]){
+        const lx = x0 + dx*L, ly = y0 + dy*L;       // конец наклонной
+        const px = lx + dx*(w + 8);                  // конец полки
+        const tx = (lx + px)/2, ty = ly - h/2 - 2;   // число лежит НА полке
+        if(tx - w/2 < 2 || tx + w/2 > sr.W - 2) continue;
+        if(ty - h/2 < 2 || ty + h/2 > sr.H - 2) continue;
+        if(!svobodno(tx, ty, w, h)) continue;
+        zanyat(tx, ty, w, h);
+        return { tx, ty, liniya:
+          `<line x1="${x0}" y1="${y0}" x2="${lx}" y2="${ly}" class="${kl.ext}"/>` +
+          `<line x1="${lx}" y1="${ly}" x2="${px}" y2="${ly}" class="${kl.ext}"/>` };
+      }
+    }
+    return null;                                     // места нет и на полку
+  };
+
+  // разложим стены: осевые идут в цепи, наклонные — отдельно
+  const gorizontalnye = [], vertikalnye = [], kosye = [];
+  const gorNiz = [], gorVerh = [], vertLev = [], vertPrav = [], vglubine = [];
+  const last = p.length >= 3 ? p.length : p.length-1;
+  for(let i=0;i<last;i++){
+    const a = p[i], b = p[(i+1)%p.length];
+    const dx = Math.abs(b[0]-a[0]), dy = Math.abs(b[1]-a[1]);
+    const L = Math.hypot(b[0]-a[0], b[1]-a[1]);
+    if(L <= 0.01) continue;
+    if(dy <= EPS)      gorizontalnye.push({i,a,b,L});
+    else if(dx <= EPS) vertikalnye.push({i,a,b,L});
+    else               kosye.push({i,a,b,L});
+  }
+
+  const xs = p.map(g=>g[0]), ys = p.map(g=>g[1]);
+  const minXm = Math.min(...xs), maxXm = Math.max(...xs);
+  const minYm = Math.min(...ys), maxYm = Math.max(...ys);
+
+  // РАЗМЕР ЖИВЁТ У СВОЕЙ СТЕНЫ, И ТОЛЬКО КРАЙНИЕ ИДУТ В ЦЕПИ.
+  //
+  // Владелец объяснил логику по референсу: сначала размеры пишутся
+  // прямо возле своих стен, и только те, что лежат по краю габарита,
+  // собираются в общие цепи по периметру. Стены, утопленные вглубь —
+  // выступы, ниши, короб — подписываются там же, где они есть:
+  // внутри чертежа для них полно места, а таскать их на периферию
+  // значит рвать связь размера со стеной.
+  //
+  // Стена «по краю», если её линия совпадает с границей габарита.
+  // Всё остальное — «в глубине», и получает свою размерную линию
+  // рядом с собой.
+  const KRAY = 0.02;   // 2 см — что считать «лежит на границе»
+  gorizontalnye.forEach(st=>{
+    const y = (st.a[1]+st.b[1])/2;
+    if(Math.abs(y - minYm) <= KRAY)      gorNiz.push(st);
+    else if(Math.abs(y - maxYm) <= KRAY) gorVerh.push(st);
+    else                                  vglubine.push(st);
+  });
+  vertikalnye.forEach(st=>{
+    const x = (st.a[0]+st.b[0])/2;
+    if(Math.abs(x - minXm) <= KRAY)      vertLev.push(st);
+    else if(Math.abs(x - maxXm) <= KRAY) vertPrav.push(st);
+    else                                  vglubine.push(st);
+  });
+
+  // одна цепь: выносные линии, общая линия, засечки, подписи отрезков
+  //
+  // Разбор владельца по чертежу-референсу, четыре требования:
+  //   1) число стоит НАД размерной линией, а не поверх неё;
+  //   2) число повёрнуто вдоль линии — вертикальные размеры читаются
+  //      снизу вверх, как на чертеже;
+  //   3) если не помещается между засечками — выносится за отрезок;
+  //   4) от каждой характерной точки контура до размерной линии идёт
+  //      ВЫНОСНАЯ ЛИНИЯ. Без неё числа висят сами по себе, и откуда
+  //      докуда мерили — непонятно. Это было главным замечанием.
+  const OT = sr.OT;
+  // КОРОТКИЙ РАЗМЕР ЖИВЁТ ВНУТРИ КОНТУРА (правило владельца, 18.08.2026).
+  //
+  // Раньше выносные линии всегда шли наружу, а не поместившееся число
+  // ставилось вбок или над линией снаружи. На плотном контуре снаружи
+  // получалась каша: числа липли друг к другу, и было не видно,
+  // откуда докуда мерили.
+  //
+  // Правило общее, на все чертежи: не помещается между засечками —
+  // ВЕСЬ размер уходит внутрь контура. Выносная линия начинается внутри
+  // фигуры, проходит сквозь стену и упирается в размерную; число стоит
+  // между выносными, напротив своего отрезка. Внутри места вдоволь,
+  // и связь числа с отрезком видна глазом, а не додумывается.
+  const GL_TXT = sr.GL_TXT;   // на сколько число уходит внутрь контура
+  const GL_SHAG = sr.GL_SHAG; // на сколько глубже, если это место уже занято
+  const cep = (steny, gorizont, uroven, storonaZnak)=>{
+    if(!steny.length) return;
+    const tochki = [];
+    steny.forEach(s=>{
+      tochki.push(gorizont ? s.a[0] : s.a[1]);
+      tochki.push(gorizont ? s.b[0] : s.b[1]);
+    });
+    const uniq = [...new Set(tochki.map(v=>Math.round(v*1000)/1000))].sort((m,n)=>m-n);
+    if(uniq.length < 2) return;
+
+    const kray = uroven - OT*storonaZnak;   // сама граница контура
+    // что из двух лежит глубже внутри контура
+    const glubzhe = (c1,c2)=> storonaZnak > 0 ? Math.min(c1,c2) : Math.max(c1,c2);
+
+    // РАЗМЕТКА ОТРЕЗКОВ — раньше выносных линий.
+    // Выносная обязана дотянуться до числа, а куда уйдёт число —
+    // ясно только после разбора всех отрезков стороны.
+    const otrezki = [];
+    for(let k=0;k<uniq.length-1;k++){
+      const v1 = uniq[k], v2 = uniq[k+1];
+      const dl = Math.abs(v2 - v1);
+      if(dl < 0.005) continue;
+      // ЧЕЙ ЭТО ОТРЕЗОК. Засечки цепи стоят на концах стен, поэтому
+      // между двумя соседними засечками либо ровно одна стена, либо
+      // ЗАЗОР — пустое место между двумя стенами края.
+      let svoya = steny.find(st=>{
+        const s1 = gorizont ? Math.min(st.a[0],st.b[0]) : Math.min(st.a[1],st.b[1]);
+        const s2 = gorizont ? Math.max(st.a[0],st.b[0]) : Math.max(st.a[1],st.b[1]);
+        return s1 <= v1 + EPS && s2 >= v2 - EPS;
+      });
+      // НАПРОТИВ ЗАЗОРА БЫВАЕТ СТЕНА В ГЛУБИНЕ — И ЭТО ЕЁ МЕСТО.
+      // Владелец про «0,74»: цепь уже вынесла ровно этот размер
+      // за контур, засечки стоят там, где надо, а число при этом
+      // жалось внутри. Если утопленная стена идёт в ту же сторону
+      // и ровно от засечки до засечки — число пишем на цепи,
+      // а у самой стены не повторяем.
+      if(!svoya){
+        const utoplena = vglubine.find(st=>{
+          const gorSt = Math.abs(st.a[1] - st.b[1]) <= EPS;
+          if(gorSt !== gorizont) return false;
+          const s1 = gorizont ? Math.min(st.a[0],st.b[0]) : Math.min(st.a[1],st.b[1]);
+          const s2 = gorizont ? Math.max(st.a[0],st.b[0]) : Math.max(st.a[1],st.b[1]);
+          return Math.abs(s1 - v1) < EPS && Math.abs(s2 - v2) < EPS;
+        });
+        if(utoplena){ svoya = utoplena; cepPodpisala.add(utoplena.i); }
+      }
+      // ЗАЗОР НЕ ПОДПИСЫВАЕМ. Владелец: «1,19 рассчитал сам, не нужно,
+      // выведи то что есть». Число зазора — не размер стены, а разность
+      // двух чисел: такой стены в комнате нет, мерить её нечем, и она
+      // отнимает место у настоящего размера — там должен был стоять
+      // 1,05 от стены короба. Засечка на этом месте остаётся: она
+      // показывает, где кончилась одна стена и началась другая.
+      if(!svoya) continue;
+      const txt = fmtLen(dl);
+      // число всегда повёрнуто вдоль размерной линии, поэтому вдоль неё
+      // оно занимает w, а поперёк h — на любой из четырёх сторон
+      const w = sr.shirina(txt), h = sr.vys;
+      const c1 = gorizont ? sr.X(v1) : sr.Y(v1), c2 = gorizont ? sr.X(v2) : sr.Y(v2);
+      const seredina = (c1+c2)/2;
+      const mesto = Math.abs(c2-c1);
+      let glub = 0;                          // 0 — число остаётся снаружи
+      let naPolku = null;                    // не null — число уехало на полку
+      if(mesto < w + 4){
+        // число повёрнуто вдоль линии, поэтому на экране у вертикальных
+        // цепей ширина и высота меняются местами
+        const shir = gorizont ? w : h, vys = gorizont ? h : w;
+        const gde = g => gorizont ? [seredina, kray - g*storonaZnak]
+                                  : [kray - g*storonaZnak, seredina];
+        // ЗА ГРАНИЦЕЙ ГАБАРИТА НЕ ВСЕГДА КОМНАТА. Цепь идёт по краю
+        // габарита, но отрезок цепи может стоять над выемкой — тогда
+        // прямо под ним пусто, и заведённое «внутрь» число повисает
+        // за контуром. Поэтому каждое место проверяем на самом деле
+        // и уходим глубже, пока не попадём в комнату и в свободное.
+        for(let g = GL_TXT; g <= GL_TXT + GL_SHAG*7; g += GL_SHAG){
+          const [x,y] = gde(g);
+          if(!korobkaVnutri(x, y, shir, vys)) continue;   // тут не комната
+          if(!svobodno(x, y, shir, vys)) continue;
+          glub = g; break;
+        }
+        if(glub){ const [x,y] = gde(glub); zanyat(x, y, shir, vys); }
+        else {
+          // ВНУТРИ НЕ ПОМЕСТИЛОСЬ — на полочку. Владелец про верхний
+          // левый угол: «выносные линии завести ещё глубже внутрь,
+          // а поле с числом на полочку с краю чуть ниже».
+          const [ax0, ay0] = gde(GL_TXT);
+          const p2 = polka(ax0, ay0, txt, w, h);
+          if(p2){ naPolku = p2; glub = GL_TXT; }
+        }
+      }
+      otrezki.push({ k, v1, v2, txt, w, h, seredina, glub, svoya, naPolku });
+    }
+
+    // до какой глубины внутри контура тянуть выносную в каждой точке
+    const vnutrDo = new Array(uniq.length).fill(0);
+    otrezki.forEach(o=>{
+      if(!o.glub) return;
+      const d = o.glub + o.h/2 + 4;
+      vnutrDo[o.k]   = Math.max(vnutrDo[o.k],   d);
+      vnutrDo[o.k+1] = Math.max(vnutrDo[o.k+1], d);
+    });
+
+    // ВЫНОСНЫЕ ЛИНИИ: от контура до размерной линии, с выступом за неё.
+    // Тянем от самой близкой к цепи точки контура с этой координатой —
+    // тогда линия не перечёркивает всю фигуру.
+    uniq.forEach((v,k)=>{
+      const rodnye = p.filter(g=> Math.abs((gorizont ? g[0] : g[1]) - v) < EPS);
+      if(!rodnye.length) return;
+      // ближайшая к размерной линии точка контура
+      let best = rodnye[0], bestD = Infinity;
+      rodnye.forEach(g=>{
+        const c = gorizont ? sr.Y(g[1]) : sr.X(g[0]);
+        const d = Math.abs(c - uroven);
+        if(d < bestD){ bestD = d; best = g; }
+      });
+      const vystup = 5 * storonaZnak;
+      const uSteny = (gorizont ? sr.Y(best[1]) : sr.X(best[0])) + 3*storonaZnak;
+      // размер заведён внутрь — линия начинается внутри контура
+      const nachalo = vnutrDo[k]
+        ? glubzhe(uSteny, kray - vnutrDo[k]*storonaZnak)
+        : uSteny;
+      if(gorizont){
+        const x = sr.X(v);
+        lbls += `<line x1="${x}" y1="${nachalo}" x2="${x}" y2="${uroven + vystup}" class="${kl.ext}"/>`;
+      }else{
+        const y = sr.Y(v);
+        lbls += `<line x1="${nachalo}" y1="${y}" x2="${uroven + vystup}" y2="${y}" class="${kl.ext}"/>`;
+      }
+    });
+
+    const L1 = gorizont ? sr.X(uniq[0]) : sr.Y(uniq[0]);
+    const L2 = gorizont ? sr.X(uniq[uniq.length-1]) : sr.Y(uniq[uniq.length-1]);
+    lbls += gorizont
+      ? `<line x1="${L1}" y1="${uroven}" x2="${L2}" y2="${uroven}" class="${kl.line}"/>`
+      : `<line x1="${uroven}" y1="${L1}" x2="${uroven}" y2="${L2}" class="${kl.line}"/>`;
+    uniq.forEach(v=>{
+      const c = gorizont ? sr.X(v) : sr.Y(v);
+      lbls += gorizont
+        ? `<line x1="${c-4}" y1="${uroven+4}" x2="${c+4}" y2="${uroven-4}" class="${kl.tick}"/>`
+        : `<line x1="${uroven-4}" y1="${c+4}" x2="${uroven+4}" y2="${c-4}" class="${kl.tick}"/>`;
+    });
+
+    otrezki.forEach(({ txt, w, h, seredina, glub, svoya, naPolku })=>{
+      // ЧИСЛО НАД ЛИНИЕЙ — со стороны контура, отступ 9 точек.
+      // Заведённое внутрь — на своей глубине от границы контура.
+      // Уехавшее на полку — там, куда полка его увезла.
+      const poz = glub ? kray - glub*storonaZnak : uroven - 9*storonaZnak;
+      let tx, ty;
+      if(gorizont){ tx = seredina; ty = poz; }
+      else        { ty = seredina; tx = poz; }
+      if(naPolku){ lbls += naPolku.liniya; tx = naPolku.tx; ty = naPolku.ty; }
+      tx = Math.min(Math.max(tx, w/2 + 2), sr.W - w/2 - 2);
+      ty = Math.min(Math.max(ty, h/2 + 2), sr.H - h/2 - 2);
+      // ПОВОРОТ вдоль линии: вертикальные размеры читаются снизу вверх.
+      // На полке не поворачиваем — она для того и есть.
+      const povorot = (gorizont || naPolku) ? '' : ` transform="rotate(-90, ${tx}, ${ty})"`;
+
+      const on = sr.sel === svoya.i;
+      // ОТРЕЗКИ ЦЕПИ НЕ ПРОРЕЖИВАЕМ. Правило «такое же число рядом уже
+      // написано» ставилось против дублей между цепью и стеной в глубине.
+      // Внутри одной цепи все отрезки разные по смыслу, даже когда числа
+      // совпали, — и владелец отдельно просил подписать каждый.
+      //
+      // Запоминаем середину СТЕНЫ, а не место, куда уехало число.
+      // Иначе список подписанного зависит от того, кто куда отодвинулся,
+      // и на двух картинках одного контура он выходит разным: на схеме
+      // число ушло на полочку, разъехалось с соседом — и соседа перестало
+      // глушить. Стены же стоят где стояли на обеих картинках.
+      napisano.push({ txt, x: sr.X((svoya.a[0]+svoya.b[0])/2),
+                           y: sr.Y((svoya.a[1]+svoya.b[1])/2) });
+
+      lbls += sr.chislo({ i: svoya.i, txt, tx, ty, w, h, povorot, on });
+    });
+  };
+
+  // четыре цепи по сторонам габарита, каждая на своём отступе
+  cep(gorNiz,  true,  sr.Y(minYm) + OT,  1);   // цепь ниже контура
+  cep(gorVerh, true,  sr.Y(maxYm) - OT, -1);   // выше контура
+  cep(vertLev, false, sr.X(minXm) - OT, -1);   // слева
+  cep(vertPrav,false, sr.X(maxXm) + OT,  1);   // справа
+
+  // СТЕНЫ В ГЛУБИНЕ — своей размерной линией рядом с собой,
+  // И ВСЕГДА ВНУТРЬ КОНТУРА.
+  //
+  // Раньше размер уводился «в сторону от центра фигуры». Для короба,
+  // врезанного в комнату у края, это и есть наружу: размеры вылезали
+  // за контур и слипались там в кашу — владелец прислал снимок.
+  // Внутренняя сторона такой стены — сама комната, место есть именно там.
+  vglubine.concat(kosye).forEach(({i,a,b,L})=>{
+    if(cepPodpisala.has(i)) return;         // число уже стоит на цепи
+    const ax=sr.X(a[0]), ay=sr.Y(a[1]), bx=sr.X(b[0]), by=sr.Y(b[1]);
+    const lp = Math.hypot(bx-ax,by-ay) || 1;
+    let ux = -(by-ay)/lp, uy = (bx-ax)/lp;
+    const mX=(ax+bx)/2, mY=(ay+by)/2;
+    const storona = vnutrNormal((a[0]+b[0])/2, (a[1]+b[1])/2, ux, uy);
+    ux = storona[0]; uy = storona[1];
+    const txt = fmtLen(L);
+    const w = sr.shirina(txt), h = sr.vys;
+    // короткая стена — число не уводим вбок: там оно липнет к соседнему
+    // и спорит с ним. Ставим ГЛУБЖЕ ВНУТРЬ, напротив своей стены.
+    const tesno = lp < w + 6;
+    const sx = (bx-ax)/lp, sy = (by-ay)/lp;
+    const OT2 = sr.OT2;
+    // ориентация числа по линии — как у цепей: вертикальные читаются снизу вверх
+    const vert = Math.abs(by-ay) > Math.abs(bx-ax);
+    const shir = vert ? h : w, vys = vert ? w : h;
+    const glubNach = OT2 + h/2 + (tesno ? h + 3 : 0);
+    let glub = glubNach, nashli = false;
+    for(let g = glubNach; g <= glubNach + (h+3)*5; g += h + 3){
+      // насквозь через комнату не проваливаемся: вышли за контур —
+      // дальше искать нечего, остаёмся на первой глубине
+      if(!korobkaVnutri(mX + ux*g, mY + uy*g, shir, vys)) break;
+      if(svobodno(mX + ux*g, mY + uy*g, shir, vys)){ glub = g; nashli = true; break; }
+    }
+    // не поместилось внутри — на полочку, как у цепей
+    const polkaSt = nashli ? null : polka(mX + ux*OT2, mY + uy*OT2, txt, w, h);
+    // ПОСЛЕДНЯЯ МЕРА — сдвиг вдоль стены. Нужна там, где комната уже
+    // самого числа: полоса в 10 см его не вместит ни на какой глубине.
+    // Владелец просил не уводить числа вбок, и правило остаётся —
+    // но два числа, легшие друг на друга, читаются хуже сдвинутого.
+    let vbok = 0;
+    if(!nashli && !polkaSt){
+      for(let k=1;k<=4;k++){
+        const zn = k%2 ? 1 : -1, d = Math.ceil(k/2)*(w/2 + 6);
+        if(svobodno(mX+ux*glub+sx*zn*d, mY+uy*glub+sy*zn*d, shir, vys)){ vbok = zn*d; break; }
+      }
+    }
+    const tx = polkaSt ? polkaSt.tx : mX + ux*glub + sx*vbok;
+    const ty = polkaSt ? polkaSt.ty : mY + uy*glub + sy*vbok;
+    const on = sr.sel === i;
+    if(!on && uzhe(txt, mX, mY)) return;      // такая же стена рядом уже подписана
+    napisano.push({ txt, x:mX, y:mY });
+    if(polkaSt) lbls += polkaSt.liniya; else zanyat(tx, ty, shir, vys);
+    // на полке число лежит горизонтально — её для того и придумали
+    const povorot = (vert && !polkaSt) ? ` transform="rotate(-90, ${tx}, ${ty})"` : '';
+    // выносные линии дотягиваются до числа, куда бы оно ни ушло
+    const doTochki = glub > OT2 + h/2 ? glub + h/2 + 4 : OT2 + 4;
+    // засечки на концах размерной линии
+    const zas = (x,y)=>`<line x1="${x-(sx+ux)*4}" y1="${y-(sy+uy)*4}"
+                              x2="${x+(sx+ux)*4}" y2="${y+(sy+uy)*4}" class="${kl.tick}"/>`;
+    lbls += `<line x1="${ax+ux*OT2}" y1="${ay+uy*OT2}" x2="${bx+ux*OT2}" y2="${by+uy*OT2}" class="${kl.line}"/>
+      <line x1="${ax}" y1="${ay}" x2="${ax+ux*doTochki}" y2="${ay+uy*doTochki}" class="${kl.ext}"/>
+      <line x1="${bx}" y1="${by}" x2="${bx+ux*doTochki}" y2="${by+uy*doTochki}" class="${kl.ext}"/>
+      ${zas(ax+ux*OT2, ay+uy*OT2)}${zas(bx+ux*OT2, by+uy*OT2)}`;
+    lbls += sr.chislo({ i, txt, tx, ty, w, h, povorot, on });
+  });
+  return lbls;
+}
+
 function polyDrawSVG(){
   pdZamerHolsta();          // одна форма холста на всю эту картинку
   const p = polyDraw.pts, st = polyDraw.step;
@@ -8814,432 +9244,37 @@ function polyDrawSVG(){
         `<line x1="${pdX(p[p.length-1][0])}" y1="${pdY(p[p.length-1][1])}"
                x2="${pdX(p[0][0])}" y2="${pdY(p[0][1])}" class="pd-closing"/>`
       : `<polyline points="${pl}" class="pd-line"/>`;
-    // РАЗМЕРНЫЕ ЦЕПИ — КАК НА СТРОИТЕЛЬНОМ ЧЕРТЕЖЕ.
-    //
-    // Сначала я рисовал каждой стене свою размерную линию рядом с ней.
-    // На плотном контуре они не помещались и уходили лесенкой наружу —
-    // владелец прислал референс и объяснил: на одной стороне должна быть
-    // ОДНА линия, разбитая засечками на отрезки, и каждый отрезок
-    // подписан. Так и делают в чертежах: снизу «100 / 600 / 600 / 385»,
-    // слева «150 / 740 / 1950».
-    //
-    // Устройство: вершины проецируются на четыре стороны габарита.
-    // Снизу и сверху — разбивка по X, слева и справа — по Y. Между
-    // соседними проекциями получается отрезок цепи со своим размером.
-    // У комнат стены идут по осям, поэтому отрезок цепи и есть длина
-    // стены; наклонные стены в цепь не ложатся, им остаётся отдельная
-    // размерная линия вдоль самой стены.
-    // ТОЧКА ВНУТРИ КОНТУРА — луч вправо, считаем пересечения.
-    // Нужна, чтобы размер уходил в комнату, а не наружу: прежнее
-    // «в сторону от центра фигуры» врало на коробах и нишах у края —
-    // там от центра как раз наружу, и размеры вылезали за контур.
-    const vnutriKontura = (mx,my)=>{
-      if(p.length < 3) return false;
-      let da = false;
-      for(let i=0, j=p.length-1; i<p.length; j=i++){
-        const xi=p[i][0], yi=p[i][1], xj=p[j][0], yj=p[j][1];
-        if((yi > my) !== (yj > my) && mx < (xj-xi)*(my-yi)/(yj-yi) + xi) da = !da;
-      }
-      return da;
-    };
-    // нормаль (в экранных точках), смотрящая внутрь контура
-    const vnutrNormal = (mx,my,ux,uy)=>{
-      const sh = st / PD_SC * 6;              // 6 экранных точек в метрах
-      return vnutriKontura(mx + ux*sh, my - uy*sh) ? [ux,uy] : [-ux,-uy];
-    };
-    // то же самое, но по экранным точкам: куда встанет число, известно
-    // в экранных, а контур живёт в метрах
-    const vnutriEkr = (x,y)=> vnutriKontura(
-      v.minX + (x - PD_PAD)/PD_SC*st,
-      v.maxY - (y - PD_PAD)/PD_SC*st);
-    const EPS = 0.004;                       // 4 мм — что считать одной линией
-    // УЖЕ НАПИСАННЫЕ ЧИСЛА. Владелец: «размер 0,2 не нужно дублировать,
-    // он одинаковый с двух сторон». Одно и то же число, написанное дважды
-    // рядом, ничего не добавляет — только загромождает чертёж и заставляет
-    // искать, чем эти два отличаются.
-    const napisano = [];
-    const uzhe = (txt, x, y)=> napisano.some(z =>
-      z.txt === txt && Math.hypot(z.x - x, z.y - y) < 90);
-
-    // ЗАНЯТЫЕ МЕСТА ВНУТРИ КОНТУРА — общие на весь чертёж.
-    // Каждая цепь считает свои отступы сама и соседних не видит, а в углу
-    // заведённые внутрь числа встречаются: «0,1» сверху и «0,149» слева
-    // легли друг на друга. Поэтому занятость держим одну на всех — и цепи,
-    // и стены в глубине кладут числа в этот же список.
-    // Стены в глубине, чьё число цепь взяла на себя: у себя они
-    // подписываются повторно, и это был бы дубль.
-    const cepPodpisala = new Set();
-    const vnutriZanyato = [];
-    const svobodno = (x,y,w,h)=> !vnutriZanyato.some(z =>
-      Math.abs(z.x - x) < (z.w + w)/2 + 3 && Math.abs(z.y - y) < (z.h + h)/2 + 3);
-    const zanyat = (x,y,w,h)=> vnutriZanyato.push({x,y,w,h});
-
-    // ВСЕЙ КОРОБКОЙ, А НЕ СЕРЕДИНОЙ. Проверять одну точку мало: «0,149»
-    // повёрнуто вдоль стены и занимает 43 точки в длину, а полоса
-    // у верхнего левого угла — 13. Середина попадает внутрь, а число
-    // ложится поверх стен. Смотрим все четыре угла.
-    const korobkaVnutri = (x,y,w,h)=>
-      vnutriEkr(x-w/2+1, y-h/2+1) && vnutriEkr(x+w/2-1, y-h/2+1) &&
-      vnutriEkr(x-w/2+1, y+h/2-1) && vnutriEkr(x+w/2-1, y+h/2-1);
-
-    // ПОЛОЧКА — выноска для числа, которому негде встать.
-    // Референс владельца — чертёж пробки, размеры «Ø50» и «3x45°»:
-    // наклонная линия от места, где мерили, горизонтальная полка,
-    // и число на ней. Число на полке НЕ поворачивается: полка для того
-    // и нужна, чтобы читать не выворачивая голову.
-    //
-    // Куда вести: сначала в сторону середины чертежа — там место есть
-    // почти всегда, а у краёв и углов его нет по определению.
-    const polka = (x0, y0, txt, w, h)=>{
-      const kx = x0 <= v.w/2 ? 1 : -1, ky = y0 <= v.h/2 ? 1 : -1;
-      const storony = [[kx,ky],[kx,-ky],[-kx,ky],[-kx,-ky]];
-      for(const [dx,dy] of storony){
-        for(const L of [20, 32, 44]){
-          const lx = x0 + dx*L, ly = y0 + dy*L;       // конец наклонной
-          const px = lx + dx*(w + 8);                  // конец полки
-          const tx = (lx + px)/2, ty = ly - h/2 - 2;   // число лежит НА полке
-          if(tx - w/2 < 2 || tx + w/2 > v.w - 2) continue;
-          if(ty - h/2 < 2 || ty + h/2 > v.h - 2) continue;
-          if(!svobodno(tx, ty, w, h)) continue;
-          zanyat(tx, ty, w, h);
-          return { tx, ty, liniya:
-            `<line x1="${x0}" y1="${y0}" x2="${lx}" y2="${ly}" class="pd-dim-ext"/>` +
-            `<line x1="${lx}" y1="${ly}" x2="${px}" y2="${ly}" class="pd-dim-ext"/>` };
-        }
-      }
-      return null;                                     // места нет и на полку
-    };
-
-    // разложим стены: осевые идут в цепи, наклонные — отдельно
-    const gorizontalnye = [], vertikalnye = [], kosye = [];
-    const gorNiz = [], gorVerh = [], vertLev = [], vertPrav = [], vglubine = [];
-    const last = p.length >= 3 ? p.length : p.length-1;
-    for(let i=0;i<last;i++){
+    // ПОДСВЕТКА СТЕНЫ ПОД ПАЛЕЦ — только здесь: на схеме в карточке
+    // нажимать не по чему, там картинка для чтения.
+    const posl = p.length >= 3 ? p.length : p.length-1;
+    for(let i=0;i<posl;i++){
       const a = p[i], b = p[(i+1)%p.length];
-      const dx = Math.abs(b[0]-a[0]), dy = Math.abs(b[1]-a[1]);
-      const L = Math.hypot(b[0]-a[0], b[1]-a[1]);
-      if(L <= 0.01) continue;
+      if(Math.hypot(b[0]-a[0], b[1]-a[1]) <= 0.01) continue;
       hit += `<line x1="${pdX(a[0])}" y1="${pdY(a[1])}" x2="${pdX(b[0])}" y2="${pdY(b[1])}"
         class="pd-side ${polyDraw.sel===i?'on':''}"/>`;
-      if(dy <= EPS)      gorizontalnye.push({i,a,b,L});
-      else if(dx <= EPS) vertikalnye.push({i,a,b,L});
-      else               kosye.push({i,a,b,L});
     }
-
-    const xs = p.map(g=>g[0]), ys = p.map(g=>g[1]);
-    const minXm = Math.min(...xs), maxXm = Math.max(...xs);
-    const minYm = Math.min(...ys), maxYm = Math.max(...ys);
-
-    // РАЗМЕР ЖИВЁТ У СВОЕЙ СТЕНЫ, И ТОЛЬКО КРАЙНИЕ ИДУТ В ЦЕПИ.
-    //
-    // Владелец объяснил логику по референсу: сначала размеры пишутся
-    // прямо возле своих стен, и только те, что лежат по краю габарита,
-    // собираются в общие цепи по периметру. Стены, утопленные вглубь —
-    // выступы, ниши, короб — подписываются там же, где они есть:
-    // внутри чертежа для них полно места, а таскать их на периферию
-    // значит рвать связь размера со стеной.
-    //
-    // Стена «по краю», если её линия совпадает с границей габарита.
-    // Всё остальное — «в глубине», и получает свою размерную линию
-    // рядом с собой.
-    const KRAY = 0.02;   // 2 см — что считать «лежит на границе»
-    gorizontalnye.forEach(st=>{
-      const y = (st.a[1]+st.b[1])/2;
-      if(Math.abs(y - minYm) <= KRAY)      gorNiz.push(st);
-      else if(Math.abs(y - maxYm) <= KRAY) gorVerh.push(st);
-      else                                  vglubine.push(st);
-    });
-    vertikalnye.forEach(st=>{
-      const x = (st.a[0]+st.b[0])/2;
-      if(Math.abs(x - minXm) <= KRAY)      vertLev.push(st);
-      else if(Math.abs(x - maxXm) <= KRAY) vertPrav.push(st);
-      else                                  vglubine.push(st);
-    });
-
-    // одна цепь: выносные линии, общая линия, засечки, подписи отрезков
-    //
-    // Разбор владельца по чертежу-референсу, четыре требования:
-    //   1) число стоит НАД размерной линией, а не поверх неё;
-    //   2) число повёрнуто вдоль линии — вертикальные размеры читаются
-    //      снизу вверх, как на чертеже;
-    //   3) если не помещается между засечками — выносится за отрезок;
-    //   4) от каждой характерной точки контура до размерной линии идёт
-    //      ВЫНОСНАЯ ЛИНИЯ. Без неё числа висят сами по себе, и откуда
-    //      докуда мерили — непонятно. Это было главным замечанием.
-    const OT = 30;
-    // КОРОТКИЙ РАЗМЕР ЖИВЁТ ВНУТРИ КОНТУРА (правило владельца, 18.08.2026).
-    //
-    // Раньше выносные линии всегда шли наружу, а не поместившееся число
-    // ставилось вбок или над линией снаружи. На плотном контуре снаружи
-    // получалась каша: числа липли друг к другу, и было не видно,
-    // откуда докуда мерили.
-    //
-    // Правило общее, на все чертежи: не помещается между засечками —
-    // ВЕСЬ размер уходит внутрь контура. Выносная линия начинается внутри
-    // фигуры, проходит сквозь стену и упирается в размерную; число стоит
-    // между выносными, напротив своего отрезка. Внутри места вдоволь,
-    // и связь числа с отрезком видна глазом, а не додумывается.
-    const GL_TXT = 15;    // на сколько число уходит внутрь контура
-    const GL_SHAG = 17;   // на сколько глубже, если это место уже занято
-    const cep = (steny, gorizont, uroven, storonaZnak)=>{
-      if(!steny.length) return;
-      const tochki = [];
-      steny.forEach(s=>{
-        tochki.push(gorizont ? s.a[0] : s.a[1]);
-        tochki.push(gorizont ? s.b[0] : s.b[1]);
-      });
-      const uniq = [...new Set(tochki.map(v=>Math.round(v*1000)/1000))].sort((m,n)=>m-n);
-      if(uniq.length < 2) return;
-
-      const kray = uroven - OT*storonaZnak;   // сама граница контура
-      // что из двух лежит глубже внутри контура
-      const glubzhe = (c1,c2)=> storonaZnak > 0 ? Math.min(c1,c2) : Math.max(c1,c2);
-
-      // РАЗМЕТКА ОТРЕЗКОВ — раньше выносных линий.
-      // Выносная обязана дотянуться до числа, а куда уйдёт число —
-      // ясно только после разбора всех отрезков стороны.
-      const otrezki = [];
-      for(let k=0;k<uniq.length-1;k++){
-        const v1 = uniq[k], v2 = uniq[k+1];
-        const dl = Math.abs(v2 - v1);
-        if(dl < 0.005) continue;
-        // ЧЕЙ ЭТО ОТРЕЗОК. Засечки цепи стоят на концах стен, поэтому
-        // между двумя соседними засечками либо ровно одна стена, либо
-        // ЗАЗОР — пустое место между двумя стенами края.
-        let svoya = steny.find(st=>{
-          const s1 = gorizont ? Math.min(st.a[0],st.b[0]) : Math.min(st.a[1],st.b[1]);
-          const s2 = gorizont ? Math.max(st.a[0],st.b[0]) : Math.max(st.a[1],st.b[1]);
-          return s1 <= v1 + EPS && s2 >= v2 - EPS;
-        });
-        // НАПРОТИВ ЗАЗОРА БЫВАЕТ СТЕНА В ГЛУБИНЕ — И ЭТО ЕЁ МЕСТО.
-        // Владелец про «0,74»: цепь уже вынесла ровно этот размер
-        // за контур, засечки стоят там, где надо, а число при этом
-        // жалось внутри. Если утопленная стена идёт в ту же сторону
-        // и ровно от засечки до засечки — число пишем на цепи,
-        // а у самой стены не повторяем.
-        if(!svoya){
-          const utoplena = vglubine.find(st=>{
-            const gorSt = Math.abs(st.a[1] - st.b[1]) <= EPS;
-            if(gorSt !== gorizont) return false;
-            const s1 = gorizont ? Math.min(st.a[0],st.b[0]) : Math.min(st.a[1],st.b[1]);
-            const s2 = gorizont ? Math.max(st.a[0],st.b[0]) : Math.max(st.a[1],st.b[1]);
-            return Math.abs(s1 - v1) < EPS && Math.abs(s2 - v2) < EPS;
-          });
-          if(utoplena){ svoya = utoplena; cepPodpisala.add(utoplena.i); }
-        }
-        // ЗАЗОР НЕ ПОДПИСЫВАЕМ. Владелец: «1,19 рассчитал сам, не нужно,
-        // выведи то что есть». Число зазора — не размер стены, а разность
-        // двух чисел: такой стены в комнате нет, мерить её нечем, и она
-        // отнимает место у настоящего размера — там должен был стоять
-        // 1,05 от стены короба. Засечка на этом месте остаётся: она
-        // показывает, где кончилась одна стена и началась другая.
-        if(!svoya) continue;
-        const txt = fmtLen(dl);
-        // число всегда повёрнуто вдоль размерной линии, поэтому вдоль неё
-        // оно занимает w, а поперёк h — на любой из четырёх сторон
-        const w = txt.length*7 + 8, h = 15;
-        const c1 = gorizont ? pdX(v1) : pdY(v1), c2 = gorizont ? pdX(v2) : pdY(v2);
-        const seredina = (c1+c2)/2;
-        const mesto = Math.abs(c2-c1);
-        let glub = 0;                          // 0 — число остаётся снаружи
-        let naPolku = null;                    // не null — число уехало на полку
-        if(mesto < w + 4){
-          // число повёрнуто вдоль линии, поэтому на экране у вертикальных
-          // цепей ширина и высота меняются местами
-          const shir = gorizont ? w : h, vys = gorizont ? h : w;
-          const gde = g => gorizont ? [seredina, kray - g*storonaZnak]
-                                    : [kray - g*storonaZnak, seredina];
-          // ЗА ГРАНИЦЕЙ ГАБАРИТА НЕ ВСЕГДА КОМНАТА. Цепь идёт по краю
-          // габарита, но отрезок цепи может стоять над выемкой — тогда
-          // прямо под ним пусто, и заведённое «внутрь» число повисает
-          // за контуром. Поэтому каждое место проверяем на самом деле
-          // и уходим глубже, пока не попадём в комнату и в свободное.
-          for(let g = GL_TXT; g <= GL_TXT + GL_SHAG*7; g += GL_SHAG){
-            const [x,y] = gde(g);
-            if(!korobkaVnutri(x, y, shir, vys)) continue;   // тут не комната
-            if(!svobodno(x, y, shir, vys)) continue;
-            glub = g; break;
-          }
-          if(glub){ const [x,y] = gde(glub); zanyat(x, y, shir, vys); }
-          else {
-            // ВНУТРИ НЕ ПОМЕСТИЛОСЬ — на полочку. Владелец про верхний
-            // левый угол: «выносные линии завести ещё глубже внутрь,
-            // а поле с числом на полочку с краю чуть ниже».
-            const [ax0, ay0] = gde(GL_TXT);
-            const p2 = polka(ax0, ay0, txt, w, h);
-            if(p2){ naPolku = p2; glub = GL_TXT; }
-          }
-        }
-        otrezki.push({ k, v1, v2, txt, w, h, seredina, glub, svoya, naPolku });
-      }
-
-      // до какой глубины внутри контура тянуть выносную в каждой точке
-      const vnutrDo = new Array(uniq.length).fill(0);
-      otrezki.forEach(o=>{
-        if(!o.glub) return;
-        const d = o.glub + o.h/2 + 4;
-        vnutrDo[o.k]   = Math.max(vnutrDo[o.k],   d);
-        vnutrDo[o.k+1] = Math.max(vnutrDo[o.k+1], d);
-      });
-
-      // ВЫНОСНЫЕ ЛИНИИ: от контура до размерной линии, с выступом за неё.
-      // Тянем от самой близкой к цепи точки контура с этой координатой —
-      // тогда линия не перечёркивает всю фигуру.
-      uniq.forEach((v,k)=>{
-        const rodnye = p.filter(g=> Math.abs((gorizont ? g[0] : g[1]) - v) < EPS);
-        if(!rodnye.length) return;
-        // ближайшая к размерной линии точка контура
-        let best = rodnye[0], bestD = Infinity;
-        rodnye.forEach(g=>{
-          const c = gorizont ? pdY(g[1]) : pdX(g[0]);
-          const d = Math.abs(c - uroven);
-          if(d < bestD){ bestD = d; best = g; }
-        });
-        const vystup = 5 * storonaZnak;
-        const uSteny = (gorizont ? pdY(best[1]) : pdX(best[0])) + 3*storonaZnak;
-        // размер заведён внутрь — линия начинается внутри контура
-        const nachalo = vnutrDo[k]
-          ? glubzhe(uSteny, kray - vnutrDo[k]*storonaZnak)
-          : uSteny;
-        if(gorizont){
-          const x = pdX(v);
-          lbls += `<line x1="${x}" y1="${nachalo}" x2="${x}" y2="${uroven + vystup}" class="pd-dim-ext"/>`;
-        }else{
-          const y = pdY(v);
-          lbls += `<line x1="${nachalo}" y1="${y}" x2="${uroven + vystup}" y2="${y}" class="pd-dim-ext"/>`;
-        }
-      });
-
-      const L1 = gorizont ? pdX(uniq[0]) : pdY(uniq[0]);
-      const L2 = gorizont ? pdX(uniq[uniq.length-1]) : pdY(uniq[uniq.length-1]);
-      lbls += gorizont
-        ? `<line x1="${L1}" y1="${uroven}" x2="${L2}" y2="${uroven}" class="pd-dim-line"/>`
-        : `<line x1="${uroven}" y1="${L1}" x2="${uroven}" y2="${L2}" class="pd-dim-line"/>`;
-      uniq.forEach(v=>{
-        const c = gorizont ? pdX(v) : pdY(v);
-        lbls += gorizont
-          ? `<line x1="${c-4}" y1="${uroven+4}" x2="${c+4}" y2="${uroven-4}" class="pd-dim-tick"/>`
-          : `<line x1="${uroven-4}" y1="${c+4}" x2="${uroven+4}" y2="${c-4}" class="pd-dim-tick"/>`;
-      });
-
-      otrezki.forEach(({ txt, w, h, seredina, glub, svoya, naPolku })=>{
-        // ЧИСЛО НАД ЛИНИЕЙ — со стороны контура, отступ 9 точек.
-        // Заведённое внутрь — на своей глубине от границы контура.
-        // Уехавшее на полку — там, куда полка его увезла.
-        const poz = glub ? kray - glub*storonaZnak : uroven - 9*storonaZnak;
-        let tx, ty;
-        if(gorizont){ tx = seredina; ty = poz; }
-        else        { ty = seredina; tx = poz; }
-        if(naPolku){ lbls += naPolku.liniya; tx = naPolku.tx; ty = naPolku.ty; }
-        tx = Math.min(Math.max(tx, w/2 + 2), v.w - w/2 - 2);
-        ty = Math.min(Math.max(ty, h/2 + 2), v.h - h/2 - 2);
-        // ПОВОРОТ вдоль линии: вертикальные размеры читаются снизу вверх.
-        // На полке не поворачиваем — она для того и есть.
-        const povorot = (gorizont || naPolku) ? '' : ` transform="rotate(-90, ${tx}, ${ty})"`;
-
-        const on = polyDraw.sel === svoya.i;
-        // ОТРЕЗКИ ЦЕПИ НЕ ПРОРЕЖИВАЕМ. Правило «такое же число рядом уже
-        // написано» ставилось против дублей между цепью и стеной в глубине.
-        // Внутри одной цепи все отрезки разные по смыслу, даже когда числа
-        // совпали, — и владелец отдельно просил подписать каждый.
-        napisano.push({ txt, x:tx, y:ty });
-
-        if(on){
-          lbls += `<g class="pd-lbl-g on">
-            <foreignObject x="${tx-Math.max(w,44)/2-10}" y="${ty-12}" width="${Math.max(w,44)+20}" height="26">
-              <input xmlns="http://www.w3.org/1999/xhtml" class="pd-lbl-input"
-                     id="pdLblInput" inputmode="decimal" value="${escapeAttr(txt)}">
-            </foreignObject></g>`;
-        }else{
-          lbls += `<g data-pd-lbl="${svoya.i}" class="pd-lbl-g">
-            <rect x="${tx-w/2}" y="${ty-h/2}" width="${w}" height="${h}" class="pd-lbl-bg"${povorot}/>
-            <text x="${tx}" y="${ty}" text-anchor="middle" dominant-baseline="central"
-                  class="pd-lbl"${povorot}>${txt}</text></g>`;
-        }
-      });
-    };
-
-    // четыре цепи по сторонам габарита, каждая на своём отступе
-    cep(gorNiz,  true,  pdY(minYm) + OT,  1);   // цепь ниже контура
-    cep(gorVerh, true,  pdY(maxYm) - OT, -1);   // выше контура
-    cep(vertLev, false, pdX(minXm) - OT, -1);   // слева
-    cep(vertPrav,false, pdX(maxXm) + OT,  1);   // справа
-
-    // СТЕНЫ В ГЛУБИНЕ — своей размерной линией рядом с собой,
-    // И ВСЕГДА ВНУТРЬ КОНТУРА.
-    //
-    // Раньше размер уводился «в сторону от центра фигуры». Для короба,
-    // врезанного в комнату у края, это и есть наружу: размеры вылезали
-    // за контур и слипались там в кашу — владелец прислал снимок.
-    // Внутренняя сторона такой стены — сама комната, место есть именно там.
-    vglubine.concat(kosye).forEach(({i,a,b,L})=>{
-      if(cepPodpisala.has(i)) return;         // число уже стоит на цепи
-      const ax=pdX(a[0]), ay=pdY(a[1]), bx=pdX(b[0]), by=pdY(b[1]);
-      const lp = Math.hypot(bx-ax,by-ay) || 1;
-      let ux = -(by-ay)/lp, uy = (bx-ax)/lp;
-      const mX=(ax+bx)/2, mY=(ay+by)/2;
-      const storona = vnutrNormal((a[0]+b[0])/2, (a[1]+b[1])/2, ux, uy);
-      ux = storona[0]; uy = storona[1];
-      const txt = fmtLen(L);
-      const w = txt.length*7 + 8, h = 15;
-      // короткая стена — число не уводим вбок: там оно липнет к соседнему
-      // и спорит с ним. Ставим ГЛУБЖЕ ВНУТРЬ, напротив своей стены.
-      const tesno = lp < w + 6;
-      const sx = (bx-ax)/lp, sy = (by-ay)/lp;
-      const OT2 = 13;
-      // ориентация числа по линии — как у цепей: вертикальные читаются снизу вверх
-      const vert = Math.abs(by-ay) > Math.abs(bx-ax);
-      const shir = vert ? h : w, vys = vert ? w : h;
-      const glubNach = OT2 + h/2 + (tesno ? h + 3 : 0);
-      let glub = glubNach, nashli = false;
-      for(let g = glubNach; g <= glubNach + (h+3)*5; g += h + 3){
-        // насквозь через комнату не проваливаемся: вышли за контур —
-        // дальше искать нечего, остаёмся на первой глубине
-        if(!korobkaVnutri(mX + ux*g, mY + uy*g, shir, vys)) break;
-        if(svobodno(mX + ux*g, mY + uy*g, shir, vys)){ glub = g; nashli = true; break; }
-      }
-      // не поместилось внутри — на полочку, как у цепей
-      const polkaSt = nashli ? null : polka(mX + ux*OT2, mY + uy*OT2, txt, w, h);
-      // ПОСЛЕДНЯЯ МЕРА — сдвиг вдоль стены. Нужна там, где комната уже
-      // самого числа: полоса в 10 см его не вместит ни на какой глубине.
-      // Владелец просил не уводить числа вбок, и правило остаётся —
-      // но два числа, легшие друг на друга, читаются хуже сдвинутого.
-      let vbok = 0;
-      if(!nashli && !polkaSt){
-        for(let k=1;k<=4;k++){
-          const zn = k%2 ? 1 : -1, d = Math.ceil(k/2)*(w/2 + 6);
-          if(svobodno(mX+ux*glub+sx*zn*d, mY+uy*glub+sy*zn*d, shir, vys)){ vbok = zn*d; break; }
-        }
-      }
-      const tx = polkaSt ? polkaSt.tx : mX + ux*glub + sx*vbok;
-      const ty = polkaSt ? polkaSt.ty : mY + uy*glub + sy*vbok;
-      const on = polyDraw.sel === i;
-      if(!on && uzhe(txt, tx, ty)) return;      // такое же число рядом уже есть
-      napisano.push({ txt, x:tx, y:ty });
-      if(polkaSt) lbls += polkaSt.liniya; else zanyat(tx, ty, shir, vys);
-      // на полке число лежит горизонтально — её для того и придумали
-      const povorot = (vert && !polkaSt) ? ` transform="rotate(-90, ${tx}, ${ty})"` : '';
-      // выносные линии дотягиваются до числа, куда бы оно ни ушло
-      const doTochki = glub > OT2 + h/2 ? glub + h/2 + 4 : OT2 + 4;
-      // засечки на концах размерной линии
-      const zas = (x,y)=>`<line x1="${x-(sx+ux)*4}" y1="${y-(sy+uy)*4}"
-                                x2="${x+(sx+ux)*4}" y2="${y+(sy+uy)*4}" class="pd-dim-tick"/>`;
-      lbls += `<line x1="${ax+ux*OT2}" y1="${ay+uy*OT2}" x2="${bx+ux*OT2}" y2="${by+uy*OT2}" class="pd-dim-line"/>
-        <line x1="${ax}" y1="${ay}" x2="${ax+ux*doTochki}" y2="${ay+uy*doTochki}" class="pd-dim-ext"/>
-        <line x1="${bx}" y1="${by}" x2="${bx+ux*doTochki}" y2="${by+uy*doTochki}" class="pd-dim-ext"/>
-        ${zas(ax+ux*OT2, ay+uy*OT2)}${zas(bx+ux*OT2, by+uy*OT2)}`;
-      if(on){
-        lbls += `<g class="pd-lbl-g on">
-          <foreignObject x="${tx-w/2-14}" y="${ty-h/2-4}" width="${w+28}" height="${h+8}">
-            <input xmlns="http://www.w3.org/1999/xhtml" class="pd-lbl-input"
-                   id="pdLblInput" inputmode="decimal" value="${escapeAttr(txt)}">
-          </foreignObject></g>`;
-      }else{
-        lbls += `<g data-pd-lbl="${i}" class="pd-lbl-g">
-          <rect x="${tx-w/2}" y="${ty-h/2}" width="${w}" height="${h}" class="pd-lbl-bg"${povorot}/>
-          <text x="${tx}" y="${ty}" text-anchor="middle" dominant-baseline="central"
-                class="pd-lbl"${povorot}>${txt}</text></g>`;
-      }
+    lbls = razmeryKontura(p, {
+      X: pdX, Y: pdY,
+      mx: x => v.minX + (x - PD_PAD)/PD_SC*st,
+      my: y => v.maxY - (y - PD_PAD)/PD_SC*st,
+      W: v.w, H: v.h,
+      shirina: t => t.length*7 + 8, vys: 15,
+      OT: 30, OT2: 13, GL_TXT: 15, GL_SHAG: 17,
+      kl: { ext:'pd-dim-ext', line:'pd-dim-line', tick:'pd-dim-tick' },
+      sel: polyDraw.sel,
+      // ЧИСЛО В ОКНЕ ЧЕРЧЕНИЯ КЛИКАБЕЛЬНО: нажатие открывает поле правки
+      // прямо на чертеже. Владелец просил править размеры нажатием
+      // на цифры, а не на тонкую линию.
+      chislo: ({ i, txt, tx, ty, w, h, povorot, on })=> on
+        ? `<g class="pd-lbl-g on">
+             <foreignObject x="${tx-Math.max(w,44)/2-10}" y="${ty-12}" width="${Math.max(w,44)+20}" height="26">
+               <input xmlns="http://www.w3.org/1999/xhtml" class="pd-lbl-input"
+                      id="pdLblInput" inputmode="decimal" value="${escapeAttr(txt)}">
+             </foreignObject></g>`
+        : `<g data-pd-lbl="${i}" class="pd-lbl-g">
+             <rect x="${tx-w/2}" y="${ty-h/2}" width="${w}" height="${h}" class="pd-lbl-bg"${povorot}/>
+             <text x="${tx}" y="${ty}" text-anchor="middle" dominant-baseline="central"
+                   class="pd-lbl"${povorot}>${txt}</text></g>`
     });
   }
   const verts = p.map(g=>`<circle cx="${pdX(g[0])}" cy="${pdY(g[1])}" r="7" class="pd-vert"/>`).join('');
