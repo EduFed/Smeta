@@ -2909,7 +2909,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-18-82';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-18-83';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -8788,6 +8788,9 @@ function polyDrawSVG(){
     // заведённые внутрь числа встречаются: «0,1» сверху и «0,149» слева
     // легли друг на друга. Поэтому занятость держим одну на всех — и цепи,
     // и стены в глубине кладут числа в этот же список.
+    // Стены в глубине, чьё число цепь взяла на себя: у себя они
+    // подписываются повторно, и это был бы дубль.
+    const cepPodpisala = new Set();
     const vnutriZanyato = [];
     const svobodno = (x,y,w,h)=> !vnutriZanyato.some(z =>
       Math.abs(z.x - x) < (z.w + w)/2 + 3 && Math.abs(z.y - y) < (z.h + h)/2 + 3);
@@ -8925,11 +8928,27 @@ function polyDrawSVG(){
         // ЧЕЙ ЭТО ОТРЕЗОК. Засечки цепи стоят на концах стен, поэтому
         // между двумя соседними засечками либо ровно одна стена, либо
         // ЗАЗОР — пустое место между двумя стенами края.
-        const svoya = steny.find(st=>{
+        let svoya = steny.find(st=>{
           const s1 = gorizont ? Math.min(st.a[0],st.b[0]) : Math.min(st.a[1],st.b[1]);
           const s2 = gorizont ? Math.max(st.a[0],st.b[0]) : Math.max(st.a[1],st.b[1]);
           return s1 <= v1 + EPS && s2 >= v2 - EPS;
         });
+        // НАПРОТИВ ЗАЗОРА БЫВАЕТ СТЕНА В ГЛУБИНЕ — И ЭТО ЕЁ МЕСТО.
+        // Владелец про «0,74»: цепь уже вынесла ровно этот размер
+        // за контур, засечки стоят там, где надо, а число при этом
+        // жалось внутри. Если утопленная стена идёт в ту же сторону
+        // и ровно от засечки до засечки — число пишем на цепи,
+        // а у самой стены не повторяем.
+        if(!svoya){
+          const utoplena = vglubine.find(st=>{
+            const gorSt = Math.abs(st.a[1] - st.b[1]) <= EPS;
+            if(gorSt !== gorizont) return false;
+            const s1 = gorizont ? Math.min(st.a[0],st.b[0]) : Math.min(st.a[1],st.b[1]);
+            const s2 = gorizont ? Math.max(st.a[0],st.b[0]) : Math.max(st.a[1],st.b[1]);
+            return Math.abs(s1 - v1) < EPS && Math.abs(s2 - v2) < EPS;
+          });
+          if(utoplena){ svoya = utoplena; cepPodpisala.add(utoplena.i); }
+        }
         // ЗАЗОР НЕ ПОДПИСЫВАЕМ. Владелец: «1,19 рассчитал сам, не нужно,
         // выведи то что есть». Число зазора — не размер стены, а разность
         // двух чисел: такой стены в комнате нет, мерить её нечем, и она
@@ -9076,6 +9095,7 @@ function polyDrawSVG(){
     // за контур и слипались там в кашу — владелец прислал снимок.
     // Внутренняя сторона такой стены — сама комната, место есть именно там.
     vglubine.concat(kosye).forEach(({i,a,b,L})=>{
+      if(cepPodpisala.has(i)) return;         // число уже стоит на цепи
       const ax=pdX(a[0]), ay=pdY(a[1]), bx=pdX(b[0]), by=pdY(b[1]);
       const lp = Math.hypot(bx-ax,by-ay) || 1;
       let ux = -(by-ay)/lp, uy = (bx-ax)/lp;
