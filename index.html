@@ -2123,11 +2123,23 @@
     .pd-steps{ grid-column: 1; grid-row: 2; }
     .pd-canvas{ grid-column: 1; grid-row: 3; min-height:0; }
     .pd-foot { grid-column: 1 / -1; grid-row: 4; }
-    /* правая колонка: панель стены сверху, ввод следующей под ней */
-    .pd-panel{ grid-column: 2; grid-row: 2; align-self:start; border-left:1px solid var(--paper-line); border-top:none; height:100%; }
-    .pd-next { grid-column: 2; grid-row: 2 / 4; align-self:start; border-left:1px solid var(--paper-line); border-top:none; height:100%; }
-    /* если открыты обе — панель стены сверху, ввод под ней */
-    .pd-panel + .pd-next{ grid-row: 3; }
+    /* БОКОВАЯ КОЛОНКА — ОДНА ОБЛАСТЬ НА ВСЕ СВОИ СТРОКИ.
+       Сначала я сажал панели прямо в строки сетки: панель точки
+       попадала в строку «Шаг сетки» и растягивала её по своей высоте,
+       а холст в соседней строке на столько же сжимался. Со стороны —
+       «нажал на точку, и контур стал меньше».
+       Теперь колонка занимает свои строки целиком, а панели внутри
+       идут обычным потоком и на левую половину не влияют. */
+    /* ИМЯ pd-aside, А НЕ pd-side — И ЭТО НЕ ПРИДИРКА.
+       Класс pd-side уже занят: так называются ЛИНИИ СТЕН внутри
+       чертежа. Пока колонка звалась так же, querySelector('.pd-side')
+       находил первую линию в SVG вместо колонки: панель не отрисовывалась,
+       блок был нулевой высоты, а координаты показывали середину холста.
+       Ровно грабля 49 — искал по классу, а таких на странице несколько. */
+    .pd-aside{ grid-column: 2; grid-row: 2 / 4; border-left:1px solid var(--paper-line);
+               overflow:auto; display:flex; flex-direction:column; min-height:0; }
+    .pd-aside .pd-panel, .pd-aside .pd-next{ border-top:none; border-left:none; }
+    .pd-aside .pd-panel + .pd-next{ border-top:1px solid var(--paper-line); }
     /* сбоку места хватает: поля в столбик, подписи возвращаются */
     .pd-next-r{ flex-wrap:wrap; }
     .pd-next-r label{ flex:1 1 100%; }
@@ -2870,7 +2882,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-10-58';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-10-59';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -8694,8 +8706,7 @@ function polyDrawRender(){
         ${POLY_STEPS.map(v=>`<button class="pd-step ${v===polyDraw.step?'on':''}" data-pd-step="${v}">${fmt(v)} м</button>`).join('')}
       </div>
       <div class="pd-canvas">${polyDrawSVG()}</div>
-      ${polyDrawPanel()}
-      ${pdNextPanel()}
+      <div class="pd-aside">${polyDrawPanel()}${pdNextPanel()}</div>
       <div class="pd-foot">
         <div class="pd-stats">${n>=3
           ? `<b>${fmt(s.area)}</b> м² · периметр <b>${fmt(s.per)}</b> м`
@@ -8722,18 +8733,12 @@ function polyDrawRender(){
 function polyDrawPanelOnly(){
   const box = document.querySelector('.pd-canvas');
   if(box) box.innerHTML = polyDrawSVG();
-  const ov = document.getElementById('polyDrawOverlay');
-  const modal = ov && ov.querySelector('.pd-modal');
-  const old = ov && ov.querySelector('.pd-panel');
-  const html = polyDrawPanel();
-  if(old) old.remove();
-  if(html && modal){
-    const foot = modal.querySelector('.pd-foot');
-    const tmp = document.createElement('div');
-    tmp.innerHTML = html;
-    const el = tmp.firstElementChild;
-    if(el) modal.insertBefore(el, foot);
-  }
+  // Панели живут в боковой колонке (на широком экране — сбоку,
+  // на телефоне — снизу). Перерисовываем её целиком: панель стены
+  // и ввод следующей меняются вместе, и собирать их по кусочкам
+  // значит однажды забыть один из них.
+  const side = document.querySelector('.pd-aside');
+  if(side) side.innerHTML = polyDrawPanel() + pdNextPanel();
   polyDrawBind();
 }
 
