@@ -2085,23 +2085,58 @@
   }
   /* Холст занимает всё, что осталось от шапки и подвала, и картинка
      тянется по высоте, а не только по ширине. */
-  .pd-canvas{display:flex;align-items:center;justify-content:center;}
-  .pd-canvas .pd-svg{max-height:100%;}
+  /* Холст забирает всё, что осталось, и не меньше половины окна:
+     это главное место в этом окне, остальное — обслуживание. */
+  .pd-canvas{display:flex;align-items:center;justify-content:center;flex:1 1 auto;min-height:52vh;padding:6px;}
+  .pd-canvas .pd-svg{max-height:100%;max-width:100%;width:auto;}
+  @media (max-width: 720px){ .pd-canvas{min-height:0;} }
 
   /* Ввод следующей стены числом */
-  .pd-next{padding:10px 20px 12px;border-top:1px solid var(--paper-line);background:var(--paper);}
-  .pd-next-h{font-family:'JetBrains Mono',monospace;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-soft);margin-bottom:8px;}
-  .pd-next-r{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;}
-  .pd-next-r label{display:flex;flex-direction:column;gap:4px;font-size:11px;color:var(--ink-soft);flex:1 1 120px;}
-  .pd-next-r input{padding:9px 10px;min-height:40px;border:1px solid var(--paper-line);border-radius:var(--radius);background:var(--white);color:var(--ink);font-size:14px;}
-  .pd-next-r .btn{min-height:40px;}
-  .pd-next-hint{margin-top:6px;font-size:11px;color:var(--ink-soft);}
+  /* ПАНЕЛЬ ВВОДА — КОМПАКТНАЯ. Первый вариант съедал треть окна:
+     заголовок, подписи над полями, отдельная строка подсказки. Чем
+     больше холст, тем проще чертить, — значит всё, что не холст,
+     должно быть настолько мелким, насколько остаётся понятным.
+     Подписи ушли в сами поля (placeholder), подсказка — в одну строку
+     с заголовком. */
+  .pd-next{padding:8px 16px;border-top:1px solid var(--paper-line);background:var(--paper);}
+  .pd-next-h{font-family:'JetBrains Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-soft);margin-bottom:6px;}
+  .pd-next-r{display:flex;gap:8px;align-items:center;flex-wrap:nowrap;}
+  .pd-next-r label{display:block;flex:1 1 0;min-width:0;}
+  .pd-next-r input{width:100%;padding:7px 9px;min-height:36px;border:1px solid var(--paper-line);border-radius:var(--radius);background:var(--white);color:var(--ink);font-size:14px;}
+  .pd-next-r .btn{min-height:36px;padding:6px 14px;white-space:nowrap;}
   /* стрелки отмены и возврата */
   .pd-hist{min-width:44px;font-size:17px;line-height:1;}
-  .pd-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:16px 20px 12px;border-bottom:1px solid var(--paper-line);}
+
+  /* НА ШИРОКОМ ЭКРАНЕ ПАНЕЛЬ УХОДИТ ВБОК.
+     Предложил владелец, и это верно: на компьютере вертикальное место
+     дороже горизонтального. Панель снизу отнимала высоту у холста —
+     то есть у единственного, ради чего это окно открывают. Сбоку она
+     ничего не отнимает: ширины и так в избытке.
+     На телефоне всё остаётся снизу: там ширины нет вовсе. */
+  @media (min-width: 900px){
+    .pd-modal{
+      display:grid;
+      grid-template-columns: 1fr 330px;
+      grid-template-rows: auto auto 1fr auto;
+    }
+    .pd-head { grid-column: 1 / -1; grid-row: 1; }
+    .pd-steps{ grid-column: 1; grid-row: 2; }
+    .pd-canvas{ grid-column: 1; grid-row: 3; min-height:0; }
+    .pd-foot { grid-column: 1 / -1; grid-row: 4; }
+    /* правая колонка: панель стены сверху, ввод следующей под ней */
+    .pd-panel{ grid-column: 2; grid-row: 2; align-self:start; border-left:1px solid var(--paper-line); border-top:none; height:100%; }
+    .pd-next { grid-column: 2; grid-row: 2 / 4; align-self:start; border-left:1px solid var(--paper-line); border-top:none; height:100%; }
+    /* если открыты обе — панель стены сверху, ввод под ней */
+    .pd-panel + .pd-next{ grid-row: 3; }
+    /* сбоку места хватает: поля в столбик, подписи возвращаются */
+    .pd-next-r{ flex-wrap:wrap; }
+    .pd-next-r label{ flex:1 1 100%; }
+    .pd-next-r .btn{ width:100%; }
+  }
+  .pd-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:10px 16px 8px;border-bottom:1px solid var(--paper-line);}
   .pd-title{font-family:'Space Grotesk','Inter',sans-serif;font-size:18px;font-weight:700;color:var(--ink);}
   .pd-sub{margin-top:3px;font-size:12px;color:var(--ink-soft);line-height:1.45;}
-  .pd-steps{display:flex;align-items:center;gap:8px;padding:10px 20px;font-size:12px;color:var(--ink-soft);border-bottom:1px solid var(--paper-line);}
+  .pd-steps{display:flex;align-items:center;gap:8px;padding:7px 16px;font-size:12px;color:var(--ink-soft);border-bottom:1px solid var(--paper-line);}
   .pd-step{padding:4px 10px;border:1px solid var(--paper-line);border-radius:7px;background:var(--white);color:var(--ink);font-size:12px;cursor:pointer;}
   .pd-step.on{background:var(--orange);border-color:var(--orange);color:#fff;}
   .pd-canvas{padding:10px;overflow:auto;flex:1;}
@@ -2835,7 +2870,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-10-54';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-10-55';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
