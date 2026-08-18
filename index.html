@@ -2909,7 +2909,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-18-81';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-18-82';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -8793,6 +8793,42 @@ function polyDrawSVG(){
       Math.abs(z.x - x) < (z.w + w)/2 + 3 && Math.abs(z.y - y) < (z.h + h)/2 + 3);
     const zanyat = (x,y,w,h)=> vnutriZanyato.push({x,y,w,h});
 
+    // ВСЕЙ КОРОБКОЙ, А НЕ СЕРЕДИНОЙ. Проверять одну точку мало: «0,149»
+    // повёрнуто вдоль стены и занимает 43 точки в длину, а полоса
+    // у верхнего левого угла — 13. Середина попадает внутрь, а число
+    // ложится поверх стен. Смотрим все четыре угла.
+    const korobkaVnutri = (x,y,w,h)=>
+      vnutriEkr(x-w/2+1, y-h/2+1) && vnutriEkr(x+w/2-1, y-h/2+1) &&
+      vnutriEkr(x-w/2+1, y+h/2-1) && vnutriEkr(x+w/2-1, y+h/2-1);
+
+    // ПОЛОЧКА — выноска для числа, которому негде встать.
+    // Референс владельца — чертёж пробки, размеры «Ø50» и «3x45°»:
+    // наклонная линия от места, где мерили, горизонтальная полка,
+    // и число на ней. Число на полке НЕ поворачивается: полка для того
+    // и нужна, чтобы читать не выворачивая голову.
+    //
+    // Куда вести: сначала в сторону середины чертежа — там место есть
+    // почти всегда, а у краёв и углов его нет по определению.
+    const polka = (x0, y0, txt, w, h)=>{
+      const kx = x0 <= v.w/2 ? 1 : -1, ky = y0 <= v.h/2 ? 1 : -1;
+      const storony = [[kx,ky],[kx,-ky],[-kx,ky],[-kx,-ky]];
+      for(const [dx,dy] of storony){
+        for(const L of [20, 32, 44]){
+          const lx = x0 + dx*L, ly = y0 + dy*L;       // конец наклонной
+          const px = lx + dx*(w + 8);                  // конец полки
+          const tx = (lx + px)/2, ty = ly - h/2 - 2;   // число лежит НА полке
+          if(tx - w/2 < 2 || tx + w/2 > v.w - 2) continue;
+          if(ty - h/2 < 2 || ty + h/2 > v.h - 2) continue;
+          if(!svobodno(tx, ty, w, h)) continue;
+          zanyat(tx, ty, w, h);
+          return { tx, ty, liniya:
+            `<line x1="${x0}" y1="${y0}" x2="${lx}" y2="${ly}" class="pd-dim-ext"/>` +
+            `<line x1="${lx}" y1="${ly}" x2="${px}" y2="${ly}" class="pd-dim-ext"/>` };
+        }
+      }
+      return null;                                     // места нет и на полку
+    };
+
     // разложим стены: осевые идут в цепи, наклонные — отдельно
     const gorizontalnye = [], vertikalnye = [], kosye = [];
     const gorNiz = [], gorVerh = [], vertLev = [], vertPrav = [], vglubine = [];
@@ -8909,6 +8945,7 @@ function polyDrawSVG(){
         const seredina = (c1+c2)/2;
         const mesto = Math.abs(c2-c1);
         let glub = 0;                          // 0 — число остаётся снаружи
+        let naPolku = null;                    // не null — число уехало на полку
         if(mesto < w + 4){
           // число повёрнуто вдоль линии, поэтому на экране у вертикальных
           // цепей ширина и высота меняются местами
@@ -8922,14 +8959,21 @@ function polyDrawSVG(){
           // и уходим глубже, пока не попадём в комнату и в свободное.
           for(let g = GL_TXT; g <= GL_TXT + GL_SHAG*7; g += GL_SHAG){
             const [x,y] = gde(g);
-            if(!vnutriEkr(x,y)) continue;      // тут не комната
+            if(!korobkaVnutri(x, y, shir, vys)) continue;   // тут не комната
             if(!svobodno(x, y, shir, vys)) continue;
             glub = g; break;
           }
-          // ничего не нашли — число остаётся снаружи, как было раньше
           if(glub){ const [x,y] = gde(glub); zanyat(x, y, shir, vys); }
+          else {
+            // ВНУТРИ НЕ ПОМЕСТИЛОСЬ — на полочку. Владелец про верхний
+            // левый угол: «выносные линии завести ещё глубже внутрь,
+            // а поле с числом на полочку с краю чуть ниже».
+            const [ax0, ay0] = gde(GL_TXT);
+            const p2 = polka(ax0, ay0, txt, w, h);
+            if(p2){ naPolku = p2; glub = GL_TXT; }
+          }
         }
-        otrezki.push({ k, v1, v2, txt, w, h, seredina, glub, svoya });
+        otrezki.push({ k, v1, v2, txt, w, h, seredina, glub, svoya, naPolku });
       }
 
       // до какой глубины внутри контура тянуть выносную в каждой точке
@@ -8981,17 +9025,20 @@ function polyDrawSVG(){
           : `<line x1="${uroven-4}" y1="${c+4}" x2="${uroven+4}" y2="${c-4}" class="pd-dim-tick"/>`;
       });
 
-      otrezki.forEach(({ txt, w, h, seredina, glub, svoya })=>{
+      otrezki.forEach(({ txt, w, h, seredina, glub, svoya, naPolku })=>{
         // ЧИСЛО НАД ЛИНИЕЙ — со стороны контура, отступ 9 точек.
         // Заведённое внутрь — на своей глубине от границы контура.
+        // Уехавшее на полку — там, куда полка его увезла.
         const poz = glub ? kray - glub*storonaZnak : uroven - 9*storonaZnak;
         let tx, ty;
         if(gorizont){ tx = seredina; ty = poz; }
         else        { ty = seredina; tx = poz; }
+        if(naPolku){ lbls += naPolku.liniya; tx = naPolku.tx; ty = naPolku.ty; }
         tx = Math.min(Math.max(tx, w/2 + 2), v.w - w/2 - 2);
         ty = Math.min(Math.max(ty, h/2 + 2), v.h - h/2 - 2);
-        // ПОВОРОТ вдоль линии: вертикальные размеры читаются снизу вверх
-        const povorot = gorizont ? '' : ` transform="rotate(-90, ${tx}, ${ty})"`;
+        // ПОВОРОТ вдоль линии: вертикальные размеры читаются снизу вверх.
+        // На полке не поворачиваем — она для того и есть.
+        const povorot = (gorizont || naPolku) ? '' : ` transform="rotate(-90, ${tx}, ${ty})"`;
 
         const on = polyDraw.sel === svoya.i;
         // ОТРЕЗКИ ЦЕПИ НЕ ПРОРЕЖИВАЕМ. Правило «такое же число рядом уже
@@ -9050,26 +9097,30 @@ function polyDrawSVG(){
       for(let g = glubNach; g <= glubNach + (h+3)*5; g += h + 3){
         // насквозь через комнату не проваливаемся: вышли за контур —
         // дальше искать нечего, остаёмся на первой глубине
-        if(!vnutriEkr(mX + ux*g, mY + uy*g)) break;
+        if(!korobkaVnutri(mX + ux*g, mY + uy*g, shir, vys)) break;
         if(svobodno(mX + ux*g, mY + uy*g, shir, vys)){ glub = g; nashli = true; break; }
       }
+      // не поместилось внутри — на полочку, как у цепей
+      const polkaSt = nashli ? null : polka(mX + ux*OT2, mY + uy*OT2, txt, w, h);
       // ПОСЛЕДНЯЯ МЕРА — сдвиг вдоль стены. Нужна там, где комната уже
       // самого числа: полоса в 10 см его не вместит ни на какой глубине.
       // Владелец просил не уводить числа вбок, и правило остаётся —
       // но два числа, легшие друг на друга, читаются хуже сдвинутого.
       let vbok = 0;
-      if(!nashli){
+      if(!nashli && !polkaSt){
         for(let k=1;k<=4;k++){
           const zn = k%2 ? 1 : -1, d = Math.ceil(k/2)*(w/2 + 6);
           if(svobodno(mX+ux*glub+sx*zn*d, mY+uy*glub+sy*zn*d, shir, vys)){ vbok = zn*d; break; }
         }
       }
-      const tx = mX + ux*glub + sx*vbok, ty = mY + uy*glub + sy*vbok;
+      const tx = polkaSt ? polkaSt.tx : mX + ux*glub + sx*vbok;
+      const ty = polkaSt ? polkaSt.ty : mY + uy*glub + sy*vbok;
       const on = polyDraw.sel === i;
       if(!on && uzhe(txt, tx, ty)) return;      // такое же число рядом уже есть
       napisano.push({ txt, x:tx, y:ty });
-      zanyat(tx, ty, shir, vys);
-      const povorot = vert ? ` transform="rotate(-90, ${tx}, ${ty})"` : '';
+      if(polkaSt) lbls += polkaSt.liniya; else zanyat(tx, ty, shir, vys);
+      // на полке число лежит горизонтально — её для того и придумали
+      const povorot = (vert && !polkaSt) ? ` transform="rotate(-90, ${tx}, ${ty})"` : '';
       // выносные линии дотягиваются до числа, куда бы оно ни ушло
       const doTochki = glub > OT2 + h/2 ? glub + h/2 + 4 : OT2 + 4;
       // засечки на концах размерной линии
