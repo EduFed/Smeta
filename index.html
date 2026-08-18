@@ -2909,7 +2909,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-18-79';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-18-80';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -8769,6 +8769,11 @@ function polyDrawSVG(){
       const sh = st / PD_SC * 6;              // 6 экранных точек в метрах
       return vnutriKontura(mx + ux*sh, my - uy*sh) ? [ux,uy] : [-ux,-uy];
     };
+    // то же самое, но по экранным точкам: куда встанет число, известно
+    // в экранных, а контур живёт в метрах
+    const vnutriEkr = (x,y)=> vnutriKontura(
+      v.minX + (x - PD_PAD)/PD_SC*st,
+      v.maxY - (y - PD_PAD)/PD_SC*st);
     const EPS = 0.004;                       // 4 мм — что считать одной линией
     // УЖЕ НАПИСАННЫЕ ЧИСЛА. Владелец: «размер 0,2 не нужно дублировать,
     // он одинаковый с двух сторон». Одно и то же число, написанное дважды
@@ -8895,14 +8900,19 @@ function polyDrawSVG(){
           const shir = gorizont ? w : h, vys = gorizont ? h : w;
           const gde = g => gorizont ? [seredina, kray - g*storonaZnak]
                                     : [kray - g*storonaZnak, seredina];
-          glub = GL_TXT;
-          for(let g=0; g<8; g++){
-            const [x,y] = gde(glub);
-            if(svobodno(x, y, shir, vys)) break;
-            glub += GL_SHAG;                   // место занято — уходим глубже
+          // ЗА ГРАНИЦЕЙ ГАБАРИТА НЕ ВСЕГДА КОМНАТА. Цепь идёт по краю
+          // габарита, но отрезок цепи может стоять над выемкой — тогда
+          // прямо под ним пусто, и заведённое «внутрь» число повисает
+          // за контуром. Поэтому каждое место проверяем на самом деле
+          // и уходим глубже, пока не попадём в комнату и в свободное.
+          for(let g = GL_TXT; g <= GL_TXT + GL_SHAG*7; g += GL_SHAG){
+            const [x,y] = gde(g);
+            if(!vnutriEkr(x,y)) continue;      // тут не комната
+            if(!svobodno(x, y, shir, vys)) continue;
+            glub = g; break;
           }
-          const [x,y] = gde(glub);
-          zanyat(x, y, shir, vys);
+          // ничего не нашли — число остаётся снаружи, как было раньше
+          if(glub){ const [x,y] = gde(glub); zanyat(x, y, shir, vys); }
         }
         otrezki.push({ k, v1, v2, txt, w, h, seredina, glub });
       }
@@ -9025,12 +9035,26 @@ function polyDrawSVG(){
       // ориентация числа по линии — как у цепей: вертикальные читаются снизу вверх
       const vert = Math.abs(by-ay) > Math.abs(bx-ax);
       const shir = vert ? h : w, vys = vert ? w : h;
-      let glub = OT2 + h/2 + (tesno ? h + 3 : 0);
-      for(let g=0; g<6; g++){
-        if(svobodno(mX + ux*glub, mY + uy*glub, shir, vys)) break;
-        glub += h + 3;                          // место внутри занято — глубже
+      const glubNach = OT2 + h/2 + (tesno ? h + 3 : 0);
+      let glub = glubNach, nashli = false;
+      for(let g = glubNach; g <= glubNach + (h+3)*5; g += h + 3){
+        // насквозь через комнату не проваливаемся: вышли за контур —
+        // дальше искать нечего, остаёмся на первой глубине
+        if(!vnutriEkr(mX + ux*g, mY + uy*g)) break;
+        if(svobodno(mX + ux*g, mY + uy*g, shir, vys)){ glub = g; nashli = true; break; }
       }
-      const tx = mX + ux*glub, ty = mY + uy*glub;
+      // ПОСЛЕДНЯЯ МЕРА — сдвиг вдоль стены. Нужна там, где комната уже
+      // самого числа: полоса в 10 см его не вместит ни на какой глубине.
+      // Владелец просил не уводить числа вбок, и правило остаётся —
+      // но два числа, легшие друг на друга, читаются хуже сдвинутого.
+      let vbok = 0;
+      if(!nashli){
+        for(let k=1;k<=4;k++){
+          const zn = k%2 ? 1 : -1, d = Math.ceil(k/2)*(w/2 + 6);
+          if(svobodno(mX+ux*glub+sx*zn*d, mY+uy*glub+sy*zn*d, shir, vys)){ vbok = zn*d; break; }
+        }
+      }
+      const tx = mX + ux*glub + sx*vbok, ty = mY + uy*glub + sy*vbok;
       const on = polyDraw.sel === i;
       if(!on && uzhe(txt, tx, ty)) return;      // такое же число рядом уже есть
       napisano.push({ txt, x:tx, y:ty });
