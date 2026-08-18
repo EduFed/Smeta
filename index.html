@@ -2902,7 +2902,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-10-67';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-10-69';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -8584,6 +8584,18 @@ function polyDrawClose(){
 // контур остаётся на месте и по центру — потому что область считается
 // заново от самого контура, а не от нуля.
 function pdView(){
+  // ПРИБЛИЖЕНИЕ И ПЕРЕМЕЩЕНИЕ (с 2026-08-10-68).
+  // Если человек приблизил или подвинул холст — показываем ровно то,
+  // что он выбрал, и ничего не пересчитываем сами. Пока не трогал,
+  // область считается по контуру, как раньше.
+  if(polyDraw.view){
+    const vw = polyDraw.view, st0 = polyDraw.step;
+    const cols = Math.max(2, Math.round(vw.w/st0) + 1);
+    const rows = Math.max(2, Math.round(vw.h/st0) + 1);
+    return { minX: vw.x, minY: vw.y, maxX: vw.x + vw.w, maxY: vw.y + vw.h,
+             cols, rows,
+             w: PD_PAD*2 + (cols-1)*PD_SC, h: PD_PAD*2 + (rows-1)*PD_SC };
+  }
   const st = polyDraw.step, p = polyDraw.pts;
   let minX, maxX, minY, maxY;
   if(p.length >= 2){
@@ -8622,6 +8634,30 @@ function pdView(){
 const pdX = mx=>{ const v = pdView(); return PD_PAD + (mx - v.minX)/polyDraw.step*PD_SC; };
 const pdY = my=>{ const v = pdView(); return PD_PAD + (v.maxY - my)/polyDraw.step*PD_SC; };
 const pdSnap = v=> Math.round(v/polyDraw.step)*polyDraw.step;
+
+// Приблизить или отдалить вокруг заданной точки (в метрах).
+// Держим ту точку, на которую человек смотрит: иначе при каждом
+// повороте колеса чертёж уезжает из-под курсора.
+function pdZoomAt(mx, my, factor){
+  const v = pdView();
+  const w0 = v.maxX - v.minX, h0 = v.maxY - v.minY;
+  const MIN = polyDraw.step * 3, MAX = polyDraw.step * 200;
+  let w = Math.min(Math.max(w0 / factor, MIN), MAX);
+  let h = h0 * (w / w0);
+  // доля точки внутри области — до и после должна совпасть
+  const kx = (mx - v.minX) / w0, ky = (my - v.minY) / h0;
+  polyDraw.view = { x: mx - kx*w, y: my - ky*h, w, h };
+}
+
+// Подвинуть холст на столько-то метров.
+function pdPan(dx, dy){
+  const v = pdView();
+  polyDraw.view = { x: v.minX - dx, y: v.minY - dy,
+                    w: v.maxX - v.minX, h: v.maxY - v.minY };
+}
+
+// Вернуться к автоматическому виду — «вписать контур».
+function pdFit(){ polyDraw.view = null; }
 
 function polyDrawSVG(){
   const p = polyDraw.pts, st = polyDraw.step;
@@ -8867,6 +8903,8 @@ function polyDrawRender(){
                   title="Отменить действие">↶</button>
           <button class="btn btn-outline pd-hist" id="pdRedo" ${pdCanRedo()?'':'disabled'}
                   title="Вернуть действие">↷</button>
+          <button class="btn btn-outline pd-hist" id="pdFit"
+                  title="Вписать контур в окно">⤢</button>
           <button class="btn btn-outline" id="pdClear" ${n?'':'disabled'}
                   title="Стереть весь контур и начать заново">Очистить</button>
           <button class="btn btn-primary" id="pdSave" ${(n>=3 && !s.bad)?'':'disabled'}>Готово</button>
@@ -9098,6 +9136,57 @@ function polyDrawBindSvg(){
   };
   svg.onpointerup = stop;
   svg.onpointercancel = stop;
+
+  // ---------- ПРИБЛИЖЕНИЕ ----------
+  // Колесо — на компьютере. Приближаем к курсору, а не к центру:
+  // человек смотрит туда, где указатель.
+  svg.onwheel = e=>{
+    e.preventDefault();
+    const m = toM(e);
+    pdZoomAt(m[0], m[1], e.deltaY < 0 ? 1.2 : 1/1.2);
+    polyDrawRefresh();
+  };
+
+  // Два пальца — щипок и перетаскивание одновременно, как в картах.
+  // Пока пальцев двое, обычное черчение не работает: это жест,
+  // а не постановка точки.
+  const touches = new Map();
+  let pinch = null;
+  svg.addEventListener('pointerdown', e=>{
+    if(e.pointerType !== 'touch') return;
+    touches.set(e.pointerId, e);
+    if(touches.size === 2){
+      polyDraw.drag = null;              // это не черчение, а жест
+      const [a, b] = [...touches.values()];
+      const v = pdView();
+      pinch = {
+        dist: Math.hypot(a.clientX-b.clientX, a.clientY-b.clientY),
+        mid: toM({ clientX:(a.clientX+b.clientX)/2, clientY:(a.clientY+b.clientY)/2 }),
+        w: v.maxX - v.minX
+      };
+    }
+  }, true);
+  svg.addEventListener('pointermove', e=>{
+    if(e.pointerType !== 'touch' || !touches.has(e.pointerId)) return;
+    touches.set(e.pointerId, e);
+    if(touches.size === 2 && pinch){
+      const [a, b] = [...touches.values()];
+      const d = Math.hypot(a.clientX-b.clientX, a.clientY-b.clientY);
+      if(pinch.dist > 4){
+        const v = pdView();
+        const want = pinch.w * (pinch.dist / Math.max(d, 4));
+        pdZoomAt(pinch.mid[0], pinch.mid[1], (v.maxX - v.minX) / Math.max(want, 0.01));
+        polyDrawRefresh();
+      }
+    }
+  }, true);
+  const dropTouch = e=>{
+    if(e.pointerType !== 'touch') return;
+    touches.delete(e.pointerId);
+    if(touches.size < 2) pinch = null;
+  };
+  svg.addEventListener('pointerup', dropTouch, true);
+  svg.addEventListener('pointercancel', dropTouch, true);
 }
 
 function polyDrawBind(){
@@ -9107,6 +9196,7 @@ function polyDrawBind(){
   on('pdClose', polyDrawClose);
   on('pdUndo', pdUndo);
   on('pdRedo', pdRedo);
+  on('pdFit', ()=>{ pdFit(); polyDrawRender(); });
   // Очистка не спрашивает подтверждения намеренно: она отменяется
   // стрелкой «назад», как любое другое действие. Лишний вопрос
   // на каждое нажатие раздражает сильнее, чем случайная очистка,
@@ -9171,10 +9261,16 @@ function polyDrawBind(){
     lin.oninput = ()=>{ pdSetLen(polyDraw.sel, pdFromU(calcNum(lin.value))); polyDrawRefreshKeepInput(); };
     lin.onkeydown = e=>{
       e.stopPropagation();
-      if(e.key === 'Enter'){ e.preventDefault(); lin.blur(); }
+      if(e.key === 'Enter'){ e.preventDefault(); pdPush(); polyDraw.sel = null; polyDrawRender(); }
       if(e.key === 'Escape'){ polyDraw.sel = null; polyDrawRender(); }
     };
-    lin.onblur = ()=>{ pdPush(); polyDraw.sel = null; polyDrawRender(); };
+    // ВАЖНО: по потере фокуса НЕ снимаем выделение и НЕ перерисовываем окно.
+    // Чертёж перерисовывается на каждый введённый символ, старое поле
+    // при этом удаляется из разметки — и браузер шлёт ему blur. Обработчик,
+    // закрывающий поле по blur, закрывал его сам, на первом же символе:
+    // со стороны это выглядело как «нажимаю на размер, а оно вылетает».
+    // Закрывается поле явными действиями: Enter, Escape или нажатие мимо.
+    lin.onblur = ()=>{ pdPush(); };
     if(polyDraw.focusLbl){
       polyDraw.focusLbl = false;
       setTimeout(()=>{ try{ lin.focus({preventScroll:true}); lin.select(); }catch(_){ } }, 30);
