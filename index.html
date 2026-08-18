@@ -2870,7 +2870,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-10-55';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-10-58';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -8634,6 +8634,26 @@ function pdSetAngle(i, ang){
 }
 
 function polyDrawPanel(){
+  // ПАНЕЛЬ ВЫБРАННОЙ ТОЧКИ.
+  // Нажатие на вершину без перетаскивания выбирает её — тогда точку
+  // можно удалить. Раньше убрать лишний угол можно было только через
+  // «удалить стену», а это другое действие: там исчезает целый отрезок,
+  // здесь — один угол, и соседние стены соединяются напрямую.
+  const vi = polyDraw.selVert;
+  if(vi !== null && vi !== undefined && polyDraw.pts[vi]){
+    const g = polyDraw.pts[vi];
+    const few = polyDraw.pts.length <= 3;
+    return `
+      <div class="pd-panel">
+        <div class="pd-panel-h">Точка ${vi+1}<button class="btn-icon" id="pdVertDeselect" title="Снять выделение">✕</button></div>
+        <div class="pd-panel-r pd-vert-xy">
+          <label>X, м<input type="text" inputmode="decimal" id="pdVX" value="${escapeAttr(fmt(g[0]))}"></label>
+          <label>Y, м<input type="text" inputmode="decimal" id="pdVY" value="${escapeAttr(fmt(g[1]))}"></label>
+        </div>
+        <button class="add-link" id="pdDelVert" ${few?'disabled':''}>Удалить эту точку</button>
+        ${few ? '<div class="pd-next-hint">В контуре три точки — меньше нельзя</div>' : ''}
+      </div>`;
+  }
   const i = polyDraw.sel;
   if(i === null || i === undefined || polyDraw.pts.length < 3) return '';
   const p = polyDraw.pts, j = (i+1)%p.length;
@@ -8645,7 +8665,7 @@ function polyDrawPanel(){
         <label>Длина, м<input type="text" inputmode="decimal" id="pdLen" value="${escapeAttr(fmt(L))}"></label>
         <label>Угол в конце, °<input type="text" inputmode="decimal" id="pdAng" value="${escapeAttr(fmt(pdAngle(i)))}"></label>
       </div>
-      <button class="add-link" id="pdDelPt">Убрать эту стену</button>
+      <button class="add-link pd-del-side" id="pdDelPt">Удалить эту стену</button>
     </div>`;
 }
 
@@ -8686,6 +8706,8 @@ function polyDrawRender(){
                   title="Отменить действие">↶</button>
           <button class="btn btn-outline pd-hist" id="pdRedo" ${pdCanRedo()?'':'disabled'}
                   title="Вернуть действие">↷</button>
+          <button class="btn btn-outline" id="pdClear" ${n?'':'disabled'}
+                  title="Стереть весь контур и начать заново">Очистить</button>
           <button class="btn btn-primary" id="pdSave" ${(n>=3 && !s.bad)?'':'disabled'}>Готово</button>
         </div>
       </div>
@@ -8728,6 +8750,18 @@ function polyDrawRefresh(){
   polyDrawBindSvg();
 }
 
+// Точка внутри многоугольника — обычный подсчёт пересечений луча.
+// Нужен, чтобы отличить «промахнулся по стене» от «хочу новую вершину».
+function pdInside(pt, poly){
+  let inside = false;
+  for(let i=0, j=poly.length-1; i<poly.length; j=i++){
+    const xi=poly[i][0], yi=poly[i][1], xj=poly[j][0], yj=poly[j][1];
+    if(((yi > pt[1]) !== (yj > pt[1])) &&
+       (pt[0] < (xj-xi)*(pt[1]-yi)/((yj-yi) || 1e-12) + xi)) inside = !inside;
+  }
+  return inside;
+}
+
 function pdDistToSeg(px,py,a,b){
   const dx=b[0]-a[0], dy=b[1]-a[1];
   const L2=dx*dx+dy*dy;
@@ -8751,6 +8785,25 @@ function polyDrawBindSvg(){
     return [ v.minX + (x-PD_PAD)/PD_SC*polyDraw.step,
              v.maxY - (y-PD_PAD)/PD_SC*polyDraw.step ];
   };
+  // ПОРОГ ПОПАДАНИЯ — В ПИКСЕЛЯХ ЭКРАНА, А НЕ В МЕТРАХ (с 2026-08-10-56).
+  //
+  // Был step*0.45, то есть в метрах. При мелком шаге и крупном холсте
+  // это превращалось в считанные пиксели: человек нажимал на линию,
+  // промахивался на глаз незаметно — и код доходил до постановки новой
+  // точки. Со стороны: «нажимаю на линию, а ставится точка».
+  //
+  // Палец не знает про метры. Считаем расстояние на ЭКРАНЕ и переводим
+  // в метры по текущему масштабу картинки: тогда попадание одинаково
+  // при любом шаге сетки, размере окна и приближении.
+  const pxInM = ()=>{
+    const r = svg.getBoundingClientRect(), vb = svg.viewBox.baseVal;
+    if(!r.width || !vb.width) return polyDraw.step/PD_SC;
+    return (vb.width / r.width) * polyDraw.step / PD_SC;
+  };
+  // 18 точек — примерно половина подушечки пальца и заведомо больше
+  // промаха мышью
+  const pdTol = ()=> Math.max(18 * pxInM(), polyDraw.step*0.18);
+
   // Границы перетаскивания — по видимой области, а не по жёсткой сетке.
   // Прежний зажим в 0..(POLY_ROWS-1)*step был ещё и однобоким: он держал
   // палец, но не мешал вершине уехать за край от заданной числом длины.
@@ -8769,21 +8822,24 @@ function polyDrawBindSvg(){
       let onSide = false;
       if(pp.length >= 3){
         for(let i=0;i<pp.length;i++){
-          if(pdDistToSeg(mm[0], mm[1], pp[i], pp[(i+1)%pp.length]) < polyDraw.step*0.45){ onSide = true; break; }
+          if(pdDistToSeg(mm[0], mm[1], pp[i], pp[(i+1)%pp.length]) < pdTol()){ onSide = true; break; }
         }
       }
-      const onVert = pp.some(g=> Math.hypot(mm[0]-g[0], mm[1]-g[1]) < polyDraw.step*0.45);
+      const onVert = pp.some(g=> Math.hypot(mm[0]-g[0], mm[1]-g[1]) < pdTol());
       if(!onSide && !onVert){
         polyDraw.sel = null;
         polyDrawRender();
         return;
       }
     }
-    const m = toM(e), p = polyDraw.pts, tol = polyDraw.step*0.45;
+    const m = toM(e), p = polyDraw.pts, tol = pdTol();
     let vi = -1, best = tol;
     p.forEach((g,i)=>{ const d=Math.hypot(m[0]-g[0], m[1]-g[1]); if(d<best){ best=d; vi=i; } });
     if(vi >= 0){
-      polyDraw.drag = { kind:'vert', i:vi };
+      // Запоминаем точку начала: если человек не потянул, а просто
+      // нажал — это выбор вершины, а не перетаскивание.
+      polyDraw.drag = { kind:'vert', i:vi, from:m, moved:false };
+      polyDraw.sel = null;
       svg.setPointerCapture(e.pointerId);
       return;
     }
@@ -8796,6 +8852,7 @@ function polyDrawBindSvg(){
       if(si >= 0){
         const changed = (polyDraw.sel !== si);
         polyDraw.sel = si;
+        polyDraw.selVert = null;
         // курсор в «Длину» — только когда выбрали ДРУГУЮ стену.
         // Иначе повторное касание той же стены сбивало бы набор.
         polyDraw.focusLen = changed;
@@ -8804,6 +8861,16 @@ function polyDrawBindSvg(){
         polyDrawPanelOnly();
         return;
       }
+    }
+    // ВНУТРИ КОНТУРА НОВЫХ ВЕРШИН НЕ БЫВАЕТ (с 2026-08-10-56).
+    // Если человек нажал внутри уже начерченной комнаты, он целился
+    // в стену, а не хотел добавить угол посреди пола. Раньше такое
+    // нажатие пристраивало точку в конец контура, и чертёж ломался
+    // от промаха в пару миллиметров.
+    if(p.length >= 3 && pdInside(m, p)){
+      polyDraw.sel = null;
+      polyDrawRender();
+      return;
     }
     polyDraw.pts.push(clamp([pdSnap(m[0]), pdSnap(m[1])]));
     pdPush();
@@ -8814,6 +8881,8 @@ function polyDrawBindSvg(){
     const dr = polyDraw && polyDraw.drag;
     if(!dr) return;
     const m = toM(e);
+    if(dr.kind === 'vert' && dr.from &&
+       Math.hypot(m[0]-dr.from[0], m[1]-dr.from[1]) > pdTol()*0.5) dr.moved = true;
     if(dr.kind === 'vert'){
       polyDraw.pts[dr.i] = clamp([pdSnap(m[0]), pdSnap(m[1])]);
     } else {
@@ -8824,7 +8893,21 @@ function polyDrawBindSvg(){
     }
     polyDrawRefresh();
   };
-  const stop = ()=>{ if(polyDraw && polyDraw.drag){ polyDraw.drag = null; pdPush(); polyDrawRender(); } };
+  const stop = ()=>{
+    if(!polyDraw || !polyDraw.drag) return;
+    const dr = polyDraw.drag;
+    polyDraw.drag = null;
+    // Нажали на вершину и не потянули — значит выбрали её.
+    // Тогда это не правка контура, и в историю писать нечего.
+    if(dr.kind === 'vert' && !dr.moved){
+      polyDraw.selVert = dr.i;
+    polyDraw.sel = null;
+      polyDrawRender();
+      return;
+    }
+    pdPush();
+    polyDrawRender();
+  };
   svg.onpointerup = stop;
   svg.onpointercancel = stop;
 }
@@ -8836,10 +8919,54 @@ function polyDrawBind(){
   on('pdClose', polyDrawClose);
   on('pdUndo', pdUndo);
   on('pdRedo', pdRedo);
+  // Очистка не спрашивает подтверждения намеренно: она отменяется
+  // стрелкой «назад», как любое другое действие. Лишний вопрос
+  // на каждое нажатие раздражает сильнее, чем случайная очистка,
+  // которую видно сразу и легко откатить.
+  on('pdClear', ()=>{
+    if(!polyDraw.pts.length) return;
+    polyDraw.pts = [];
+    polyDraw.sel = null;
+    polyDraw.selVert = null;
+    pdPush();
+    polyDrawRender();
+  });
   on('pdSave', polyDrawSave);
   on('pdDeselect', ()=>{ polyDraw.sel=null; polyDrawRender(); });
+  on('pdVertDeselect', ()=>{ polyDraw.selVert=null; polyDrawRender(); });
+  on('pdDelVert', ()=>{
+    const vi = polyDraw.selVert;
+    if(vi === null || vi === undefined) return;
+    if(polyDraw.pts.length <= 3){
+      alert('В контуре и так три точки — меньше нельзя.');
+      return;
+    }
+    polyDraw.pts.splice(vi, 1);
+    pdPush();
+    polyDraw.selVert = null;
+    polyDrawRender();
+  });
+  // Координаты точки числом: иногда проще подвинуть угол цифрой,
+  // чем целиться пальцем.
+  const vx = document.getElementById('pdVX'), vy = document.getElementById('pdVY');
+  if(vx && vy){
+    const apply = ()=>{
+      const vi = polyDraw.selVert;
+      if(vi === null || vi === undefined) return;
+      polyDraw.pts[vi] = [ calcNum(vx.value), calcNum(vy.value) ];
+      polyDrawRefresh();
+    };
+    vx.oninput = apply; vy.oninput = apply;
+    vx.onblur = ()=>{ vx.value = fmt(calcNum(vx.value)); pdPush(); };
+    vy.onblur = ()=>{ vy.value = fmt(calcNum(vy.value)); pdPush(); };
+  }
   on('pdDelPt', ()=>{
-    if(polyDraw.pts.length <= 3) return;
+    // Меньше трёх вершин — это уже не фигура. Раньше кнопка при трёх
+    // точках просто молчала, и человек не понимал, сломалось или нет.
+    if(polyDraw.pts.length <= 3){
+      alert('В контуре и так три стены — меньше нельзя. Сотрите контур целиком и начертите заново.');
+      return;
+    }
     polyDraw.pts.splice((polyDraw.sel+1)%polyDraw.pts.length, 1);
     pdPush();
     polyDraw.sel = null; polyDrawRender();
