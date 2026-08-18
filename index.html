@@ -2804,7 +2804,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-10-51';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-10-52';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -8171,9 +8171,27 @@ function polyFromShape(shape, d){
 }
 
 // ---------- план помещения в масштабе ----------
-function roomPlanSVG(segs, dir0){
+// ЕСЛИ КОНТУР НАЧЕРЧЕН — РИСУЕМ ЕГО, А НЕ ПЕРЕСЧИТАННЫЙ (с 2026-08-10-52).
+//
+// Раньше план всегда собирался заново из длин и углов через polyChain.
+// Беда в том, что этот пересчёт всегда обходит фигуру против часовой
+// стрелки: если человек обвёл комнату ПО часовой, план выходил
+// зеркальным. Площадь и периметр при этом верные — смета считалась
+// правильно, — а картинка врала, и выглядело это как «перевернуло
+// контур при нажатии Готово».
+//
+// Доказано числами 17 августа 2026: [[0,0],[0,5],[2,5],[2,2],[4,2],[4,0]]
+// после пересчёта давало [[0,0],[0,5],[-2,5],[-2,2],[-4,2],[-4,0]].
+//
+// Начерченные вершины (dims.pts) — источник правды: их поставил человек.
+// Длины и углы из них выводятся, а не наоборот. Поэтому если точки есть,
+// план рисуется по ним — и уже сохранённые кривые контуры чинятся сами,
+// без перечерчивания.
+function roomPlanSVG(segs, dir0, drawn){
   const okClosed = polyClosed(segs);
-  const pts = polyChain(segs, dir0).pts;
+  const pts = (Array.isArray(drawn) && drawn.length >= 3)
+    ? drawn.concat([drawn[0]])     // polyChain отдаёт замкнутую цепочку — повторяем вид
+    : polyChain(segs, dir0).pts;
   if(pts.length < 3) return '';
   const xs = pts.map(p=>p[0]), ys = pts.map(p=>p[1]);
   const w = Math.max(...xs)-Math.min(...xs), h = Math.max(...ys)-Math.min(...ys);
@@ -8186,7 +8204,8 @@ function roomPlanSVG(segs, dir0){
   const X = v=> +(ox + v*k).toFixed(1);
   const Y = v=> +(oy - v*k).toFixed(1);
 
-  const ring = polyPoints(segs, dir0);
+  // кольцо — те же вершины без замыкающего повтора
+  const ring = (Array.isArray(drawn) && drawn.length >= 3) ? drawn : polyPoints(segs, dir0);
   const bad = polySelfIntersects(ring);
   const cx = ring.reduce((s,p)=>s+p[0],0)/Math.max(ring.length,1);
   const cy = ring.reduce((s,p)=>s+p[1],0)/Math.max(ring.length,1);
@@ -8241,7 +8260,7 @@ function renderPolyEditor(room){
       Контур чертится по сетке: нажимайте узлы, обходя комнату по кругу.
       Стену можно тянуть пальцем, а нажатие на неё открывает поля длины и угла.
     </div>
-    <div class="wall-diagram">${roomPlanSVG(segs, d.dir0)}</div>
+    <div class="wall-diagram">${roomPlanSVG(segs, d.dir0, polyDrawPts(d))}</div>
     <div class="poly-actions">
       <button class="btn btn-primary" data-poly-draw="${room.id}">${segs.length ? 'Изменить контур' : 'Начертить контур'}</button>
     </div>
@@ -8311,15 +8330,51 @@ function polyDrawClose(){
   const ov = document.getElementById('polyDrawOverlay');
   if(ov){ ov.style.display='none'; ov.innerHTML=''; }
 }
-const pdX = mx=> PD_PAD + mx/polyDraw.step*PD_SC;
-const pdY = my=> PD_PAD + (POLY_ROWS-1 - my/polyDraw.step)*PD_SC;
+// ВИДИМАЯ ОБЛАСТЬ ХОЛСТА СЧИТАЕТСЯ ПО СОДЕРЖИМОМУ (с 2026-08-10-52).
+//
+// Раньше сетка была жёсткой: 14 на 11 узлов от нуля, и всё, что вышло
+// за них, пропадало с экрана. А выйти легко: длину стены и угол можно
+// задать числом, и вершина уезжает куда угодно — ограничение стояло
+// только на перетаскивание пальцем. В боевом проекте так и вышло:
+// у контура из 18 точек нижняя вершина оказалась на -0.34 м, то есть
+// ниже края сетки, и добраться до неё было нельзя ничем, даже
+// прокруткой: на картинке её просто не существовало.
+//
+// Теперь область охватывает и сетку по умолчанию, и весь контур,
+// с запасом в две клетки. Отсюда же лечатся ещё две жалобы:
+// окно перестаёт быть тесным на большом экране, а при смене шага
+// контур остаётся на месте и по центру — потому что область считается
+// заново от самого контура, а не от нуля.
+function pdView(){
+  const st = polyDraw.step, p = polyDraw.pts;
+  let minX = 0, maxX = (POLY_COLS-1)*st;
+  let minY = 0, maxY = (POLY_ROWS-1)*st;
+  if(p.length){
+    const xs = p.map(g=>g[0]), ys = p.map(g=>g[1]);
+    minX = Math.min(minX, ...xs); maxX = Math.max(maxX, ...xs);
+    minY = Math.min(minY, ...ys); maxY = Math.max(maxY, ...ys);
+  }
+  // ровно по узлам сетки плюс запас, чтобы вершина не липла к краю
+  const pad = st * 2;
+  minX = Math.floor((minX - pad)/st)*st;  maxX = Math.ceil((maxX + pad)/st)*st;
+  minY = Math.floor((minY - pad)/st)*st;  maxY = Math.ceil((maxY + pad)/st)*st;
+  const cols = Math.round((maxX-minX)/st) + 1;
+  const rows = Math.round((maxY-minY)/st) + 1;
+  return { minX, minY, maxX, maxY, cols, rows,
+           w: PD_PAD*2 + (cols-1)*PD_SC, h: PD_PAD*2 + (rows-1)*PD_SC };
+}
+
+const pdX = mx=>{ const v = pdView(); return PD_PAD + (mx - v.minX)/polyDraw.step*PD_SC; };
+const pdY = my=>{ const v = pdView(); return PD_PAD + (v.maxY - my)/polyDraw.step*PD_SC; };
 const pdSnap = v=> Math.round(v/polyDraw.step)*polyDraw.step;
 
 function polyDrawSVG(){
   const p = polyDraw.pts, st = polyDraw.step;
+  const v = pdView();
   const dots = [];
-  for(let y=0;y<POLY_ROWS;y++) for(let x=0;x<POLY_COLS;x++){
-    dots.push(`<circle cx="${PD_PAD+x*PD_SC}" cy="${PD_PAD+(POLY_ROWS-1-y)*PD_SC}" r="3.5" class="pd-dot"/>`);
+  // сетка рисуется по видимой области, а не по жёстким 14×11
+  for(let y=0;y<v.rows;y++) for(let x=0;x<v.cols;x++){
+    dots.push(`<circle cx="${PD_PAD+x*PD_SC}" cy="${PD_PAD+y*PD_SC}" r="3.5" class="pd-dot"/>`);
   }
   let shape = '', hit = '', lbls = '';
   if(p.length >= 2){
@@ -8338,7 +8393,7 @@ function polyDrawSVG(){
     }
   }
   const verts = p.map(g=>`<circle cx="${pdX(g[0])}" cy="${pdY(g[1])}" r="7" class="pd-vert"/>`).join('');
-  return `<svg viewBox="0 0 ${PD_PAD*2+(POLY_COLS-1)*PD_SC} ${PD_PAD*2+(POLY_ROWS-1)*PD_SC}" id="polyDrawSvg" class="pd-svg">
+  return `<svg viewBox="0 0 ${v.w} ${v.h}" id="polyDrawSvg" class="pd-svg">
     ${dots.join('')}${shape}${hit}${verts}${lbls}</svg>`;
 }
 
@@ -8484,14 +8539,25 @@ function pdDistToSeg(px,py,a,b){
 function polyDrawBindSvg(){
   const svg = document.getElementById('polyDrawSvg');
   if(!svg) return;
+  // Обратный перевод — из точек картинки в метры. Считаем от видимой
+  // области, иначе после её сдвига палец ставил бы точку не туда,
+  // куда человек ткнул.
   const toM = e=>{
+    const v = pdView();
     const r = svg.getBoundingClientRect(), vb = svg.viewBox.baseVal;
     const x = (e.clientX-r.left)/r.width*vb.width;
     const y = (e.clientY-r.top)/r.height*vb.height;
-    return [ (x-PD_PAD)/PD_SC*polyDraw.step, (POLY_ROWS-1-(y-PD_PAD)/PD_SC)*polyDraw.step ];
+    return [ v.minX + (x-PD_PAD)/PD_SC*polyDraw.step,
+             v.maxY - (y-PD_PAD)/PD_SC*polyDraw.step ];
   };
-  const maxX = (POLY_COLS-1)*polyDraw.step, maxY = (POLY_ROWS-1)*polyDraw.step;
-  const clamp = g=>[ Math.min(Math.max(g[0],0),maxX), Math.min(Math.max(g[1],0),maxY) ];
+  // Границы перетаскивания — по видимой области, а не по жёсткой сетке.
+  // Прежний зажим в 0..(POLY_ROWS-1)*step был ещё и однобоким: он держал
+  // палец, но не мешал вершине уехать за край от заданной числом длины.
+  const clamp = g=>{
+    const v = pdView();
+    return [ Math.min(Math.max(g[0], v.minX), v.maxX),
+             Math.min(Math.max(g[1], v.minY), v.maxY) ];
+  };
 
   svg.onpointerdown = e=>{
     // Первое касание при открытой панели стены только закрывает её.
