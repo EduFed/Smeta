@@ -2909,7 +2909,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-18-83';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-18-84';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -8529,6 +8529,7 @@ const PD_HIST_MAX = 60;
 
 function pdPush(){
   if(!polyDraw) return;
+  pdZamorozit();            // правка не должна двигать холст сама
   // всё, что было впереди текущего места, обрезаем: после новой правки
   // возвращаться некуда
   polyDraw.hist = polyDraw.hist.slice(0, polyDraw.hi + 1);
@@ -8643,12 +8644,17 @@ function pdView(){
   // что он выбрал, и ничего не пересчитываем сами. Пока не трогал,
   // область считается по контуру, как раньше.
   if(polyDraw.view){
+    // РАЗМЕР ХОЛСТА СЧИТАЕМ ТОЧНО, А НЕ ЦЕЛЫМИ КЛЕТКАМИ.
+    // Раньше здесь округлялось до целого числа клеток — и приближение
+    // шло скачками: мелкие повороты колеса пропадали, а потом холст
+    // прыгал на целую клетку. Владелец: «приближение слишком резкое».
+    // Клетки нужны только чтобы разложить точки сетки, ширина холста
+    // от них не зависит.
     const vw = polyDraw.view, st0 = polyDraw.step;
-    const cols = Math.max(2, Math.round(vw.w/st0) + 1);
-    const rows = Math.max(2, Math.round(vw.h/st0) + 1);
     return { minX: vw.x, minY: vw.y, maxX: vw.x + vw.w, maxY: vw.y + vw.h,
-             cols, rows,
-             w: PD_PAD*2 + (cols-1)*PD_SC, h: PD_PAD*2 + (rows-1)*PD_SC };
+             cols: Math.max(2, Math.round(vw.w/st0) + 1),
+             rows: Math.max(2, Math.round(vw.h/st0) + 1),
+             w: PD_PAD*2 + (vw.w/st0)*PD_SC, h: PD_PAD*2 + (vw.h/st0)*PD_SC };
   }
   const st = polyDraw.step, p = polyDraw.pts;
   let minX, maxX, minY, maxY;
@@ -8693,6 +8699,12 @@ const pdSnap = v=> Math.round(v/polyDraw.step)*polyDraw.step;
 // Держим ту точку, на которую человек смотрит: иначе при каждом
 // повороте колеса чертёж уезжает из-под курсора.
 function pdZoomAt(mx, my, factor){
+  // ЧИСЛО ОБЯЗАНО БЫТЬ ЧИСЛОМ. Холст перерисовывается прямо во время
+  // жеста, и если пересчёт пальца в метры попадёт на миг между старой
+  // и новой картинкой, оттуда придёт NaN. Один такой NaN портит вид
+  // целиком, и чертёж пропадает совсем — а починить его можно только
+  // кнопкой «вписать», о которой в этот момент никто не думает.
+  if(!Number.isFinite(mx) || !Number.isFinite(my) || !Number.isFinite(factor)) return;
   const v = pdView();
   const w0 = v.maxX - v.minX, h0 = v.maxY - v.minY;
   const MIN = polyDraw.step * 3, MAX = polyDraw.step * 200;
@@ -8705,6 +8717,7 @@ function pdZoomAt(mx, my, factor){
 
 // Подвинуть холст на столько-то метров.
 function pdPan(dx, dy){
+  if(!Number.isFinite(dx) || !Number.isFinite(dy)) return;   // см. pdZoomAt
   const v = pdView();
   polyDraw.view = { x: v.minX - dx, y: v.minY - dy,
                     w: v.maxX - v.minX, h: v.maxY - v.minY };
@@ -8713,14 +8726,33 @@ function pdPan(dx, dy){
 // Вернуться к автоматическому виду — «вписать контур».
 function pdFit(){ polyDraw.view = null; }
 
+// ЗАМОРОЗИТЬ ТЕКУЩИЙ ВИД. Владелец: «после начала установки первой линии
+// идёт резкое приближение, этого не нужно, зум не нужен автоматический».
+// Пока вид не задан, область считается по контуру — и первая же стена
+// заставляла холст скакнуть с обычной сетки на облегание двух точек.
+// Теперь любая правка сначала запоминает то, что человек видит,
+// и дальше вид меняет только он сам: щипком, колесом или кнопкой
+// «вписать».
+function pdZamorozit(){
+  if(!polyDraw || polyDraw.view) return;
+  const v = pdView();
+  polyDraw.view = { x:v.minX, y:v.minY, w:v.maxX-v.minX, h:v.maxY-v.minY };
+}
+
 function polyDrawSVG(){
   const p = polyDraw.pts, st = polyDraw.step;
   const v = pdView();
   const dots = [];
-  // сетка рисуется по видимой области, а не по жёстким 14×11
-  for(let y=0;y<v.rows;y++) for(let x=0;x<v.cols;x++){
-    dots.push(`<circle cx="${PD_PAD+x*PD_SC}" cy="${PD_PAD+y*PD_SC}" r="3.5" class="pd-dot"/>`);
-  }
+  // ТОЧКИ СЕТКИ СТАВИМ ПО МЕТРАМ. Раньше они шли по номеру клетки
+  // от края холста — это работало, только пока края области сами лежали
+  // ровно на сетке. После плавного приближения это уже не так:
+  // край может прийтись на середину клетки, и точки поехали бы.
+  const g0x = Math.ceil(v.minX/st - 1e-6)*st, g0y = Math.ceil(v.minY/st - 1e-6)*st;
+  const kX = mx => PD_PAD + (mx - v.minX)/st*PD_SC;
+  const kY = my => PD_PAD + (v.maxY - my)/st*PD_SC;
+  for(let mx=g0x; mx<=v.maxX+1e-9 && dots.length<4000; mx+=st)
+    for(let my=g0y; my<=v.maxY+1e-9 && dots.length<4000; my+=st)
+      dots.push(`<circle cx="${kX(mx).toFixed(1)}" cy="${kY(my).toFixed(1)}" r="3.5" class="pd-dot"/>`);
   let shape = '', hit = '', lbls = '';
   if(p.length >= 2){
     const pl = p.map(g=>pdX(g[0])+','+pdY(g[1])).join(' ');
@@ -9500,15 +9532,29 @@ function polyDrawBindSvg(){
       polyDrawRender();
       return;
     }
-    polyDraw.pts.push(clamp([pdSnap(m[0]), pdSnap(m[1])]));
-    pdPush();
-    polyDraw.sel = null;
-    polyDrawRender();
+    // НАЖАЛ И ПОТЯНУЛ — ЭТО ПЕРЕМЕЩЕНИЕ ХОЛСТА, а не новая точка.
+    // Точку ставим, только если человек не потянул: тогда это касание,
+    // а не жест. Раньше двигать холст можно было лишь двумя пальцами,
+    // и на мыши перемещения не было вовсе.
+    polyDraw.drag = { kind:'holst', from:m, sEkr:[e.clientX, e.clientY], moved:false };
+    svg.setPointerCapture(e.pointerId);
   };
   svg.onpointermove = e=>{
     const dr = polyDraw && polyDraw.drag;
     if(!dr) return;
     const m = toM(e);
+    if(dr.kind === 'holst'){
+      if(!dr.moved &&
+         Math.hypot(e.clientX-dr.sEkr[0], e.clientY-dr.sEkr[1]) > 6) dr.moved = true;
+      if(dr.moved){
+        // Держим под пальцем ту точку, за которую взялись: сдвигаем вид
+        // ровно на столько, на сколько она уехала. После сдвига палец
+        // снова окажется над ней — счёт сам себя поправляет.
+        pdPan(m[0]-dr.from[0], m[1]-dr.from[1]);
+        polyDrawRefresh();
+      }
+      return;
+    }
     if(dr.kind === 'vert' && dr.from &&
        Math.hypot(m[0]-dr.from[0], m[1]-dr.from[1]) > pdTol()*0.5) dr.moved = true;
     if(dr.kind === 'vert'){
@@ -9525,6 +9571,16 @@ function polyDrawBindSvg(){
     if(!polyDraw || !polyDraw.drag) return;
     const dr = polyDraw.drag;
     polyDraw.drag = null;
+    if(dr.kind === 'holst'){
+      // не потянул — значит это было касание, ставим точку
+      if(!dr.moved){
+        polyDraw.pts.push(clamp([pdSnap(dr.from[0]), pdSnap(dr.from[1])]));
+        pdPush();
+        polyDraw.sel = null;
+      }
+      polyDrawRender();
+      return;
+    }
     // Нажали на вершину и не потянули — значит выбрали её.
     // Тогда это не правка контура, и в историю писать нечего.
     if(dr.kind === 'vert' && !dr.moved){
@@ -9545,7 +9601,13 @@ function polyDrawBindSvg(){
   svg.onwheel = e=>{
     e.preventDefault();
     const m = toM(e);
-    pdZoomAt(m[0], m[1], e.deltaY < 0 ? 1.2 : 1/1.2);
+    // Шаг был 1,2 — это 20% за один щелчок, слишком грубо.
+    // Считаем по величине прокрутки, а не по факту «крутанули»:
+    // тачпад шлёт много мелких событий, мышь — редкие крупные.
+    const shchelchki = e.deltaMode === 1 ? e.deltaY/3
+                     : e.deltaMode === 2 ? e.deltaY : e.deltaY/100;
+    const f = Math.pow(1.07, -Math.max(-4, Math.min(4, shchelchki)));
+    pdZoomAt(m[0], m[1], f);
     polyDrawRefresh();
   };
 
