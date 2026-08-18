@@ -2893,7 +2893,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-10-62';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-10-64';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -8322,8 +8322,11 @@ function roomPlanSVG(segs, dir0, drawn){
     const mx=(p[0]+q[0])/2, my=(p[1]+q[1])/2;
     let nx = -(q[1]-p[1])/L, ny = (q[0]-p[0])/L;
     if((mx-cx)*nx + (my-cy)*ny < 0){ nx=-nx; ny=-ny; }
+    // Без округления до сантиметра: на схеме должны стоять те же числа,
+    // что человек задал в окне черчения. Округление там уже стоило
+    // потери миллиметров (см. fmtLen).
     return `<text x="${X(mx)+nx*13}" y="${Y(my)-ny*13}" text-anchor="middle"
-      dominant-baseline="central" class="plan-lbl">${fmt(L)}</text>`;
+      dominant-baseline="central" class="plan-lbl">${fmtLen(L)}</text>`;
   }).join('');
 
   return `<svg viewBox="0 0 ${W} ${H}" width="100%" class="room-plan ${bad?'bad':''}">
@@ -8697,25 +8700,48 @@ function pdAngle(i){
   if(n < 3) return 90;
   return polySegsFromPts(p)[i].a;
 }
-// длина стены i задана числом: конечная вершина едет вдоль этой стены
+// ПРАВКА ДЛИНЫ ДВИГАЕТ ВСЮ ПОСЛЕДУЮЩУЮ ЦЕПОЧКУ (с 2026-08-10-63).
+//
+// Раньше двигалась ОДНА вершина — конец правимой стены. Остальные
+// стояли на месте, и геометрия вокруг перекашивалась: у прямоугольника
+// 3×2 правка первой стены с 3 на 4 давала углы 63.4 и 116.6 вместо
+// прямых, а соседняя стена сама вырастала с 2 до 2.236.
+// Владелец поймал это на боевом контуре: «меняю размеры — прошлые
+// углы меняются сами».
+//
+// Теперь стена удлиняется, а всё, что идёт за ней, переезжает следом
+// как жёсткая рамка: длины и углы остальных стен не меняются ни на
+// градус. Зазор берёт на себя замыкающая стена — та, которую человек
+// не задавал (она и рисуется пунктиром).
+//
+// Начальную точку контура не трогаем: иначе поехала бы вся фигура.
 function pdSetLen(i, L){
   const p = polyDraw.pts, n = p.length, j = (i+1)%n;
   const cur = Math.hypot(p[j][0]-p[i][0], p[j][1]-p[i][1]);
   if(!(L > 0) || !(cur > 0.0001)) return;
   const ux=(p[j][0]-p[i][0])/cur, uy=(p[j][1]-p[i][1])/cur;
-  p[j] = [ p[i][0]+ux*L, p[i][1]+uy*L ];
+  const dx = ux*(L-cur), dy = uy*(L-cur);
+  for(let t = j; t !== 0; t = (t+1)%n){
+    p[t] = [ p[t][0]+dx, p[t][1]+dy ];
+  }
 }
-// угол в конце стены i: следующая вершина поворачивается вокруг конца стены
+// ПРАВКА УГЛА ПОВОРАЧИВАЕТ ВСЮ ПОСЛЕДУЮЩУЮ ЦЕПОЧКУ — по той же
+// причине, что и правка длины. Раньше поворачивалась одна вершина,
+// и все углы после неё разъезжались.
+// Теперь стена за углом поворачивается вместе со всем хвостом контура:
+// заданные размеры и углы остаются такими, какими их задали.
 function pdSetAngle(i, ang){
   const p = polyDraw.pts, n = p.length;
   if(n < 3 || !(ang > 0) || ang >= 360) return;
-  const j=(i+1)%n, k=(i+2)%n;
+  const j=(i+1)%n;
   const cur = polySegsFromPts(p)[i].a;
   let sa=0; for(let t=0;t<n;t++){ const u=(t+1)%n; sa += p[t][0]*p[u][1]-p[u][0]*p[t][1]; }
   const delta = (cur - ang) * (sa >= 0 ? 1 : -1) * Math.PI/180;
-  const c=p[j], dx=p[k][0]-c[0], dy=p[k][1]-c[1];
-  const cs=Math.cos(delta), sn=Math.sin(delta);
-  p[k] = [ c[0]+dx*cs-dy*sn, c[1]+dx*sn+dy*cs ];
+  const c = p[j].slice(), cs = Math.cos(delta), sn = Math.sin(delta);
+  for(let t = (j+1)%n; t !== 0; t = (t+1)%n){
+    const dx = p[t][0]-c[0], dy = p[t][1]-c[1];
+    p[t] = [ c[0]+dx*cs-dy*sn, c[1]+dx*sn+dy*cs ];
+  }
 }
 
 function polyDrawPanel(){
