@@ -2157,6 +2157,9 @@
   .pd-svg .pd-dot.on{fill:var(--orange);opacity:1;}
   .pd-svg .pd-shape{fill:currentColor;fill-opacity:.08;stroke:currentColor;stroke-width:2.5;stroke-linejoin:round;}
   .pd-svg .pd-line{fill:none;stroke:currentColor;stroke-width:2.5;stroke-linejoin:round;}
+  /* стена, которой человек не чертил: контур замкнулся сам */
+  .pd-svg .pd-closing{stroke:currentColor;stroke-width:2.5;stroke-dasharray:7 5;opacity:.55;}
+  .pd-units-l{margin-left:12px;}
   .pd-svg .pd-lbl{font-family:'JetBrains Mono',monospace;font-size:10px;fill:currentColor;opacity:.8;}
   .pd-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:12px 20px 16px;border-top:1px solid var(--paper-line);background:var(--paper);}
   .pd-stats{font-size:13px;color:var(--ink);}
@@ -2882,7 +2885,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-10-59';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-10-60';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -8398,6 +8401,28 @@ function polyDir0FromPts(pts){
 // Сетка нужна только для прилипания при перетаскивании.
 let polyDraw = null;   // {roomId, pts, step, sel, drag}
 
+// ЕДИНИЦЫ ВВОДА (с 2026-08-10-60).
+// Мастер меряет рулеткой в сантиметрах, проектировщик пишет в миллиметрах,
+// а площадь считается в метрах. Заставлять переводить в уме — лишний шаг,
+// на котором ошибаются. Храним ВСЕГДА метры, показываем и принимаем
+// в выбранных единицах.
+const PD_UNITS = { m: { k:1, label:'м', dec:3 }, cm: { k:100, label:'см', dec:1 }, mm: { k:1000, label:'мм', dec:0 } };
+function pdUnit(){ return PD_UNITS[(polyDraw && polyDraw.unit) || 'm'] || PD_UNITS.m; }
+// метры -> выбранные единицы (для показа)
+function pdToU(m){ const u = pdUnit(); return Math.round(m * u.k * 1000)/1000; }
+// выбранные единицы -> метры (после ввода)
+function pdFromU(v){ return v / pdUnit().k; }
+// ТОЧНОСТЬ ДО МИЛЛИМЕТРА. Обычный fmt округляет до сотых — то есть
+// до сантиметра: заданные 1.234 м возвращались в поле как 1,23,
+// и следующая правка брала уже огрублённое значение. Для размеров
+// контура этого мало.
+function fmtLen(m){
+  const u = pdUnit();
+  const v = m * u.k;
+  return (Math.round(v * Math.pow(10,u.dec)) / Math.pow(10,u.dec))
+           .toLocaleString('ru-RU', { maximumFractionDigits: u.dec });
+}
+
 const POLY_STEPS = [0.25, 0.5, 1];
 const POLY_COLS = 14, POLY_ROWS = 11;
 const PD_SC = 34, PD_PAD = 18;
@@ -8409,6 +8434,7 @@ function polyDrawOpen(room){
     roomId: room.id,
     pts: stored ? stored.map(p=>p.slice()) : [],
     step: num(d.step) || 0.5,
+    unit: d.unit || 'm',
     sel: null, drag: null,
     hist: [], hi: -1        // история для стрелок «отменить / вернуть»
   };
@@ -8489,7 +8515,7 @@ function pdNextPanel(){
     <div class="pd-next">
       <div class="pd-next-h">Следующая стена — числом</div>
       <div class="pd-next-r">
-        <label>Длина, м<input type="text" inputmode="decimal" id="pdNextLen" placeholder="напр. 3.2 или 1.2+0.85"></label>
+        <label>Длина, ${pdUnit().label}<input type="text" inputmode="decimal" id="pdNextLen" placeholder="напр. 3.2 или 1.2+0.85"></label>
         <label>${first ? 'Направление, °' : 'Угол в комнате, °'}<input type="text" inputmode="decimal" id="pdNextAng" value="${first ? '0' : '90'}"></label>
         <button class="btn btn-outline" id="pdNextAdd">Поставить</button>
       </div>
@@ -8503,7 +8529,7 @@ function pdNextBind(){
   const add = document.getElementById('pdNextAdd');
   if(!add) return;
   const go = ()=>{
-    const L = calcNum((document.getElementById('pdNextLen')||{}).value);
+    const L = pdFromU(calcNum((document.getElementById('pdNextLen')||{}).value));
     const A = calcNum((document.getElementById('pdNextAng')||{}).value);
     const pt = pdNextPoint(L, A);
     if(!pt) return;
@@ -8588,8 +8614,17 @@ function polyDrawSVG(){
   let shape = '', hit = '', lbls = '';
   if(p.length >= 2){
     const pl = p.map(g=>pdX(g[0])+','+pdY(g[1])).join(' ');
+    // ЗАМЫКАЮЩАЯ СТЕНА — ПУНКТИРОМ.
+    // Владелец поставил третью точку и увидел треугольник там, где ждал
+    // ломаную: контур комнаты замыкается сам, и последняя стена рисуется
+    // такой же сплошной, как начерченные. Отличить «я это начертил»
+    // от «оно дорисовалось само» было нельзя.
+    // Теперь замыкающая — пунктиром: видно, что она появилась сама,
+    // и понятно, что контур уже замкнут.
     shape = p.length >= 3
-      ? `<polygon points="${pl}" class="pd-shape"/>`
+      ? `<polygon points="${pl}" class="pd-shape"/>` +
+        `<line x1="${pdX(p[p.length-1][0])}" y1="${pdY(p[p.length-1][1])}"
+               x2="${pdX(p[0][0])}" y2="${pdY(p[0][1])}" class="pd-closing"/>`
       : `<polyline points="${pl}" class="pd-line"/>`;
     const last = p.length >= 3 ? p.length : p.length-1;
     for(let i=0;i<last;i++){
@@ -8598,7 +8633,7 @@ function polyDrawSVG(){
       hit += `<line x1="${pdX(a[0])}" y1="${pdY(a[1])}" x2="${pdX(b[0])}" y2="${pdY(b[1])}"
         class="pd-side ${polyDraw.sel===i?'on':''}"/>`;
       if(L > 0.01) lbls += `<text x="${(pdX(a[0])+pdX(b[0]))/2}" y="${(pdY(a[1])+pdY(b[1]))/2 - 7}"
-        text-anchor="middle" class="pd-lbl ${polyDraw.sel===i?'on':''}">${fmt(L)}</text>`;
+        text-anchor="middle" class="pd-lbl ${polyDraw.sel===i?'on':''}">${fmtLen(L)}</text>`;
     }
   }
   const verts = p.map(g=>`<circle cx="${pdX(g[0])}" cy="${pdY(g[1])}" r="7" class="pd-vert"/>`).join('');
@@ -8659,8 +8694,8 @@ function polyDrawPanel(){
       <div class="pd-panel">
         <div class="pd-panel-h">Точка ${vi+1}<button class="btn-icon" id="pdVertDeselect" title="Снять выделение">✕</button></div>
         <div class="pd-panel-r pd-vert-xy">
-          <label>X, м<input type="text" inputmode="decimal" id="pdVX" value="${escapeAttr(fmt(g[0]))}"></label>
-          <label>Y, м<input type="text" inputmode="decimal" id="pdVY" value="${escapeAttr(fmt(g[1]))}"></label>
+          <label>X, ${pdUnit().label}<input type="text" inputmode="decimal" id="pdVX" value="${escapeAttr(fmtLen(g[0]))}"></label>
+          <label>Y, ${pdUnit().label}<input type="text" inputmode="decimal" id="pdVY" value="${escapeAttr(fmtLen(g[1]))}"></label>
         </div>
         <button class="add-link" id="pdDelVert" ${few?'disabled':''}>Удалить эту точку</button>
         ${few ? '<div class="pd-next-hint">В контуре три точки — меньше нельзя</div>' : ''}
@@ -8674,7 +8709,7 @@ function polyDrawPanel(){
     <div class="pd-panel">
       <div class="pd-panel-h">Стена ${i+1}<button class="btn-icon" id="pdDeselect" title="Снять выделение">✕</button></div>
       <div class="pd-panel-r">
-        <label>Длина, м<input type="text" inputmode="decimal" id="pdLen" value="${escapeAttr(fmt(L))}"></label>
+        <label>Длина, ${pdUnit().label}<input type="text" inputmode="decimal" id="pdLen" value="${escapeAttr(fmtLen(L))}"></label>
         <label>Угол в конце, °<input type="text" inputmode="decimal" id="pdAng" value="${escapeAttr(fmt(pdAngle(i)))}"></label>
       </div>
       <button class="add-link pd-del-side" id="pdDelPt">Удалить эту стену</button>
@@ -8704,6 +8739,8 @@ function polyDrawRender(){
       <div class="pd-steps">
         <span>Шаг сетки</span>
         ${POLY_STEPS.map(v=>`<button class="pd-step ${v===polyDraw.step?'on':''}" data-pd-step="${v}">${fmt(v)} м</button>`).join('')}
+        <span class="pd-units-l">Ввод в</span>
+        ${Object.keys(PD_UNITS).map(u=>`<button class="pd-step ${u===(polyDraw.unit||'m')?'on':''}" data-pd-unit="${u}">${PD_UNITS[u].label}</button>`).join('')}
       </div>
       <div class="pd-canvas">${polyDrawSVG()}</div>
       <div class="pd-aside">${polyDrawPanel()}${pdNextPanel()}</div>
@@ -8958,12 +8995,12 @@ function polyDrawBind(){
     const apply = ()=>{
       const vi = polyDraw.selVert;
       if(vi === null || vi === undefined) return;
-      polyDraw.pts[vi] = [ calcNum(vx.value), calcNum(vy.value) ];
+      polyDraw.pts[vi] = [ pdFromU(calcNum(vx.value)), pdFromU(calcNum(vy.value)) ];
       polyDrawRefresh();
     };
     vx.oninput = apply; vy.oninput = apply;
-    vx.onblur = ()=>{ vx.value = fmt(calcNum(vx.value)); pdPush(); };
-    vy.onblur = ()=>{ vy.value = fmt(calcNum(vy.value)); pdPush(); };
+    vx.onblur = ()=>{ vx.value = fmtLen(pdFromU(calcNum(vx.value))); pdPush(); };
+    vy.onblur = ()=>{ vy.value = fmtLen(pdFromU(calcNum(vy.value))); pdPush(); };
   }
   on('pdDelPt', ()=>{
     // Меньше трёх вершин — это уже не фигура. Раньше кнопка при трёх
@@ -8976,6 +9013,9 @@ function polyDrawBind(){
     pdPush();
     polyDraw.sel = null; polyDrawRender();
   });
+  ov.querySelectorAll('[data-pd-unit]').forEach(b=>{
+    b.onclick = ()=>{ polyDraw.unit = b.getAttribute('data-pd-unit'); polyDrawRender(); };
+  });
   ov.querySelectorAll('[data-pd-step]').forEach(b=>{
     b.onclick = ()=>{ polyDraw.step = num(b.getAttribute('data-pd-step')); polyDrawRender(); };
   });
@@ -8983,12 +9023,14 @@ function polyDrawBind(){
   if(li){
     // Считаем на лету, чтобы стена ехала прямо под пальцами.
     // Недописанное «1.2+» calcNum вернёт как 1.2 — поле не обнулится.
-    li.oninput = ()=>{ pdSetLen(polyDraw.sel, calcNum(li.value)); polyDrawRefresh(); };
+    li.oninput = ()=>{ pdSetLen(polyDraw.sel, pdFromU(calcNum(li.value))); polyDrawRefresh(); };
     // Ушли из поля — показываем ИТОГ вычисления вместо выражения:
     // человек должен видеть, что получилось, а не гадать.
     li.onblur = ()=>{
       const v = calcNum(li.value);
-      if(v > 0) li.value = fmt(v);
+      // показываем итог с точностью до миллиметра и в тех же единицах,
+      // в которых человек вводил
+      if(v > 0) li.value = fmtLen(pdFromU(v));
       pdPush();      // правка числом — тоже шаг, его должна отменять стрелка
     };
     // Фокус ставим только сразу после выбора стены. Делать это на каждой
