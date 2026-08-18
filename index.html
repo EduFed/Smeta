@@ -2909,7 +2909,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-18-80';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-18-81';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -8886,6 +8886,21 @@ function polyDrawSVG(){
         const v1 = uniq[k], v2 = uniq[k+1];
         const dl = Math.abs(v2 - v1);
         if(dl < 0.005) continue;
+        // ЧЕЙ ЭТО ОТРЕЗОК. Засечки цепи стоят на концах стен, поэтому
+        // между двумя соседними засечками либо ровно одна стена, либо
+        // ЗАЗОР — пустое место между двумя стенами края.
+        const svoya = steny.find(st=>{
+          const s1 = gorizont ? Math.min(st.a[0],st.b[0]) : Math.min(st.a[1],st.b[1]);
+          const s2 = gorizont ? Math.max(st.a[0],st.b[0]) : Math.max(st.a[1],st.b[1]);
+          return s1 <= v1 + EPS && s2 >= v2 - EPS;
+        });
+        // ЗАЗОР НЕ ПОДПИСЫВАЕМ. Владелец: «1,19 рассчитал сам, не нужно,
+        // выведи то что есть». Число зазора — не размер стены, а разность
+        // двух чисел: такой стены в комнате нет, мерить её нечем, и она
+        // отнимает место у настоящего размера — там должен был стоять
+        // 1,05 от стены короба. Засечка на этом месте остаётся: она
+        // показывает, где кончилась одна стена и началась другая.
+        if(!svoya) continue;
         const txt = fmtLen(dl);
         // число всегда повёрнуто вдоль размерной линии, поэтому вдоль неё
         // оно занимает w, а поперёк h — на любой из четырёх сторон
@@ -8914,7 +8929,7 @@ function polyDrawSVG(){
           // ничего не нашли — число остаётся снаружи, как было раньше
           if(glub){ const [x,y] = gde(glub); zanyat(x, y, shir, vys); }
         }
-        otrezki.push({ k, v1, v2, txt, w, h, seredina, glub });
+        otrezki.push({ k, v1, v2, txt, w, h, seredina, glub, svoya });
       }
 
       // до какой глубины внутри контура тянуть выносную в каждой точке
@@ -8966,7 +8981,7 @@ function polyDrawSVG(){
           : `<line x1="${uroven-4}" y1="${c+4}" x2="${uroven+4}" y2="${c-4}" class="pd-dim-tick"/>`;
       });
 
-      otrezki.forEach(({ v1, v2, txt, w, h, seredina, glub })=>{
+      otrezki.forEach(({ txt, w, h, seredina, glub, svoya })=>{
         // ЧИСЛО НАД ЛИНИЕЙ — со стороны контура, отступ 9 точек.
         // Заведённое внутрь — на своей глубине от границы контура.
         const poz = glub ? kray - glub*storonaZnak : uroven - 9*storonaZnak;
@@ -8978,12 +8993,7 @@ function polyDrawSVG(){
         // ПОВОРОТ вдоль линии: вертикальные размеры читаются снизу вверх
         const povorot = gorizont ? '' : ` transform="rotate(-90, ${tx}, ${ty})"`;
 
-        const svoya = steny.find(st=>{
-          const s1 = gorizont ? Math.min(st.a[0],st.b[0]) : Math.min(st.a[1],st.b[1]);
-          const s2 = gorizont ? Math.max(st.a[0],st.b[0]) : Math.max(st.a[1],st.b[1]);
-          return s1 <= v1 + EPS && s2 >= v2 - EPS;
-        });
-        const on = svoya && polyDraw.sel === svoya.i;
+        const on = polyDraw.sel === svoya.i;
         // ОТРЕЗКИ ЦЕПИ НЕ ПРОРЕЖИВАЕМ. Правило «такое же число рядом уже
         // написано» ставилось против дублей между цепью и стеной в глубине.
         // Внутри одной цепи все отрезки разные по смыслу, даже когда числа
@@ -8997,7 +9007,7 @@ function polyDrawSVG(){
                      id="pdLblInput" inputmode="decimal" value="${escapeAttr(txt)}">
             </foreignObject></g>`;
         }else{
-          lbls += `<g ${svoya?`data-pd-lbl="${svoya.i}"`:''} class="pd-lbl-g">
+          lbls += `<g data-pd-lbl="${svoya.i}" class="pd-lbl-g">
             <rect x="${tx-w/2}" y="${ty-h/2}" width="${w}" height="${h}" class="pd-lbl-bg"${povorot}/>
             <text x="${tx}" y="${ty}" text-anchor="middle" dominant-baseline="central"
                   class="pd-lbl"${povorot}>${txt}</text></g>`;
