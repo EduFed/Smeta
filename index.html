@@ -282,18 +282,17 @@
   .btn-icon{background:none;border:none;color:var(--ink-soft);cursor:pointer;font-size:14px;padding:2px 6px;}
   .btn-icon:hover{color:var(--red);}
 
-  .proj-list{display:flex;flex-direction:column;gap:4px;max-height:38vh;overflow-y:auto;}
-  /* ПРОКРУТКА ВНУТРИ ПРОКРУТКИ — ТОЛЬКО НА ШИРОКОМ ЭКРАНЕ (сборка 2026-08-10-03).
-     На компьютере панель видна целиком и никуда не двигается, поэтому предел
-     в 38% высоты полезен: список проектов не отжимает вниз кнопки «Настройки»
-     и «Выйти», до них не нужно тянуться прокруткой.
-     На телефоне панель и так прокручивается целиком, и второй прокруткой
-     внутри неё пользоваться нельзя: палец попадает то в список, то в панель,
-     и промах не виден заранее. Снимаем предел — прокрутка остаётся одна,
-     подвал просто уезжает под список, как и остальное содержимое. */
-  @media (max-width:1023px){
-    .proj-list{ max-height:none; overflow:visible; }
-  }
+  /* ПРОКРУТКИ ВНУТРИ ПРОКРУТКИ БОЛЬШЕ НЕТ НИГДЕ (сборка 2026-08-19-88).
+     Раньше на широком экране список проектов был ограничен 38% высоты
+     и прокручивался сам, внутри прокручивающейся панели. Замысел был
+     разумный — не отжимать вниз «Настройки» и «Выйти», — но владелец
+     сказал прямо: «жутко напрягает прокрутка в прокрутке». И он прав:
+     колесо мыши попадает то в список, то в панель, и куда именно —
+     заранее не видно.
+     Задачу, ради которой предел стоял, решает не он, а липкий подвал:
+     кнопки прижаты к низу панели и остаются на месте при любой длине
+     списка. Одна прокрутка вместо двух, и тянуться никуда не надо. */
+  .proj-list{display:flex;flex-direction:column;gap:4px;}
   /* заголовок раздела «Работаю в бригаде» в списке проектов */
   .proj-group{
     display:block;padding:14px 10px 6px;margin-top:6px;
@@ -338,7 +337,20 @@
     .proj-item .pin{opacity:.6;}
   }
 
-  .sidebar-footer{margin-top:auto;padding-top:16px;border-top:1px solid var(--sb-surface);flex-shrink:0;}
+  /* ПОДВАЛ ПАНЕЛИ ЛИПКИЙ. Он держит «Настройки» и «Выйти» на виду,
+     сколько бы ни было проектов, — и заменяет собой прежний предел
+     высоты списка. Отрицательные поля по бокам растягивают подложку
+     на всю ширину панели поверх её боковых отступов, иначе сквозь
+     края просвечивал бы уезжающий список. */
+  .sidebar-footer{
+    margin-top:auto;flex-shrink:0;
+    position:sticky; bottom:0;
+    padding:16px 20px calc(4px + env(safe-area-inset-bottom, 0px));
+    margin-left:-20px; margin-right:-20px;
+    margin-bottom:calc(-24px - env(safe-area-inset-bottom, 0px));
+    background:var(--sb-bg);
+    border-top:1px solid var(--sb-surface);
+  }
   .sb-legal{margin:8px 0 10px;font-size:11px;line-height:1.4;}
   .sb-legal a{color:var(--sb-muted);text-decoration:none;border-bottom:1px solid var(--sb-line);}
   .sb-legal a:hover{color:#FFF;border-bottom-color:var(--sb-muted);}
@@ -2910,7 +2922,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-18-87';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-19-88';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
