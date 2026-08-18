@@ -2161,6 +2161,15 @@
   .pd-svg .pd-closing{stroke:currentColor;stroke-width:2.5;stroke-dasharray:7 5;opacity:.55;}
   .pd-units-l{margin-left:12px;}
   .pd-lbl-g{cursor:pointer;}
+  /* поле правки прямо на чертеже */
+  .pd-lbl-input{
+    width:100%;height:100%;box-sizing:border-box;
+    padding:2px 6px;text-align:center;
+    border:2px solid var(--orange);border-radius:6px;
+    background:var(--white);color:var(--ink);
+    font-family:'JetBrains Mono',monospace;font-size:13px;
+    outline:none;
+  }
   .pd-svg .pd-lbl-bg{fill:var(--white);stroke:var(--paper-line);stroke-width:1;}
   .pd-lbl-g.on .pd-lbl-bg{fill:var(--orange);stroke:var(--orange);}
   /* подпись стены, которую дорисовал сам контур */
@@ -2893,7 +2902,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-10-64';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-10-67';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -8592,11 +8601,11 @@ function pdView(){
     minX = 0; maxX = (POLY_COLS-1)*st;
     minY = 0; maxY = (POLY_ROWS-1)*st;
   }
-  // Запас — одна клетка. Две было слишком щедро: у контура в полтора
-  // метра поля съедали половину холста, и чертёж снова выходил мелким.
-  // Одной хватает, чтобы вершина не липла к краю и её можно было
-  // подцепить пальцем.
-  const pad = st;
+  // Запас вокруг контура. Одной клетки хватает, чтобы вершина не липла
+  // к краю; но подписи выносятся наружу и на плотном контуре разводятся
+  // ещё дальше — значит на многоугольнике с десятком стен воздуха нужно
+  // больше, иначе числа упрутся в границу картинки.
+  const pad = st * (p.length > 8 ? 2 : 1);
   minX = Math.floor((minX - pad)/st)*st;  maxX = Math.ceil((maxX + pad)/st)*st;
   minY = Math.floor((minY - pad)/st)*st;  maxY = Math.ceil((maxY + pad)/st)*st;
   // Не даём области схлопнуться: у контура в одну стену запас должен
@@ -8647,6 +8656,7 @@ function polyDrawSVG(){
     // фигуры. Тот же приём, что на плане в карточке помещения.
     const cxm = p.reduce((t,g)=>t+g[0],0)/p.length;
     const cym = p.reduce((t,g)=>t+g[1],0)/p.length;
+    const placed = [];        // куда уже встали подписи — чтобы не налезали
     const last = p.length >= 3 ? p.length : p.length-1;
     for(let i=0;i<last;i++){
       const a = p[i], b = p[(i+1)%p.length];
@@ -8657,23 +8667,62 @@ function polyDrawSVG(){
         const mxm = (a[0]+b[0])/2, mym = (a[1]+b[1])/2;
         let nx = -(b[1]-a[1])/L, ny = (b[0]-a[0])/L;
         if((mxm-cxm)*nx + (mym-cym)*ny < 0){ nx = -nx; ny = -ny; }
-        const OUT = 20;                       // отступ наружу, в точках картинки
-        const tx = pdX(mxm) + nx*OUT, ty = pdY(mym) - ny*OUT;
-        const txt = fmtLen(L);
-        const w = Math.max(30, txt.length*8 + 12), h = 20;
         const on = polyDraw.sel === i;
-        // Замыкающая стена — не задана человеком, её дорисовал контур.
-        // Помечаем и подпись тоже: тогда видно, какое число ваше,
-        // а какое получилось само и будет меняться с каждой новой стеной.
+        // Длина стены на КАРТИНКЕ, а не в метрах: от неё зависит,
+        // влезет ли подпись и не столкнётся ли с соседними.
+        const Lpx = L/polyDraw.step*PD_SC;
+        // ЧЕМ КОРОЧЕ СТЕНА, ТЕМ ДАЛЬШЕ ВЫНОСИМ ПОДПИСЬ.
+        // На плотном контуре короткие стены идут вплотную, и подписи
+        // налезали друг на друга — владелец прислал снимок, где «0,25»
+        // и «0,101» слиплись в кашу. Разводим их по расстоянию:
+        // короткая стена уводит своё число дальше от контура,
+        // и они перестают спорить за одно место.
+        let OUT = Lpx < 26 ? 46 : (Lpx < 50 ? 34 : 22);
+        const txt = fmtLen(L);
+        const w = Math.max(34, txt.length*8 + 14), h = 22;
+        // РАЗВОДИМ НАЛЕГАЮЩИЕ: если место уже занято соседней подписью,
+        // отодвигаем свою дальше наружу, пока не освободится. Шаг —
+        // высота подписи, больше десяти попыток не делаем: на совсем
+        // плотном участке лучше оставить как есть, чем угнать число
+        // за край холста.
+        let tx = pdX(mxm) + nx*OUT, ty = pdY(mym) - ny*OUT;
+        for(let guard = 0; guard < 10; guard++){
+          const hit = placed.some(q =>
+            Math.abs(q.x - tx) < (q.w + w)/2 + 2 &&
+            Math.abs(q.y - ty) < (q.h + h)/2 + 2);
+          if(!hit) break;
+          OUT += h + 4;
+          tx = pdX(mxm) + nx*OUT; ty = pdY(mym) - ny*OUT;
+        }
+        // Не даём подписи уехать за край: разведение могло увести
+        // её далеко наружу, а число за границей картинки бесполезно.
+        tx = Math.min(Math.max(tx, w/2 + 2), v.w - w/2 - 2);
+        ty = Math.min(Math.max(ty, h/2 + 2), v.h - h/2 - 2);
+        placed.push({ x:tx, y:ty, w, h });
         const closing = (p.length >= 3 && i === p.length - 1);
-        // Подложка нужна не для красоты: она и делает число целью
-        // для пальца. Голая надпись мимо попадается чаще, чем в неё.
-        lbls += `<g data-pd-lbl="${i}" class="pd-lbl-g ${on?'on':''} ${closing?'closing':''}">
-          <line x1="${pdX(mxm)}" y1="${pdY(mym)}" x2="${tx}" y2="${ty}" class="pd-lbl-tick"/>
-          <rect x="${tx-w/2}" y="${ty-h/2}" width="${w}" height="${h}" rx="5" class="pd-lbl-bg"/>
-          <text x="${tx}" y="${ty}" text-anchor="middle" dominant-baseline="central"
-                class="pd-lbl ${on?'on':''}">${txt}</text>
-        </g>`;
+        if(on){
+          // ВЫБРАННАЯ СТЕНА — ПОЛЕ ПРЯМО НА ЧЕРТЕЖЕ.
+          // Раньше нажатие только подсвечивало число оранжевым, а править
+          // приходилось в боковой панели: человек жал на цифру и ждал,
+          // что она станет полем, — и справедливо считал, что ничего
+          // не работает.
+          lbls += `<g class="pd-lbl-g on">
+            <line x1="${pdX(mxm)}" y1="${pdY(mym)}" x2="${tx}" y2="${ty}" class="pd-lbl-tick"/>
+            <foreignObject x="${tx-w/2-14}" y="${ty-h/2-4}" width="${w+28}" height="${h+8}">
+              <input xmlns="http://www.w3.org/1999/xhtml" class="pd-lbl-input"
+                     id="pdLblInput" inputmode="decimal" value="${escapeAttr(txt)}">
+            </foreignObject>
+          </g>`;
+        }else{
+          // Подложка нужна не для красоты: она и делает число целью
+          // для пальца. Голая надпись мимо попадается чаще, чем в неё.
+          lbls += `<g data-pd-lbl="${i}" class="pd-lbl-g ${closing?'closing':''}">
+            <line x1="${pdX(mxm)}" y1="${pdY(mym)}" x2="${tx}" y2="${ty}" class="pd-lbl-tick"/>
+            <rect x="${tx-w/2}" y="${ty-h/2}" width="${w}" height="${h}" rx="5" class="pd-lbl-bg"/>
+            <text x="${tx}" y="${ty}" text-anchor="middle" dominant-baseline="central"
+                  class="pd-lbl">${txt}</text>
+          </g>`;
+        }
       }
     }
   }
@@ -8843,6 +8892,22 @@ function polyDrawPanelOnly(){
   polyDrawBind();
 }
 
+// Перерисовка чертежа, когда в подписи открыто поле: сам чертёж
+// обновляем, а поле не трогаем — иначе курсор пропадёт на первом
+// же введённом символе.
+function polyDrawRefreshKeepInput(){
+  const inp = document.getElementById('pdLblInput');
+  const val = inp ? inp.value : null;
+  const pos = inp ? inp.selectionStart : null;
+  polyDrawRefresh();
+  const back = document.getElementById('pdLblInput');
+  if(back && val !== null){
+    back.value = val;
+    try{ back.setSelectionRange(pos, pos); }catch(_){}
+    back.focus({ preventScroll:true });
+  }
+}
+
 // перерисовка без пересборки окна — чтобы не терять палец при перетаскивании
 function polyDrawRefresh(){
   const box = document.querySelector('.pd-canvas');
@@ -8854,6 +8919,7 @@ function polyDrawRefresh(){
       + (st.bad ? '<div class="pd-bad">Контур сам себя пересекает</div>' : '');
   }
   polyDrawBindSvg();
+  polyDrawBind();      // поле на чертеже пересоздаётся вместе с холстом
 }
 
 // Точка внутри многоугольника — обычный подсчёт пересечений луча.
@@ -8930,6 +8996,7 @@ function polyDrawBindSvg(){
       if(i >= 0 && i < polyDraw.pts.length){
         polyDraw.selVert = null;
         polyDraw.focusLen = (polyDraw.sel !== i);
+        polyDraw.focusLbl = true;
         polyDraw.sel = i;
         polyDrawRender();
       }
@@ -9098,6 +9165,22 @@ function polyDrawBind(){
   ov.querySelectorAll('[data-pd-step]').forEach(b=>{
     b.onclick = ()=>{ polyDraw.step = num(b.getAttribute('data-pd-step')); polyDrawRender(); };
   });
+  // Поле на чертеже — то же самое, что «Длина» в панели, только под рукой.
+  const lin = document.getElementById('pdLblInput');
+  if(lin){
+    lin.oninput = ()=>{ pdSetLen(polyDraw.sel, pdFromU(calcNum(lin.value))); polyDrawRefreshKeepInput(); };
+    lin.onkeydown = e=>{
+      e.stopPropagation();
+      if(e.key === 'Enter'){ e.preventDefault(); lin.blur(); }
+      if(e.key === 'Escape'){ polyDraw.sel = null; polyDrawRender(); }
+    };
+    lin.onblur = ()=>{ pdPush(); polyDraw.sel = null; polyDrawRender(); };
+    if(polyDraw.focusLbl){
+      polyDraw.focusLbl = false;
+      setTimeout(()=>{ try{ lin.focus({preventScroll:true}); lin.select(); }catch(_){ } }, 30);
+    }
+  }
+
   const li = document.getElementById('pdLen');
   if(li){
     // Считаем на лету, чтобы стена ехала прямо под пальцами.
