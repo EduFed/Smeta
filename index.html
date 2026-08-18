@@ -2066,7 +2066,34 @@
   /* два быстрых нажатия по кнопке планшет принимает за жест увеличения —
      manipulation отключает его, прокрутку не трогает */
   .pd-modal button, .pd-step, .pd-btns .btn{ touch-action:manipulation; }
-  .pd-modal{width:100%;max-width:560px;max-height:94vh;display:flex;flex-direction:column;background:var(--white);border-radius:16px;overflow:hidden;box-shadow:0 18px 50px rgba(0,0,0,.3);}
+  /* ОКНО ЧЕРЧЕНИЯ — ПО РАЗМЕРУ ЭКРАНА (с 2026-08-10-53).
+     Было 560 пикселей в ширину при любом мониторе: на компьютере
+     чертёж выходил крошечным, и владелец справедливо назвал это
+     неудобным. Теперь окно занимает почти весь экран, но с полями
+     и потолком по ширине: во весь монитор чертёж растягивать незачем —
+     глазу тяжело, и пропадает ощущение окна, которое можно закрыть. */
+  .pd-modal{width:min(1180px, 96vw);max-width:none;height:94vh;max-height:94vh;display:flex;flex-direction:column;background:var(--white);border-radius:16px;overflow:hidden;box-shadow:0 18px 50px rgba(0,0,0,.3);}
+  /* На телефоне — весь экран: любая рамка съедает ту самую площадь,
+     ради которой всё и делается, а контекст за окном там не виден. */
+  @media (max-width: 720px){
+    .pd-overlay{padding:0;}
+    .pd-modal{width:100vw;height:100dvh;max-height:none;border-radius:0;}
+  }
+  /* Холст занимает всё, что осталось от шапки и подвала, и картинка
+     тянется по высоте, а не только по ширине. */
+  .pd-canvas{display:flex;align-items:center;justify-content:center;}
+  .pd-canvas .pd-svg{max-height:100%;}
+
+  /* Ввод следующей стены числом */
+  .pd-next{padding:10px 20px 12px;border-top:1px solid var(--paper-line);background:var(--paper);}
+  .pd-next-h{font-family:'JetBrains Mono',monospace;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-soft);margin-bottom:8px;}
+  .pd-next-r{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;}
+  .pd-next-r label{display:flex;flex-direction:column;gap:4px;font-size:11px;color:var(--ink-soft);flex:1 1 120px;}
+  .pd-next-r input{padding:9px 10px;min-height:40px;border:1px solid var(--paper-line);border-radius:var(--radius);background:var(--white);color:var(--ink);font-size:14px;}
+  .pd-next-r .btn{min-height:40px;}
+  .pd-next-hint{margin-top:6px;font-size:11px;color:var(--ink-soft);}
+  /* стрелки отмены и возврата */
+  .pd-hist{min-width:44px;font-size:17px;line-height:1;}
   .pd-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:16px 20px 12px;border-bottom:1px solid var(--paper-line);}
   .pd-title{font-family:'Space Grotesk','Inter',sans-serif;font-size:18px;font-weight:700;color:var(--ink);}
   .pd-sub{margin-top:3px;font-size:12px;color:var(--ink-soft);line-height:1.45;}
@@ -2804,7 +2831,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-10-52';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-10-53';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -8216,15 +8243,25 @@ function roomPlanSVG(segs, dir0, drawn){
        <line x1="${X(pts[pts.length-1][0])}" y1="${Y(pts[pts.length-1][1])}"
              x2="${X(pts[0][0])}" y2="${Y(pts[0][1])}" class="plan-gap"/>`;
 
+  // ПОДПИСИ — РЕАЛЬНЫЕ РАЗМЕРЫ, А НЕ НОМЕРА СТЕН (с 2026-08-10-53).
+  // Раньше на плане стояли «1, 2, 3»: чтобы узнать длину стены, надо
+  // было лезть в окно черчения. План в карточке существует ровно затем,
+  // чтобы на него посмотреть и понять комнату, — значит на нём должны
+  // быть числа, которыми меряют.
+  //
+  // Длину берём ИЗ НАРИСОВАННЫХ ВЕРШИН, а не из сохранённых длин:
+  // подпись обязана описывать то, что видно. Разойдись они однажды —
+  // человек поверит подписи, а не чертежу.
   const labels = (segs||[]).map((sg,i)=>{
     const p = pts[i], q = pts[i+1];
-    const L = polySegLen(sg);
+    if(!p || !q) return '';
+    const L = Math.hypot(q[0]-p[0], q[1]-p[1]);
     if(L < 0.06) return '';
     const mx=(p[0]+q[0])/2, my=(p[1]+q[1])/2;
     let nx = -(q[1]-p[1])/L, ny = (q[0]-p[0])/L;
     if((mx-cx)*nx + (my-cy)*ny < 0){ nx=-nx; ny=-ny; }
-    return `<text x="${X(mx)+nx*12}" y="${Y(my)-ny*12}" text-anchor="middle"
-      dominant-baseline="central" class="plan-lbl">${i+1}</text>`;
+    return `<text x="${X(mx)+nx*13}" y="${Y(my)-ny*13}" text-anchor="middle"
+      dominant-baseline="central" class="plan-lbl">${fmt(L)}</text>`;
   }).join('');
 
   return `<svg viewBox="0 0 ${W} ${H}" width="100%" class="room-plan ${bad?'bad':''}">
@@ -8321,9 +8358,113 @@ function polyDrawOpen(room){
     roomId: room.id,
     pts: stored ? stored.map(p=>p.slice()) : [],
     step: num(d.step) || 0.5,
-    sel: null, drag: null
+    sel: null, drag: null,
+    hist: [], hi: -1        // история для стрелок «отменить / вернуть»
   };
+  pdPush();                 // исходное состояние — тоже шаг истории
   polyDrawRender();
+}
+
+// ---------- ИСТОРИЯ ДЕЙСТВИЙ ----------
+// Черчение — это череда мелких правок, и почти каждая может выйти
+// не такой, как задумал человек: точка встала не в тот узел, стена
+// уехала от заданной длины. Без возврата остаётся только стирать всё
+// и начинать заново.
+//
+// Храним снимки вершин целиком, а не описания действий: контур —
+// это полтора десятка пар чисел, память тут не при чём, зато возврат
+// не может «не доотменить» половину правки.
+const PD_HIST_MAX = 60;
+
+function pdPush(){
+  if(!polyDraw) return;
+  // всё, что было впереди текущего места, обрезаем: после новой правки
+  // возвращаться некуда
+  polyDraw.hist = polyDraw.hist.slice(0, polyDraw.hi + 1);
+  polyDraw.hist.push(polyDraw.pts.map(p=>p.slice()));
+  if(polyDraw.hist.length > PD_HIST_MAX) polyDraw.hist.shift();
+  polyDraw.hi = polyDraw.hist.length - 1;
+}
+function pdCanUndo(){ return !!polyDraw && polyDraw.hi > 0; }
+function pdCanRedo(){ return !!polyDraw && polyDraw.hi < polyDraw.hist.length - 1; }
+function pdUndo(){
+  if(!pdCanUndo()) return;
+  polyDraw.hi--;
+  polyDraw.pts = polyDraw.hist[polyDraw.hi].map(p=>p.slice());
+  polyDraw.sel = null;
+  polyDrawRender();
+}
+function pdRedo(){
+  if(!pdCanRedo()) return;
+  polyDraw.hi++;
+  polyDraw.pts = polyDraw.hist[polyDraw.hi].map(p=>p.slice());
+  polyDraw.sel = null;
+  polyDrawRender();
+}
+
+// ---------- СЛЕДУЮЩАЯ СТЕНА ЧИСЛОМ ----------
+// Раньше размеры задавались только ПОСЛЕ того, как контур замкнут:
+// натыкал точки на глаз, замкнул, выделил стену, поправил. На объекте
+// это лишний круг — размер известен сразу, рулетка в руках.
+//
+// Теперь стену можно поставить числом прямо по ходу: длина и угол.
+// Тыканье по сетке никуда не делось — им удобно наметить форму,
+// а числами довести до точности.
+//
+// Угол считаем ВНУТРЕННИЙ, как в панели готовой стены: 90° — обычный
+// угол комнаты. Для первой стены внутреннего угла ещё нет, поэтому
+// там направление от горизонтали: 0 — вправо, 90 — вверх.
+function pdNextPoint(L, angDeg){
+  const p = polyDraw.pts, n = p.length;
+  if(!(L > 0) || !n) return null;
+  const last = p[n-1];
+  let dir;
+  if(n === 1){
+    dir = angDeg * Math.PI/180;
+  }else{
+    const prev = p[n-2];
+    const cur = Math.atan2(last[1]-prev[1], last[0]-prev[0]);
+    dir = cur + (180 - angDeg) * Math.PI/180;
+  }
+  return [ last[0] + L*Math.cos(dir), last[1] + L*Math.sin(dir) ];
+}
+
+function pdNextPanel(){
+  const n = polyDraw.pts.length;
+  if(!n) return '';                       // первая точка ставится нажатием
+  if(polyDraw.sel !== null && polyDraw.sel !== undefined) return '';  // открыта панель стены
+  const first = (n === 1);
+  return `
+    <div class="pd-next">
+      <div class="pd-next-h">Следующая стена — числом</div>
+      <div class="pd-next-r">
+        <label>Длина, м<input type="text" inputmode="decimal" id="pdNextLen" placeholder="напр. 3.2 или 1.2+0.85"></label>
+        <label>${first ? 'Направление, °' : 'Угол в комнате, °'}<input type="text" inputmode="decimal" id="pdNextAng" value="${first ? '0' : '90'}"></label>
+        <button class="btn btn-outline" id="pdNextAdd">Поставить</button>
+      </div>
+      <div class="pd-next-hint">${first
+        ? '0 — вправо, 90 — вверх. Можно писать выражение: 1.2+0.85'
+        : '90 — обычный угол. Меньше 90 — сужение, больше — расширение'}</div>
+    </div>`;
+}
+
+function pdNextBind(){
+  const add = document.getElementById('pdNextAdd');
+  if(!add) return;
+  const go = ()=>{
+    const L = calcNum((document.getElementById('pdNextLen')||{}).value);
+    const A = calcNum((document.getElementById('pdNextAng')||{}).value);
+    const pt = pdNextPoint(L, A);
+    if(!pt) return;
+    polyDraw.pts.push([ Math.round(pt[0]*1000)/1000, Math.round(pt[1]*1000)/1000 ]);
+    pdPush();
+    polyDrawRender();
+  };
+  add.onclick = go;
+  const li = document.getElementById('pdNextLen');
+  if(li) li.onkeydown = e=>{ if(e.key === 'Enter'){ e.preventDefault(); go(); } };
+  const ai = document.getElementById('pdNextAng');
+  if(ai) ai.onkeydown = e=>{ if(e.key === 'Enter'){ e.preventDefault(); go(); } };
 }
 function polyDrawClose(){
   polyDraw = null;
@@ -8478,13 +8619,17 @@ function polyDrawRender(){
       </div>
       <div class="pd-canvas">${polyDrawSVG()}</div>
       ${polyDrawPanel()}
+      ${pdNextPanel()}
       <div class="pd-foot">
         <div class="pd-stats">${n>=3
           ? `<b>${fmt(s.area)}</b> м² · периметр <b>${fmt(s.per)}</b> м`
           : `Поставлено точек: <b>${n}</b>`}
           ${s.bad ? '<div class="pd-bad">Контур сам себя пересекает</div>' : ''}</div>
         <div class="pd-btns">
-          <button class="btn btn-outline" id="pdUndo" ${n?'':'disabled'}>Отменить точку</button>
+          <button class="btn btn-outline pd-hist" id="pdUndo" ${pdCanUndo()?'':'disabled'}
+                  title="Отменить действие">↶</button>
+          <button class="btn btn-outline pd-hist" id="pdRedo" ${pdCanRedo()?'':'disabled'}
+                  title="Вернуть действие">↷</button>
           <button class="btn btn-primary" id="pdSave" ${(n>=3 && !s.bad)?'':'disabled'}>Готово</button>
         </div>
       </div>
@@ -8605,6 +8750,7 @@ function polyDrawBindSvg(){
       }
     }
     polyDraw.pts.push(clamp([pdSnap(m[0]), pdSnap(m[1])]));
+    pdPush();
     polyDraw.sel = null;
     polyDrawRender();
   };
@@ -8622,7 +8768,7 @@ function polyDrawBindSvg(){
     }
     polyDrawRefresh();
   };
-  const stop = ()=>{ if(polyDraw && polyDraw.drag){ polyDraw.drag = null; polyDrawRender(); } };
+  const stop = ()=>{ if(polyDraw && polyDraw.drag){ polyDraw.drag = null; pdPush(); polyDrawRender(); } };
   svg.onpointerup = stop;
   svg.onpointercancel = stop;
 }
@@ -8632,12 +8778,14 @@ function polyDrawBind(){
   if(!ov) return;
   const on = (id,fn)=>{ const el=document.getElementById(id); if(el) el.onclick=fn; };
   on('pdClose', polyDrawClose);
-  on('pdUndo', ()=>{ polyDraw.pts.pop(); polyDraw.sel=null; polyDrawRender(); });
+  on('pdUndo', pdUndo);
+  on('pdRedo', pdRedo);
   on('pdSave', polyDrawSave);
   on('pdDeselect', ()=>{ polyDraw.sel=null; polyDrawRender(); });
   on('pdDelPt', ()=>{
     if(polyDraw.pts.length <= 3) return;
     polyDraw.pts.splice((polyDraw.sel+1)%polyDraw.pts.length, 1);
+    pdPush();
     polyDraw.sel = null; polyDrawRender();
   });
   ov.querySelectorAll('[data-pd-step]').forEach(b=>{
@@ -8645,7 +8793,16 @@ function polyDrawBind(){
   });
   const li = document.getElementById('pdLen');
   if(li){
-    li.oninput = ()=>{ pdSetLen(polyDraw.sel, num(li.value)); polyDrawRefresh(); };
+    // Считаем на лету, чтобы стена ехала прямо под пальцами.
+    // Недописанное «1.2+» calcNum вернёт как 1.2 — поле не обнулится.
+    li.oninput = ()=>{ pdSetLen(polyDraw.sel, calcNum(li.value)); polyDrawRefresh(); };
+    // Ушли из поля — показываем ИТОГ вычисления вместо выражения:
+    // человек должен видеть, что получилось, а не гадать.
+    li.onblur = ()=>{
+      const v = calcNum(li.value);
+      if(v > 0) li.value = fmt(v);
+      pdPush();      // правка числом — тоже шаг, его должна отменять стрелка
+    };
     // Фокус ставим только сразу после выбора стены. Делать это на каждой
     // перерисовке нельзя: поле бы перехватывало курсор во время набора.
     if(polyDraw.focusLen){
@@ -8659,7 +8816,11 @@ function polyDrawBind(){
     }
   }
   const ai = document.getElementById('pdAng');
-  if(ai) ai.oninput = ()=>{ pdSetAngle(polyDraw.sel, num(ai.value)); polyDrawRefresh(); };
+  if(ai){
+    ai.oninput = ()=>{ pdSetAngle(polyDraw.sel, calcNum(ai.value)); polyDrawRefresh(); };
+    ai.onblur = ()=>{ const v = calcNum(ai.value); if(v > 0) ai.value = fmt(v); pdPush(); };
+  }
+  pdNextBind();
   polyDrawBindSvg();
 }
 
@@ -8793,6 +8954,62 @@ function roomCalcMode(room){
 function num(v){
   const n = parseFloat(String(v==null?'':v).replace(',', '.').replace(/\s/g,''));
   return isFinite(n) ? n : 0;
+}
+
+// ---------- КАЛЬКУЛЯТОР В ПОЛЯХ РАЗМЕРОВ ----------
+// На объекте размер редко бывает одним числом: «дверной проём плюс
+// простенок», «шесть плиток по 0.6». Считать это в уме и вводить итог —
+// лишний шаг, на котором ошибаются.
+//
+// Считаем СВОИМ разбором, а не eval: в поле попадает то, что набрал
+// человек, и выполнять это как код нельзя ни при каких условиях.
+// Разрешены только цифры, точка, скобки и четыре действия — всё
+// остальное отбрасывается ещё до разбора.
+function calcParse(s){
+  let i = 0;
+  const peek = ()=> s[i];
+  function factor(){
+    if(peek() === '+'){ i++; return factor(); }
+    if(peek() === '-'){ i++; return -factor(); }
+    if(peek() === '('){ i++; const v = expr(); if(peek() === ')') i++; return v; }
+    const st = i;
+    while(i < s.length && /[0-9.]/.test(s[i])) i++;
+    if(st === i) throw new Error('пусто');
+    return parseFloat(s.slice(st, i));
+  }
+  function term(){
+    let v = factor();
+    while(peek() === '*' || peek() === '/'){
+      const op = s[i++], f = factor();
+      v = (op === '*') ? v * f : (f === 0 ? NaN : v / f);
+    }
+    return v;
+  }
+  function expr(){
+    let v = term();
+    while(peek() === '+' || peek() === '-'){
+      const op = s[i++], t = term();
+      v = (op === '+') ? v + t : v - t;
+    }
+    return v;
+  }
+  const r = expr();
+  if(i < s.length) throw new Error('лишний хвост');
+  return r;
+}
+
+// Число из поля: обычное значение или выражение.
+// Не разобралось — возвращаем как обычное число, чтобы недописанное
+// «1.2+» не обнуляло поле прямо под пальцами.
+function calcNum(v){
+  const s = String(v == null ? '' : v).replace(/,/g, '.').replace(/\s/g, '');
+  if(!s) return 0;
+  if(!/[+\-*/()]/.test(s.slice(1))) return num(s);     // просто число
+  if(!/^[0-9.+\-*/()]+$/.test(s)) return num(s);       // посторонние знаки — не считаем
+  try{
+    const r = calcParse(s);
+    return isFinite(r) ? r : num(s);
+  }catch(_){ return num(s); }
 }
 function wallBase(w){
   // длина нижней (напольной) стороны стены
