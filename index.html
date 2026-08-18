@@ -2160,7 +2160,15 @@
   /* стена, которой человек не чертил: контур замкнулся сам */
   .pd-svg .pd-closing{stroke:currentColor;stroke-width:2.5;stroke-dasharray:7 5;opacity:.55;}
   .pd-units-l{margin-left:12px;}
-  .pd-svg .pd-lbl{font-family:'JetBrains Mono',monospace;font-size:10px;fill:currentColor;opacity:.8;}
+  .pd-lbl-g{cursor:pointer;}
+  .pd-svg .pd-lbl-bg{fill:var(--white);stroke:var(--paper-line);stroke-width:1;}
+  .pd-lbl-g.on .pd-lbl-bg{fill:var(--orange);stroke:var(--orange);}
+  /* подпись стены, которую дорисовал сам контур */
+  .pd-lbl-g.closing .pd-lbl-bg{stroke-dasharray:4 3;fill:var(--paper);}
+  .pd-lbl-g.closing .pd-lbl{opacity:.7;}
+  .pd-lbl-g.on .pd-lbl{fill:#fff;}
+  .pd-svg .pd-lbl-tick{stroke:var(--ink-soft);stroke-width:1;opacity:.4;}
+  .pd-svg .pd-lbl{font-family:'JetBrains Mono',monospace;font-size:12px;fill:var(--ink);opacity:1;pointer-events:none;}
   .pd-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:12px 20px 16px;border-top:1px solid var(--paper-line);background:var(--paper);}
   .pd-stats{font-size:13px;color:var(--ink);}
   .pd-bad{margin-top:4px;font-size:12px;color:var(--orange);}
@@ -2885,7 +2893,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-10-60';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-10-62';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -8626,14 +8634,44 @@ function polyDrawSVG(){
         `<line x1="${pdX(p[p.length-1][0])}" y1="${pdY(p[p.length-1][1])}"
                x2="${pdX(p[0][0])}" y2="${pdY(p[0][1])}" class="pd-closing"/>`
       : `<polyline points="${pl}" class="pd-line"/>`;
+    // ПОДПИСИ РАЗМЕРОВ — СНАРУЖИ КОНТУРА, И ПО НИМ ЖЕ ПРАВЯТ.
+    // Раньше числа лежали прямо на стенах: на плотном контуре они
+    // налезали друг на друга и на сам чертёж, а чтобы поправить размер,
+    // надо было попасть в тонкую линию. В чертежах так не делают —
+    // размеры выносят наружу, и правят именно число.
+    //
+    // Наружу — значит по нормали от середины стены в сторону ОТ центра
+    // фигуры. Тот же приём, что на плане в карточке помещения.
+    const cxm = p.reduce((t,g)=>t+g[0],0)/p.length;
+    const cym = p.reduce((t,g)=>t+g[1],0)/p.length;
     const last = p.length >= 3 ? p.length : p.length-1;
     for(let i=0;i<last;i++){
       const a = p[i], b = p[(i+1)%p.length];
       const L = Math.hypot(b[0]-a[0], b[1]-a[1]);
       hit += `<line x1="${pdX(a[0])}" y1="${pdY(a[1])}" x2="${pdX(b[0])}" y2="${pdY(b[1])}"
         class="pd-side ${polyDraw.sel===i?'on':''}"/>`;
-      if(L > 0.01) lbls += `<text x="${(pdX(a[0])+pdX(b[0]))/2}" y="${(pdY(a[1])+pdY(b[1]))/2 - 7}"
-        text-anchor="middle" class="pd-lbl ${polyDraw.sel===i?'on':''}">${fmtLen(L)}</text>`;
+      if(L > 0.01){
+        const mxm = (a[0]+b[0])/2, mym = (a[1]+b[1])/2;
+        let nx = -(b[1]-a[1])/L, ny = (b[0]-a[0])/L;
+        if((mxm-cxm)*nx + (mym-cym)*ny < 0){ nx = -nx; ny = -ny; }
+        const OUT = 20;                       // отступ наружу, в точках картинки
+        const tx = pdX(mxm) + nx*OUT, ty = pdY(mym) - ny*OUT;
+        const txt = fmtLen(L);
+        const w = Math.max(30, txt.length*8 + 12), h = 20;
+        const on = polyDraw.sel === i;
+        // Замыкающая стена — не задана человеком, её дорисовал контур.
+        // Помечаем и подпись тоже: тогда видно, какое число ваше,
+        // а какое получилось само и будет меняться с каждой новой стеной.
+        const closing = (p.length >= 3 && i === p.length - 1);
+        // Подложка нужна не для красоты: она и делает число целью
+        // для пальца. Голая надпись мимо попадается чаще, чем в неё.
+        lbls += `<g data-pd-lbl="${i}" class="pd-lbl-g ${on?'on':''} ${closing?'closing':''}">
+          <line x1="${pdX(mxm)}" y1="${pdY(mym)}" x2="${tx}" y2="${ty}" class="pd-lbl-tick"/>
+          <rect x="${tx-w/2}" y="${ty-h/2}" width="${w}" height="${h}" rx="5" class="pd-lbl-bg"/>
+          <text x="${tx}" y="${ty}" text-anchor="middle" dominant-baseline="central"
+                class="pd-lbl ${on?'on':''}">${txt}</text>
+        </g>`;
+      }
     }
   }
   const verts = p.map(g=>`<circle cx="${pdX(g[0])}" cy="${pdY(g[1])}" r="7" class="pd-vert"/>`).join('');
@@ -8856,6 +8894,21 @@ function polyDrawBindSvg(){
   };
 
   svg.onpointerdown = e=>{
+    // НАЖАЛИ ПО ЧИСЛУ — ЭТО ПРАВКА РАЗМЕРА, а не работа с холстом.
+    // Владелец просил править размеры нажатием на цифры, а не на тонкую
+    // линию. Проверяем это первым делом: иначе нажатие ушло бы дальше
+    // и превратилось в постановку точки или перетаскивание.
+    const lbl = e.target && e.target.closest && e.target.closest('[data-pd-lbl]');
+    if(lbl){
+      const i = parseInt(lbl.getAttribute('data-pd-lbl'), 10);
+      if(i >= 0 && i < polyDraw.pts.length){
+        polyDraw.selVert = null;
+        polyDraw.focusLen = (polyDraw.sel !== i);
+        polyDraw.sel = i;
+        polyDrawRender();
+      }
+      return;
+    }
     // Первое касание при открытой панели стены только закрывает её.
     // Раньше оно проходило дальше и ставило точку там, куда человек
     // ткнул, чтобы «просто убрать панель».
