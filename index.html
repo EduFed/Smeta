@@ -2057,6 +2057,7 @@
   .room-plan.bad .plan-poly{stroke:var(--orange);}
   .room-plan .plan-open{fill:none;stroke:currentColor;stroke-width:2;stroke-linejoin:round;}
   .room-plan .plan-gap{stroke:var(--orange);stroke-width:2;stroke-dasharray:5 4;}
+  .room-plan .plan-tick{stroke:currentColor;stroke-width:.8;opacity:.35;}
   .room-plan .plan-dot{fill:currentColor;opacity:.5;}
   .room-plan .plan-lbl{font-family:'JetBrains Mono',monospace;font-size:10px;fill:currentColor;opacity:.75;}
 
@@ -2902,7 +2903,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-10-69';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-10-72';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -8323,19 +8324,39 @@ function roomPlanSVG(segs, dir0, drawn){
   // Длину берём ИЗ НАРИСОВАННЫХ ВЕРШИН, а не из сохранённых длин:
   // подпись обязана описывать то, что видно. Разойдись они однажды —
   // человек поверит подписи, а не чертежу.
+  // РАЗМЕРЫ НА СХЕМЕ — ТОЖЕ НА ОБЩИХ ЛИНИЯХ, как в окне черчения.
+  // Здесь разведения не было вовсе, и на контуре из полутора десятков
+  // стен числа слипались в нечитаемый ком — владелец прислал снимок.
+  // Горизонтальные стены подписываются сверху и снизу, вертикальные —
+  // слева и справа; налегающие сдвигаются вдоль своей линии.
+  const zanyato = [];
   const labels = (segs||[]).map((sg,i)=>{
     const p = pts[i], q = pts[i+1];
     if(!p || !q) return '';
     const L = Math.hypot(q[0]-p[0], q[1]-p[1]);
     if(L < 0.06) return '';
     const mx=(p[0]+q[0])/2, my=(p[1]+q[1])/2;
-    let nx = -(q[1]-p[1])/L, ny = (q[0]-p[0])/L;
-    if((mx-cx)*nx + (my-cy)*ny < 0){ nx=-nx; ny=-ny; }
+    const txt = fmtLen(L);
+    const lw = txt.length*6 + 6, lh = 12;
+    const gor = Math.abs(q[0]-p[0]) >= Math.abs(q[1]-p[1]);
+    let tx, ty;
+    if(gor){ tx = X(mx); ty = (my >= cy) ? 11 : H - 8; }
+    else   { ty = Y(my); tx = (mx <= cx) ? 15 : W - 15; }
+    tx = Math.min(Math.max(tx, lw/2 + 1), W - lw/2 - 1);
+    ty = Math.min(Math.max(ty, lh), H - 3);
+    for(let g=0; g<14; g++){
+      const hit = zanyato.find(z => Math.abs(z.x-tx) < (z.w+lw)/2 + 2 &&
+                                    Math.abs(z.y-ty) < (z.h+lh)/2 + 2);
+      if(!hit) break;
+      if(gor) tx += (tx >= hit.x ? 1 : -1) * ((hit.w+lw)/2 + 3);
+      else    ty += (ty >= hit.y ? 1 : -1) * ((hit.h+lh)/2 + 3);
+    }
+    zanyato.push({ x:tx, y:ty, w:lw, h:lh });
     // Без округления до сантиметра: на схеме должны стоять те же числа,
-    // что человек задал в окне черчения. Округление там уже стоило
-    // потери миллиметров (см. fmtLen).
-    return `<text x="${X(mx)+nx*13}" y="${Y(my)-ny*13}" text-anchor="middle"
-      dominant-baseline="central" class="plan-lbl">${fmtLen(L)}</text>`;
+    // что человек задал в окне черчения.
+    return `<line x1="${X(mx)}" y1="${Y(my)}" x2="${tx}" y2="${ty}" class="plan-tick"/>
+      <text x="${tx}" y="${ty}" text-anchor="middle"
+        dominant-baseline="central" class="plan-lbl">${txt}</text>`;
   }).join('');
 
   return `<svg viewBox="0 0 ${W} ${H}" width="100%" class="room-plan ${bad?'bad':''}">
@@ -8617,7 +8638,7 @@ function pdView(){
   // к краю; но подписи выносятся наружу и на плотном контуре разводятся
   // ещё дальше — значит на многоугольнике с десятком стен воздуха нужно
   // больше, иначе числа упрутся в границу картинки.
-  const pad = st * (p.length > 8 ? 2 : 1);
+  const pad = st * (p.length > 12 ? 3 : (p.length > 8 ? 2 : 1));
   minX = Math.floor((minX - pad)/st)*st;  maxX = Math.ceil((maxX + pad)/st)*st;
   minY = Math.floor((minY - pad)/st)*st;  maxY = Math.ceil((maxY + pad)/st)*st;
   // Не даём области схлопнуться: у контура в одну стену запас должен
@@ -8704,56 +8725,73 @@ function polyDrawSVG(){
         let nx = -(b[1]-a[1])/L, ny = (b[0]-a[0])/L;
         if((mxm-cxm)*nx + (mym-cym)*ny < 0){ nx = -nx; ny = -ny; }
         const on = polyDraw.sel === i;
-        // Длина стены на КАРТИНКЕ, а не в метрах: от неё зависит,
-        // влезет ли подпись и не столкнётся ли с соседними.
-        const Lpx = L/polyDraw.step*PD_SC;
-        // ЧЕМ КОРОЧЕ СТЕНА, ТЕМ ДАЛЬШЕ ВЫНОСИМ ПОДПИСЬ.
-        // На плотном контуре короткие стены идут вплотную, и подписи
-        // налезали друг на друга — владелец прислал снимок, где «0,25»
-        // и «0,101» слиплись в кашу. Разводим их по расстоянию:
-        // короткая стена уводит своё число дальше от контура,
-        // и они перестают спорить за одно место.
-        let OUT = Lpx < 26 ? 46 : (Lpx < 50 ? 34 : 22);
+        const closing = (p.length >= 3 && i === p.length - 1);
         const txt = fmtLen(L);
         const w = Math.max(34, txt.length*8 + 14), h = 22;
-        // РАЗВОДИМ НАЛЕГАЮЩИЕ: если место уже занято соседней подписью,
-        // отодвигаем свою дальше наружу, пока не освободится. Шаг —
-        // высота подписи, больше десяти попыток не делаем: на совсем
-        // плотном участке лучше оставить как есть, чем угнать число
-        // за край холста.
-        let tx = pdX(mxm) + nx*OUT, ty = pdY(mym) - ny*OUT;
-        for(let guard = 0; guard < 10; guard++){
-          const hit = placed.some(q =>
-            Math.abs(q.x - tx) < (q.w + w)/2 + 2 &&
-            Math.abs(q.y - ty) < (q.h + h)/2 + 2);
-          if(!hit) break;
-          OUT += h + 4;
-          tx = pdX(mxm) + nx*OUT; ty = pdY(mym) - ny*OUT;
+        // РАЗМЕРЫ ВЫНОСЯТСЯ НА ОБЩИЕ ЛИНИИ, КАК В ЧЕРТЕЖАХ.
+        //
+        // Раньше каждое число висело у своей стены, и на плотном контуре
+        // они слипались в кашу — сколько ни разводи по отдельности.
+        // В чертежах так не делают: размеры выносят за габарит фигуры
+        // и выстраивают рядами. Горизонтальные стены подписываются
+        // сверху или снизу, вертикальные — слева или справа; каждая
+        // подпись стоит напротив своей стены, а от стены к ней идёт
+        // тонкая выносная линия.
+        // Тогда числа физически не могут налезть друг на друга:
+        // они на разных линиях, а внутри одной линии их разводит сдвиг.
+        const gorizont = Math.abs(b[0]-a[0]) >= Math.abs(b[1]-a[1]);
+        let tx, ty;
+        if(gorizont){
+          const naverh = (mym >= cym);
+          ty = naverh ? (PD_PAD - 4) : (v.h - PD_PAD + 4);
+          tx = pdX(mxm);
+        }else{
+          const vlevo = (mxm <= cxm);
+          tx = vlevo ? (PD_PAD - 4) : (v.w - PD_PAD + 4);
+          ty = pdY(mym);
         }
-        // Не даём подписи уехать за край: разведение могло увести
-        // её далеко наружу, а число за границей картинки бесполезно.
+        // не даём уйти за край картинки
+        tx = Math.min(Math.max(tx, w/2 + 2), v.w - w/2 - 2);
+        ty = Math.min(Math.max(ty, h/2 + 2), v.h - h/2 - 2);
+        // если место занято — сдвигаем ВДОЛЬ размерной линии,
+        // а не наружу: ряд остаётся рядом
+        // Сдвигаем вдоль своей размерной линии, а когда ряд забит —
+        // уходим на СЛЕДУЮЩИЙ УРОВЕНЬ, дальше от контура. В чертежах
+        // так и делают: цепочки размеров идут в несколько ярусов.
+        const naruzhu = gorizont
+          ? ((mym >= cym) ? -1 : 1)     // вверх или вниз от контура
+          : ((mxm <= cxm) ? -1 : 1);    // влево или вправо
+        let uroven = 0;
+        for(let guard = 0; guard < 24; guard++){
+          const hit = placed.find(q =>
+            Math.abs(q.x - tx) < (q.w + w)/2 + 3 &&
+            Math.abs(q.y - ty) < (q.h + h)/2 + 3);
+          if(!hit) break;
+          if(guard > 0 && guard % 6 === 0){
+            // ряд не разошёлся — переносим на ярус выше и начинаем заново
+            uroven++;
+            if(gorizont){ ty += naruzhu * (h + 5); tx = pdX(mxm); }
+            else        { tx += naruzhu * (w + 5); ty = pdY(mym); }
+            continue;
+          }
+          if(gorizont) tx += (tx >= hit.x ? 1 : -1) * ((hit.w + w)/2 + 4);
+          else         ty += (ty >= hit.y ? 1 : -1) * ((hit.h + h)/2 + 4);
+        }
+        // После всех сдвигов — вернуть в пределы картинки. Число
+        // за краем бесполезно, а налегание видно и переживаемо.
         tx = Math.min(Math.max(tx, w/2 + 2), v.w - w/2 - 2);
         ty = Math.min(Math.max(ty, h/2 + 2), v.h - h/2 - 2);
         placed.push({ x:tx, y:ty, w, h });
-        const closing = (p.length >= 3 && i === p.length - 1);
+        const tick = `<line x1="${pdX(mxm)}" y1="${pdY(mym)}" x2="${tx}" y2="${ty}" class="pd-lbl-tick"/>`;
         if(on){
-          // ВЫБРАННАЯ СТЕНА — ПОЛЕ ПРЯМО НА ЧЕРТЕЖЕ.
-          // Раньше нажатие только подсвечивало число оранжевым, а править
-          // приходилось в боковой панели: человек жал на цифру и ждал,
-          // что она станет полем, — и справедливо считал, что ничего
-          // не работает.
-          lbls += `<g class="pd-lbl-g on">
-            <line x1="${pdX(mxm)}" y1="${pdY(mym)}" x2="${tx}" y2="${ty}" class="pd-lbl-tick"/>
+          lbls += `<g class="pd-lbl-g on">${tick}
             <foreignObject x="${tx-w/2-14}" y="${ty-h/2-4}" width="${w+28}" height="${h+8}">
               <input xmlns="http://www.w3.org/1999/xhtml" class="pd-lbl-input"
                      id="pdLblInput" inputmode="decimal" value="${escapeAttr(txt)}">
             </foreignObject>
           </g>`;
         }else{
-          // Подложка нужна не для красоты: она и делает число целью
-          // для пальца. Голая надпись мимо попадается чаще, чем в неё.
-          lbls += `<g data-pd-lbl="${i}" class="pd-lbl-g ${closing?'closing':''}">
-            <line x1="${pdX(mxm)}" y1="${pdY(mym)}" x2="${tx}" y2="${ty}" class="pd-lbl-tick"/>
+          lbls += `<g data-pd-lbl="${i}" class="pd-lbl-g ${closing?'closing':''}">${tick}
             <rect x="${tx-w/2}" y="${ty-h/2}" width="${w}" height="${h}" rx="5" class="pd-lbl-bg"/>
             <text x="${tx}" y="${ty}" text-anchor="middle" dominant-baseline="central"
                   class="pd-lbl">${txt}</text>
