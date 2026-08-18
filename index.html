@@ -2172,7 +2172,7 @@
     font-family:'JetBrains Mono',monospace;font-size:13px;
     outline:none;
   }
-  .pd-svg .pd-lbl-bg{fill:var(--white);stroke:var(--paper-line);stroke-width:1;}
+  .pd-svg .pd-lbl-bg{fill:var(--white);fill-opacity:.85;stroke:none;}
   .pd-lbl-g.on .pd-lbl-bg{fill:var(--orange);stroke:var(--orange);}
   /* подпись стены, которую дорисовал сам контур */
   .pd-lbl-g.closing .pd-lbl-bg{stroke-dasharray:4 3;fill:var(--paper);}
@@ -2909,7 +2909,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-10-75';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-10-76';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -8774,10 +8774,18 @@ function polyDrawSVG(){
     const minXm = Math.min(...xs), maxXm = Math.max(...xs);
     const minYm = Math.min(...ys), maxYm = Math.max(...ys);
 
-    // одна цепь: общая линия + засечки + подписи отрезков
-    const cep = (steny, gorizont, uroven)=>{
+    // одна цепь: выносные линии, общая линия, засечки, подписи отрезков
+    //
+    // Разбор владельца по чертежу-референсу, четыре требования:
+    //   1) число стоит НАД размерной линией, а не поверх неё;
+    //   2) число повёрнуто вдоль линии — вертикальные размеры читаются
+    //      снизу вверх, как на чертеже;
+    //   3) если не помещается между засечками — выносится за отрезок;
+    //   4) от каждой характерной точки контура до размерной линии идёт
+    //      ВЫНОСНАЯ ЛИНИЯ. Без неё числа висят сами по себе, и откуда
+    //      докуда мерили — непонятно. Это было главным замечанием.
+    const cep = (steny, gorizont, uroven, storonaZnak)=>{
       if(!steny.length) return;
-      // границы отрезков — проекции концов стен на ось цепи
       const tochki = [];
       steny.forEach(s=>{
         tochki.push(gorizont ? s.a[0] : s.a[1]);
@@ -8785,58 +8793,101 @@ function polyDrawSVG(){
       });
       const uniq = [...new Set(tochki.map(v=>Math.round(v*1000)/1000))].sort((m,n)=>m-n);
       if(uniq.length < 2) return;
+
+      // ВЫНОСНЫЕ ЛИНИИ: от контура до размерной линии, с выступом за неё.
+      // Тянем от самой близкой к цепи точки контура с этой координатой —
+      // тогда линия не перечёркивает всю фигуру.
+      uniq.forEach(v=>{
+        const rodnye = p.filter(g=> Math.abs((gorizont ? g[0] : g[1]) - v) < EPS);
+        if(!rodnye.length) return;
+        // ближайшая к размерной линии точка контура
+        let best = rodnye[0], bestD = Infinity;
+        rodnye.forEach(g=>{
+          const c = gorizont ? pdY(g[1]) : pdX(g[0]);
+          const d = Math.abs(c - uroven);
+          if(d < bestD){ bestD = d; best = g; }
+        });
+        const vystup = 5 * storonaZnak;
+        if(gorizont){
+          const x = pdX(v);
+          lbls += `<line x1="${x}" y1="${pdY(best[1]) + 3*storonaZnak}" x2="${x}" y2="${uroven + vystup}" class="pd-dim-ext"/>`;
+        }else{
+          const y = pdY(v);
+          lbls += `<line x1="${pdX(best[0]) + 3*storonaZnak}" y1="${y}" x2="${uroven + vystup}" y2="${y}" class="pd-dim-ext"/>`;
+        }
+      });
+
       const L1 = gorizont ? pdX(uniq[0]) : pdY(uniq[0]);
       const L2 = gorizont ? pdX(uniq[uniq.length-1]) : pdY(uniq[uniq.length-1]);
-      // сама линия цепи
       lbls += gorizont
         ? `<line x1="${L1}" y1="${uroven}" x2="${L2}" y2="${uroven}" class="pd-dim-line"/>`
         : `<line x1="${uroven}" y1="${L1}" x2="${uroven}" y2="${L2}" class="pd-dim-line"/>`;
       uniq.forEach(v=>{
         const c = gorizont ? pdX(v) : pdY(v);
-        // засечка под 45°, как на чертеже
         lbls += gorizont
           ? `<line x1="${c-4}" y1="${uroven+4}" x2="${c+4}" y2="${uroven-4}" class="pd-dim-tick"/>`
           : `<line x1="${uroven-4}" y1="${c+4}" x2="${uroven+4}" y2="${c-4}" class="pd-dim-tick"/>`;
       });
-      // отрезки цепи с подписями
+
       for(let k=0;k<uniq.length-1;k++){
         const v1 = uniq[k], v2 = uniq[k+1];
         const dl = Math.abs(v2 - v1);
         if(dl < 0.005) continue;
         const txt = fmtLen(dl);
-        const w = Math.max(30, txt.length*8 + 10), h = 20;
+        const w = txt.length*7 + 8, h = 15;
         const c1 = gorizont ? pdX(v1) : pdY(v1), c2 = gorizont ? pdX(v2) : pdY(v2);
-        const tx = gorizont ? (c1+c2)/2 : uroven;
-        const ty = gorizont ? uroven : (c1+c2)/2;
-        // какая стена дала этот отрезок — чтобы по числу можно было править
+        const seredina = (c1+c2)/2;
+        const mesto = Math.abs(c2-c1);
+        // ЧИСЛО НАД ЛИНИЕЙ — со стороны контура, отступ 9 точек
+        const nad = uroven - 9*storonaZnak;
+        let tx, ty, sdvig = 0;
+        // не помещается между засечками — выносим за отрезок, как в референсе
+        if(mesto < w + 4){
+          sdvig = (w/2 + mesto/2 + 3);
+          const kuda = (k === 0) ? -1 : 1;      // первый отрезок — влево, прочие вправо
+          if(gorizont){ tx = seredina + kuda*sdvig; ty = nad; }
+          else        { ty = seredina + kuda*sdvig; tx = nad; }
+        }else{
+          if(gorizont){ tx = seredina; ty = nad; }
+          else        { ty = seredina; tx = nad; }
+        }
+        tx = Math.min(Math.max(tx, w/2 + 2), v.w - w/2 - 2);
+        ty = Math.min(Math.max(ty, h/2 + 2), v.h - h/2 - 2);
+        // ПОВОРОТ вдоль линии: вертикальные размеры читаются снизу вверх
+        const povorot = gorizont ? '' : ` transform="rotate(-90, ${tx}, ${ty})"`;
+
         const svoya = steny.find(st=>{
           const s1 = gorizont ? Math.min(st.a[0],st.b[0]) : Math.min(st.a[1],st.b[1]);
           const s2 = gorizont ? Math.max(st.a[0],st.b[0]) : Math.max(st.a[1],st.b[1]);
           return s1 <= v1 + EPS && s2 >= v2 - EPS;
         });
         const on = svoya && polyDraw.sel === svoya.i;
-        const closing = svoya && p.length >= 3 && svoya.i === p.length - 1;
+        // выноска к отодвинутому числу — чтобы было видно, к какому отрезку оно
+        const povodok = sdvig ? (gorizont
+          ? `<line x1="${seredina}" y1="${uroven}" x2="${tx}" y2="${ty + (h/2)*storonaZnak}" class="pd-dim-ext"/>`
+          : `<line x1="${uroven}" y1="${seredina}" x2="${tx + (h/2)*storonaZnak}" y2="${ty}" class="pd-dim-ext"/>`) : '';
+
         if(on){
-          lbls += `<g class="pd-lbl-g on">
-            <foreignObject x="${tx-w/2-14}" y="${ty-h/2-4}" width="${w+28}" height="${h+8}">
+          lbls += `<g class="pd-lbl-g on">${povodok}
+            <foreignObject x="${tx-Math.max(w,44)/2-10}" y="${ty-12}" width="${Math.max(w,44)+20}" height="26">
               <input xmlns="http://www.w3.org/1999/xhtml" class="pd-lbl-input"
                      id="pdLblInput" inputmode="decimal" value="${escapeAttr(txt)}">
             </foreignObject></g>`;
         }else{
-          lbls += `<g ${svoya?`data-pd-lbl="${svoya.i}"`:''} class="pd-lbl-g ${closing?'closing':''}">
-            <rect x="${tx-w/2}" y="${ty-h/2}" width="${w}" height="${h}" rx="4" class="pd-lbl-bg"/>
+          lbls += `<g ${svoya?`data-pd-lbl="${svoya.i}"`:''} class="pd-lbl-g">${povodok}
+            <rect x="${tx-w/2}" y="${ty-h/2}" width="${w}" height="${h}" class="pd-lbl-bg"${povorot}/>
             <text x="${tx}" y="${ty}" text-anchor="middle" dominant-baseline="central"
-                  class="pd-lbl">${txt}</text></g>`;
+                  class="pd-lbl"${povorot}>${txt}</text></g>`;
         }
       }
     };
 
     // четыре цепи по сторонам габарита, каждая на своём отступе
     const OT = 30;
-    cep(gorNiz,  true,  pdY(minYm) + OT);
-    cep(gorVerh, true,  pdY(maxYm) - OT);
-    cep(vertLev, false, pdX(minXm) - OT);
-    cep(vertPrav,false, pdX(maxXm) + OT);
+    cep(gorNiz,  true,  pdY(minYm) + OT,  1);   // цепь ниже контура
+    cep(gorVerh, true,  pdY(maxYm) - OT, -1);   // выше контура
+    cep(vertLev, false, pdX(minXm) - OT, -1);   // слева
+    cep(vertPrav,false, pdX(maxXm) + OT,  1);   // справа
 
     // наклонные стены — своей линией вдоль стены: в цепь они не ложатся
     kosye.forEach(({i,a,b,L})=>{
