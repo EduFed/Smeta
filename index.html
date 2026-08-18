@@ -2058,6 +2058,7 @@
   .room-plan .plan-open{fill:none;stroke:currentColor;stroke-width:2;stroke-linejoin:round;}
   .room-plan .plan-gap{stroke:var(--orange);stroke-width:2;stroke-dasharray:5 4;}
   .room-plan .plan-tick{stroke:currentColor;stroke-width:.8;opacity:.35;}
+  .room-plan .plan-dim{stroke:currentColor;stroke-width:1;opacity:.55;}
   .room-plan .plan-dot{fill:currentColor;opacity:.5;}
   .room-plan .plan-lbl{font-family:'JetBrains Mono',monospace;font-size:10px;fill:currentColor;opacity:.75;}
 
@@ -2178,6 +2179,11 @@
   .pd-lbl-g.closing .pd-lbl{opacity:.7;}
   .pd-lbl-g.on .pd-lbl{fill:#fff;}
   .pd-svg .pd-lbl-tick{stroke:var(--ink-soft);stroke-width:1;opacity:.4;}
+  /* размерная линия по-чертёжному: выноски, сама линия, засечки */
+  .pd-svg .pd-dim-ext{stroke:var(--ink-soft);stroke-width:1;opacity:.45;}
+  .pd-svg .pd-dim-line{stroke:var(--ink-soft);stroke-width:1.2;opacity:.7;}
+  .pd-svg .pd-dim-tick{stroke:var(--ink-soft);stroke-width:1.4;opacity:.8;}
+  .pd-lbl-g.on .pd-dim-line, .pd-lbl-g.on .pd-dim-tick{stroke:var(--orange);opacity:1;}
   .pd-svg .pd-lbl{font-family:'JetBrains Mono',monospace;font-size:12px;fill:var(--ink);opacity:1;pointer-events:none;}
   .pd-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:12px 20px 16px;border-top:1px solid var(--paper-line);background:var(--paper);}
   .pd-stats{font-size:13px;color:var(--ink);}
@@ -2903,7 +2909,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-10-72';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-10-73';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -8329,32 +8335,41 @@ function roomPlanSVG(segs, dir0, drawn){
   // стен числа слипались в нечитаемый ком — владелец прислал снимок.
   // Горизонтальные стены подписываются сверху и снизу, вертикальные —
   // слева и справа; налегающие сдвигаются вдоль своей линии.
+  // Размеры — вдоль своих стен, как в чертёжных программах:
+  // короткая размерная линия параллельно стене, выноски от концов,
+  // засечки, число посередине. Вынос на общие линии по краям читался
+  // тяжело: связь числа со стеной приходилось прослеживать глазами.
   const zanyato = [];
   const labels = (segs||[]).map((sg,i)=>{
     const p = pts[i], q = pts[i+1];
     if(!p || !q) return '';
-    const L = Math.hypot(q[0]-p[0], q[1]-p[1]);
-    if(L < 0.06) return '';
-    const mx=(p[0]+q[0])/2, my=(p[1]+q[1])/2;
-    const txt = fmtLen(L);
-    const lw = txt.length*6 + 6, lh = 12;
-    const gor = Math.abs(q[0]-p[0]) >= Math.abs(q[1]-p[1]);
-    let tx, ty;
-    if(gor){ tx = X(mx); ty = (my >= cy) ? 11 : H - 8; }
-    else   { ty = Y(my); tx = (mx <= cx) ? 15 : W - 15; }
-    tx = Math.min(Math.max(tx, lw/2 + 1), W - lw/2 - 1);
-    ty = Math.min(Math.max(ty, lh), H - 3);
-    for(let g=0; g<14; g++){
+    const Lm = Math.hypot(q[0]-p[0], q[1]-p[1]);
+    if(Lm < 0.06) return '';
+    const txt = fmtLen(Lm);
+    const lw = txt.length*6 + 8, lh = 13;
+    const ax = X(p[0]), ay = Y(p[1]), bx = X(q[0]), by = Y(q[1]);
+    const lp = Math.hypot(bx-ax, by-ay) || 1;
+    let ux = -(by-ay)/lp, uy = (bx-ax)/lp;
+    const mX = (ax+bx)/2, mY = (ay+by)/2;
+    if((mX - X(cx))*ux + (mY - Y(cy))*uy < 0){ ux = -ux; uy = -uy; }
+    const OFF = 9;
+    const d1x = ax+ux*OFF, d1y = ay+uy*OFF, d2x = bx+ux*OFF, d2y = by+uy*OFF;
+    let tx = (d1x+d2x)/2 + ux*(lh/2+1), ty = (d1y+d2y)/2 + uy*(lh/2+1);
+    const tesno = lp < lw + 4;
+    if(tesno){ tx += ux*lh; ty += uy*lh; }
+    for(let g=0; g<10; g++){
       const hit = zanyato.find(z => Math.abs(z.x-tx) < (z.w+lw)/2 + 2 &&
                                     Math.abs(z.y-ty) < (z.h+lh)/2 + 2);
       if(!hit) break;
-      if(gor) tx += (tx >= hit.x ? 1 : -1) * ((hit.w+lw)/2 + 3);
-      else    ty += (ty >= hit.y ? 1 : -1) * ((hit.h+lh)/2 + 3);
+      tx += ux*(lh+2); ty += uy*(lh+2);
     }
+    tx = Math.min(Math.max(tx, lw/2+1), W - lw/2 - 1);
+    ty = Math.min(Math.max(ty, lh/2+1), H - lh/2 - 1);
     zanyato.push({ x:tx, y:ty, w:lw, h:lh });
-    // Без округления до сантиметра: на схеме должны стоять те же числа,
-    // что человек задал в окне черчения.
-    return `<line x1="${X(mx)}" y1="${Y(my)}" x2="${tx}" y2="${ty}" class="plan-tick"/>
+    return `<line x1="${ax}" y1="${ay}" x2="${d1x}" y2="${d1y}" class="plan-tick"/>
+      <line x1="${bx}" y1="${by}" x2="${d2x}" y2="${d2y}" class="plan-tick"/>
+      <line x1="${d1x}" y1="${d1y}" x2="${d2x}" y2="${d2y}" class="plan-dim"/>
+      ${tesno ? `<line x1="${(d1x+d2x)/2}" y1="${(d1y+d2y)/2}" x2="${tx}" y2="${ty}" class="plan-tick"/>` : ''}
       <text x="${tx}" y="${ty}" text-anchor="middle"
         dominant-baseline="central" class="plan-lbl">${txt}</text>`;
   }).join('');
@@ -8728,70 +8743,67 @@ function polyDrawSVG(){
         const closing = (p.length >= 3 && i === p.length - 1);
         const txt = fmtLen(L);
         const w = Math.max(34, txt.length*8 + 14), h = 22;
-        // РАЗМЕРЫ ВЫНОСЯТСЯ НА ОБЩИЕ ЛИНИИ, КАК В ЧЕРТЕЖАХ.
+
+        // РАЗМЕРНАЯ ЛИНИЯ ВДОЛЬ СТЕНЫ — КАК В SKETCHUP.
         //
-        // Раньше каждое число висело у своей стены, и на плотном контуре
-        // они слипались в кашу — сколько ни разводи по отдельности.
-        // В чертежах так не делают: размеры выносят за габарит фигуры
-        // и выстраивают рядами. Горизонтальные стены подписываются
-        // сверху или снизу, вертикальные — слева или справа; каждая
-        // подпись стоит напротив своей стены, а от стены к ней идёт
-        // тонкая выносная линия.
-        // Тогда числа физически не могут налезть друг на друга:
-        // они на разных линиях, а внутри одной линии их разводит сдвиг.
-        const gorizont = Math.abs(b[0]-a[0]) >= Math.abs(b[1]-a[1]);
-        let tx, ty;
-        if(gorizont){
-          const naverh = (mym >= cym);
-          ty = naverh ? (PD_PAD - 4) : (v.h - PD_PAD + 4);
-          tx = pdX(mxm);
-        }else{
-          const vlevo = (mxm <= cxm);
-          tx = vlevo ? (PD_PAD - 4) : (v.w - PD_PAD + 4);
-          ty = pdY(mym);
-        }
-        // не даём уйти за край картинки
-        tx = Math.min(Math.max(tx, w/2 + 2), v.w - w/2 - 2);
-        ty = Math.min(Math.max(ty, h/2 + 2), v.h - h/2 - 2);
-        // если место занято — сдвигаем ВДОЛЬ размерной линии,
-        // а не наружу: ряд остаётся рядом
-        // Сдвигаем вдоль своей размерной линии, а когда ряд забит —
-        // уходим на СЛЕДУЮЩИЙ УРОВЕНЬ, дальше от контура. В чертежах
-        // так и делают: цепочки размеров идут в несколько ярусов.
-        const naruzhu = gorizont
-          ? ((mym >= cym) ? -1 : 1)     // вверх или вниз от контура
-          : ((mxm <= cxm) ? -1 : 1);    // влево или вправо
-        let uroven = 0;
-        for(let guard = 0; guard < 24; guard++){
-          const hit = placed.find(q =>
-            Math.abs(q.x - tx) < (q.w + w)/2 + 3 &&
-            Math.abs(q.y - ty) < (q.h + h)/2 + 3);
+        // Пробовал выносить числа на общие линии по краям картинки:
+        // налегать они перестали, но читать стало тяжело — владелец
+        // прислал сравнение. Число улетало к границе, к нему тянулась
+        // длинная выноска, и какое число к какой стене — приходилось
+        // прослеживать глазами.
+        //
+        // В чертёжных программах размер живёт РЯДОМ СО СВОЕЙ СТЕНОЙ:
+        // короткая размерная линия параллельно ей, две выноски от концов,
+        // засечки по краям, число посередине. Тогда связь видна сразу
+        // и прослеживать нечего.
+        const ax = pdX(a[0]), ay = pdY(a[1]), bx = pdX(b[0]), by = pdY(b[1]);
+        const lenPx = Math.hypot(bx-ax, by-ay) || 1;
+        // единичная нормаль наружу, в точках картинки
+        let ux = -(by-ay)/lenPx, uy = (bx-ax)/lenPx;
+        const midX = (ax+bx)/2, midY = (ay+by)/2;
+        const cX = pdX(cxm), cY = pdY(cym);
+        if((midX-cX)*ux + (midY-cY)*uy < 0){ ux = -ux; uy = -uy; }
+        const OFF = 15;                       // отступ размерной линии от стены
+        const d1x = ax + ux*OFF, d1y = ay + uy*OFF;
+        const d2x = bx + ux*OFF, d2y = by + uy*OFF;
+        // засечки на концах — короткие штрихи под 45°, как на чертеже
+        const tk = 4;
+        const sx = (bx-ax)/lenPx, sy = (by-ay)/lenPx;
+        const zas = (x,y)=>`<line x1="${x-(sx+ux)*tk}" y1="${y-(sy+uy)*tk}"
+                                  x2="${x+(sx+ux)*tk}" y2="${y+(sy+uy)*tk}" class="pd-dim-tick"/>`;
+        // Число — посередине, горизонтально: повёрнутый текст на телефоне
+        // читать неудобно, а места рядом со стеной хватает.
+        // Если стена короткая и подпись не влезает — отодвигаем её дальше
+        // наружу и соединяем тонкой выноской.
+        let tx = (d1x+d2x)/2 + ux*(h/2 + 2), ty = (d1y+d2y)/2 + uy*(h/2 + 2);
+        const tesno = lenPx < w + 6;
+        if(tesno){ tx += ux*(h + 2); ty += uy*(h + 2); }
+        for(let guard=0; guard<12; guard++){
+          const hit = placed.find(q => Math.abs(q.x-tx) < (q.w+w)/2 + 3 &&
+                                       Math.abs(q.y-ty) < (q.h+h)/2 + 3);
           if(!hit) break;
-          if(guard > 0 && guard % 6 === 0){
-            // ряд не разошёлся — переносим на ярус выше и начинаем заново
-            uroven++;
-            if(gorizont){ ty += naruzhu * (h + 5); tx = pdX(mxm); }
-            else        { tx += naruzhu * (w + 5); ty = pdY(mym); }
-            continue;
-          }
-          if(gorizont) tx += (tx >= hit.x ? 1 : -1) * ((hit.w + w)/2 + 4);
-          else         ty += (ty >= hit.y ? 1 : -1) * ((hit.h + h)/2 + 4);
+          tx += ux*(h + 3); ty += uy*(h + 3);
         }
-        // После всех сдвигов — вернуть в пределы картинки. Число
-        // за краем бесполезно, а налегание видно и переживаемо.
         tx = Math.min(Math.max(tx, w/2 + 2), v.w - w/2 - 2);
         ty = Math.min(Math.max(ty, h/2 + 2), v.h - h/2 - 2);
         placed.push({ x:tx, y:ty, w, h });
-        const tick = `<line x1="${pdX(mxm)}" y1="${pdY(mym)}" x2="${tx}" y2="${ty}" class="pd-lbl-tick"/>`;
+
+        const dim = `
+          <line x1="${ax}" y1="${ay}" x2="${d1x}" y2="${d1y}" class="pd-dim-ext"/>
+          <line x1="${bx}" y1="${by}" x2="${d2x}" y2="${d2y}" class="pd-dim-ext"/>
+          <line x1="${d1x}" y1="${d1y}" x2="${d2x}" y2="${d2y}" class="pd-dim-line"/>
+          ${zas(d1x,d1y)}${zas(d2x,d2y)}
+          ${tesno ? `<line x1="${(d1x+d2x)/2}" y1="${(d1y+d2y)/2}" x2="${tx}" y2="${ty}" class="pd-dim-ext"/>` : ''}`;
+
         if(on){
-          lbls += `<g class="pd-lbl-g on">${tick}
+          lbls += `<g class="pd-lbl-g on">${dim}
             <foreignObject x="${tx-w/2-14}" y="${ty-h/2-4}" width="${w+28}" height="${h+8}">
               <input xmlns="http://www.w3.org/1999/xhtml" class="pd-lbl-input"
                      id="pdLblInput" inputmode="decimal" value="${escapeAttr(txt)}">
             </foreignObject>
           </g>`;
         }else{
-          lbls += `<g data-pd-lbl="${i}" class="pd-lbl-g ${closing?'closing':''}">${tick}
+          lbls += `<g data-pd-lbl="${i}" class="pd-lbl-g ${closing?'closing':''}">${dim}
             <rect x="${tx-w/2}" y="${ty-h/2}" width="${w}" height="${h}" rx="5" class="pd-lbl-bg"/>
             <text x="${tx}" y="${ty}" text-anchor="middle" dominant-baseline="central"
                   class="pd-lbl">${txt}</text>
