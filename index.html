@@ -2909,7 +2909,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-18-85';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-18-86';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -9843,6 +9843,11 @@ function polyDrawSave(){
   r.dims = r.dims || {};
   r.dims.pts  = s.m.map(v=>[Math.round(v[0]*1000)/1000, Math.round(v[1]*1000)/1000]);
   r.dims.step = polyDraw.step;
+  // ЕДИНИЦЫ ТОЖЕ СОХРАНЯЕМ. Их забыли: шаг сетки уезжал в комнату,
+  // а выбор «мм» жил только до закрытия окна — открыл снова, и опять
+  // метры. На сам контур это не влияет (точки всегда в метрах), но
+  // человек, который чертит в миллиметрах, переключает их каждый раз.
+  r.dims.unit = polyDraw.unit;
   r.dims.segs = polySegsFromPts(r.dims.pts);
   r.dims.dir0 = polyDir0FromPts(r.dims.pts);
   r.shape = 'poly';
