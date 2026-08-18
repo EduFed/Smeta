@@ -2909,7 +2909,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-18-84';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-18-85';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -8638,6 +8638,24 @@ function polyDrawClose(){
 // окно перестаёт быть тесным на большом экране, а при смене шага
 // контур остаётся на месте и по центру — потому что область считается
 // заново от самого контура, а не от нуля.
+// ФОРМА ХОЛСТА — ЗАМЕРЯЕМ ОДИН РАЗ НА ОТРИСОВКУ И ЗАПОМИНАЕМ.
+// Внутри pdView() замерять нельзя, хотя туда и просится: её зовут
+// десятки раз за одну картинку — из pdX и pdY в том числе. Размер
+// холста в это время успевает измениться, и координаты приходят
+// от разных замеров. Один раз я так и сделал, и картинка вышла
+// собранной из двух разных видов: сетка от одного, размеры от другого.
+// Возвращает true, если форма изменилась — значит холст надо перерисовать.
+function pdZamerHolsta(){
+  if(!polyDraw || typeof document === 'undefined') return false;
+  const box = document.querySelector('.pd-canvas');
+  if(!box) return false;
+  const w = box.clientWidth, h = box.clientHeight;
+  if(!(w > 40 && h > 40)) return false;
+  const bylo = polyDraw.holstOtn || 0;
+  polyDraw.holstOtn = w/h;
+  return Math.abs(bylo - polyDraw.holstOtn) > 0.02;
+}
+
 function pdView(){
   // ПРИБЛИЖЕНИЕ И ПЕРЕМЕЩЕНИЕ (с 2026-08-10-68).
   // Если человек приблизил или подвинул холст — показываем ровно то,
@@ -8685,8 +8703,35 @@ function pdView(){
   const MIN_CELLS = 6;
   while(Math.round((maxX-minX)/st) < MIN_CELLS){ maxX += st; minX -= st; }
   while(Math.round((maxY-minY)/st) < MIN_CELLS){ maxY += st; minY -= st; }
-  const cols = Math.round((maxX-minX)/st) + 1;
-  const rows = Math.round((maxY-minY)/st) + 1;
+  let cols = Math.round((maxX-minX)/st) + 1;
+  let rows = Math.round((maxY-minY)/st) + 1;
+  // ОБЛАСТЬ ПОД ФОРМУ ОКНА, А НЕ ПОД ФОРМУ КОНТУРА.
+  //
+  // Владелец: «справа и слева пустота». Высокая узкая комната упиралась
+  // в высоту холста, и по бокам оставалось белое поле — на широком
+  // экране больше половины окна впустую.
+  //
+  // Добавляем клетки только с той стороны, где место пропадает, —
+  // и только ДОБАВЛЯЕМ. Контур от этого не уменьшается: его размер
+  // на экране задаёт та сторона, которая упёрлась (здесь высота),
+  // а прибавка уходит ровно в ту пустоту, что была белой.
+  // Это не то, что забраковали раньше: тогда поле раздували вокруг
+  // маленького контура, и он становился крошечным.
+  const otn = polyDraw.holstOtn;
+  if(otn > 0.05 && otn < 20){
+    // считаем по всей картинке, вместе с полями: они тоже занимают место
+    const shirPx = PD_PAD*2 + (cols-1)*PD_SC, vysPx = PD_PAD*2 + (rows-1)*PD_SC;
+    let dobavit = Math.min(Math.max(0, Math.round((vysPx*otn - shirPx)/PD_SC)), 60);
+    while(dobavit > 0){
+      maxX += st; cols++; dobavit--;
+      if(dobavit > 0){ minX -= st; cols++; dobavit--; }
+    }
+    dobavit = Math.min(Math.max(0, Math.round((shirPx/otn - vysPx)/PD_SC)), 60);
+    while(dobavit > 0){
+      maxY += st; rows++; dobavit--;
+      if(dobavit > 0){ minY -= st; rows++; dobavit--; }
+    }
+  }
   return { minX, minY, maxX, maxY, cols, rows,
            w: PD_PAD*2 + (cols-1)*PD_SC, h: PD_PAD*2 + (rows-1)*PD_SC };
 }
@@ -8740,6 +8785,7 @@ function pdZamorozit(){
 }
 
 function polyDrawSVG(){
+  pdZamerHolsta();          // одна форма холста на всю эту картинку
   const p = polyDraw.pts, st = polyDraw.step;
   const v = pdView();
   const dots = [];
@@ -9346,6 +9392,13 @@ function polyDrawRender(){
       </div>
     </div>`;
   ov.style.display = 'flex';
+  // ФОРМУ ХОЛСТА УЗНАЁМ ТОЛЬКО СЕЙЧАС. Пока окно собиралось строкой,
+  // мерить было нечего — холста в странице ещё не было. Узнали —
+  // и, если форма другая, перерисовываем один холст, не всё окно.
+  if(pdZamerHolsta()){
+    const box = document.querySelector('.pd-canvas');
+    if(box) box.innerHTML = polyDrawSVG();
+  }
   polyDrawBind();
 }
 
@@ -9527,16 +9580,18 @@ function polyDrawBindSvg(){
     // в стену, а не хотел добавить угол посреди пола. Раньше такое
     // нажатие пристраивало точку в конец контура, и чертёж ломался
     // от промаха в пару миллиметров.
-    if(p.length >= 3 && pdInside(m, p)){
-      polyDraw.sel = null;
-      polyDrawRender();
-      return;
-    }
     // НАЖАЛ И ПОТЯНУЛ — ЭТО ПЕРЕМЕЩЕНИЕ ХОЛСТА, а не новая точка.
     // Точку ставим, только если человек не потянул: тогда это касание,
     // а не жест. Раньше двигать холст можно было лишь двумя пальцами,
     // и на мыши перемещения не было вовсе.
-    polyDraw.drag = { kind:'holst', from:m, sEkr:[e.clientX, e.clientY], moved:false };
+    //
+    // Тянуть можно и по полу комнаты — это самое крупное свободное
+    // место на чертеже, и рука тянется именно туда. Точка там не встаёт
+    // (см. правило ниже), поэтому касание по полу просто снимает выбор,
+    // как и раньше.
+    const poPolu = p.length >= 3 && pdInside(m, p);
+    polyDraw.drag = { kind:'holst', from:m, sEkr:[e.clientX, e.clientY],
+                      moved:false, stavit: !poPolu };
     svg.setPointerCapture(e.pointerId);
   };
   svg.onpointermove = e=>{
@@ -9572,12 +9627,15 @@ function polyDrawBindSvg(){
     const dr = polyDraw.drag;
     polyDraw.drag = null;
     if(dr.kind === 'holst'){
-      // не потянул — значит это было касание, ставим точку
-      if(!dr.moved){
+      // не потянул — значит это было касание. Точка встаёт только
+      // на пустом месте: ВНУТРИ КОНТУРА НОВЫХ ВЕРШИН НЕ БЫВАЕТ
+      // (правило с 2026-08-10-56) — там человек целился в стену,
+      // а не хотел угол посреди пола.
+      if(!dr.moved && dr.stavit){
         polyDraw.pts.push(clamp([pdSnap(dr.from[0]), pdSnap(dr.from[1])]));
         pdPush();
-        polyDraw.sel = null;
       }
+      if(!dr.moved) polyDraw.sel = null;
       polyDrawRender();
       return;
     }
