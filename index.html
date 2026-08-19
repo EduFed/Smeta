@@ -2915,7 +2915,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-19-89';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-19-90';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -4374,6 +4374,14 @@ function applyLocks(){
 }
 let lastAuthUid = null;     // id последнего вошедшего — защита от повторного afterLogin
 let pendingSave = false;    // есть несохранённые изменения
+// НОМЕР ПРАВКИ. Растёт на каждое изменение. Нужен, чтобы закончившееся
+// сохранение не гасило признак «есть несохранённое», поставленный правкой,
+// которая случилась уже ПОСЛЕ его отправки. Один общий выключатель этого
+// различить не мог: правка терялась молча, с видом «сохранено».
+let saveSeq = 0;
+// Сохранение уже летит. Второе параллельно не запускаем: они делят
+// и слепок сервера, и местную копию, а порядок ответов не гарантирован.
+let saveIdet = false;
 let lastSaveError = '';     // почему сервер отказал — держим до первого успеха
 
 // Ограничение времени ожидания ответа от облака.
@@ -4414,6 +4422,7 @@ function scheduleSave(){
   // оно не уйдёт на сервер и не затрёт чужую работу.
   const cp = (typeof currentProject === 'function') ? currentProject() : null;
   if(cp && cp.myRole === 'viewer'){ setSync('', 'только просмотр — изменения не сохраняются'); return; }
+  saveSeq++;
   pendingSave = true;
   setSync('saving', 'сохранение…');
   clearTimeout(saveTimer);
@@ -6600,6 +6609,17 @@ async function persistToCloud(payload, stamp){
 }
 
 async function persist(){
+  // УЖЕ ЛЕТИТ — ЖДЁМ, А НЕ ЗАПУСКАЕМ ВТОРОЕ. Два сохранения делят слепок
+  // сервера и местную копию, а порядок ответов не гарантирован: то, что
+  // ушло позже, могло ответить раньше, и слепок оставался от старого.
+  if(saveIdet){
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(persist, 300);
+    return;
+  }
+  // Номер правки, на которой мы стартовали. Всё, что напечатано после,
+  // этим сохранением НЕ отправлено, как бы удачно оно ни завершилось.
+  const moySeq = saveSeq;
   const payload = { projects: state.projects, catalog: state.catalog, executor: state.executor, ref: state.ref, ui: state.ui, materials: state.materials };
 
   // локальная проверка: облака нет, пишем только в память браузера
@@ -6639,11 +6659,18 @@ async function persist(){
   // секунды и показывать её человеку не за чем.
   saveLocal(payload, true, true);
 
+  // ЧТО ИМЕННО УШЛО. Посылка выше — это ссылки на живые данные, а не копия:
+  // к моменту ответа сервера в ней окажется и то, что человек напечатал,
+  // пока запрос летел. Снимаем строку СЕЙЧАС, чтобы потом отличить
+  // отправленное от напечатанного следом.
+  const otpravleno = JSON.stringify(payload);
+  saveIdet = true;
   const job = persistToCloud(payload, stamp);
 
   // Что происходит при успехе — вынесено, потому что вызывается из двух мест:
   // сразу (быстрая связь) и позже (медленная связь, ответ пришёл в фоне).
   const onDone = (res)=>{
+    saveIdet = false;
     if(res.kind === 'conflict'){
       saveLocal(payload, true);
       setSync('error', 'конфликт версий');
@@ -6651,13 +6678,36 @@ async function persist(){
       return;
     }
     cloudBase = stamp;
-    saveLocal(payload, false);
+    // ПОМЕЧАЕМ ОТПРАВЛЕННЫМ ТОЛЬКО ТО, ЧТО ОТПРАВЛЕНО.
+    //
+    // Здесь стояло `saveLocal(payload, false)` — и это была настоящая
+    // потеря данных, воспроизведённая 19 августа 2026. Посылка держит
+    // ссылки на живые данные, поэтому в местную копию попадало и то,
+    // что человек напечатал, пока запрос летел, — но с пометкой
+    // «всё отправлено». На сервере этого не было.
+    // Дальше замыкалось само: при следующем запуске приложение видело
+    // «неотправленного нет», честно шло за данными в облако и затирало
+    // напечатанное. Владелец 19 августа потерял так адрес и аванс —
+    // те поля, что вводил последними.
+    // Теперь сравниваем состояние с тем, что ушло: совпало — чисто,
+    // разошлось — копия остаётся «неотправленной» и доедет следующим
+    // заходом. Это та же грабля 40 с другой стороны: там не хранили,
+    // с чем сравнивать, здесь объявили отправленным несравненное.
+    const seychas = { projects: state.projects, catalog: state.catalog,
+                      executor: state.executor, ref: state.ref,
+                      ui: state.ui, materials: state.materials };
+    const dopisali = JSON.stringify(seychas) !== otpravleno;
+    saveLocal(seychas, dopisali);
     syncOffline = false;
     lastSaveError = '';        // получилось — прошлая причина больше не нужна
-    setSync('saved', 'сохранено в облаке');
+    setSync(dopisali ? 'saving' : 'saved',
+            dopisali ? 'сохранение…' : 'сохранено в облаке');
+    // дописанное во время полёта отправляем следом
+    if(dopisali){ clearTimeout(saveTimer); saveTimer = setTimeout(persist, 300); }
   };
 
   const onFail = (e)=>{
+    saveIdet = false;
     console.error('Save failed', e);
 
     // ОДИН РАБОЧИЙ ПРОЕКТ НА БЕСПЛАТНОМ ТАРИФЕ.
@@ -6792,14 +6842,18 @@ async function persist(){
         }
       }, Math.max(1000, DEAD_TIMEOUT_MS - NET_TIMEOUT_MS));
 
-      pendingSave = false;
+      if(saveSeq === moySeq) pendingSave = false;
       return;
     }
     onDone(quick);
   }catch(e){
     onFail(e);
   }finally{
-    pendingSave = false;
+    // Гасим признак «есть несохранённое», только если с момента отправки
+    // человек ничего не напечатал. Иначе мы объявили бы сохранённым то,
+    // чего в этой посылке не было, и «дослать при закрытии вкладки»
+    // перестало бы срабатывать.
+    if(saveSeq === moySeq) pendingSave = false;
   }
 }
 
