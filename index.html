@@ -534,7 +534,17 @@
     display:flex; align-items:center; justify-content:center;
     touch-action:none;   /* чтобы свайп листал, а не скроллил страницу */
   }
-  .pv-img{max-width:100%; max-height:100%; object-fit:contain; display:block;}
+  .pv-img{
+    max-width:100%; max-height:100%; object-fit:contain; display:block;
+    /* приближение крутим через transform: он не заставляет страницу
+       пересчитывать раскладку, поэтому щипок идёт плавно даже на слабом
+       телефоне. Точка отсчёта — середина: от неё же считаются пределы. */
+    transform-origin:center center;
+    touch-action:none;
+    will-change:transform;
+  }
+  .pv-img.pv-uvel{ cursor:grab; }
+  .pv-img.pv-tyanem{ cursor:grabbing; }
   .pv-btn{
     position:absolute; border:none; background:rgba(255,255,255,.14); color:#fff;
     border-radius:50%; cursor:pointer; line-height:1; padding:0;
@@ -2925,7 +2935,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-20-91';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-20-92';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -7307,9 +7317,67 @@ async function photoViewerOpen(roomId, id){
   await photoViewerShow();
 }
 
+// ---------- ПРИБЛИЖЕНИЕ СНИМКА ----------
+// Мастер снимает трещину или скол, а разглядеть её на телефоне нельзя:
+// снимок вписан в экран целиком. Приближение — щипком, двойным касанием,
+// колесом мыши; когда приближено, снимок таскается пальцем.
+//
+// ГЛАВНОЕ ПРАВИЛО ЗДЕСЬ: пока не приближено, всё работает как раньше.
+// Свайп листает, свайп вниз закрывает. Стоит приблизить — эти жесты
+// выключаются, иначе человек тянет снимок вбок, а тот улистывается
+// на соседний.
+let pvZoom = 1, pvPanX = 0, pvPanY = 0;
+const PV_MAX = 5;
+
+function pvPrimenit(plavno){
+  const img = document.getElementById('pvImg');
+  if(!img) return;
+  img.style.transition = plavno ? 'transform .18s ease' : 'none';
+  img.style.transform = 'translate(' + pvPanX + 'px,' + pvPanY + 'px) scale(' + pvZoom + ')';
+  img.classList.toggle('pv-uvel', pvZoom > 1);
+}
+
+// Не даём утащить снимок за край экрана: сдвиг ограничен половиной того,
+// что вылезло за границы. Считаем от размера ДО приближения (offsetWidth),
+// потому что transform на него не влияет.
+function pvPredel(){
+  const img = document.getElementById('pvImg');
+  if(!img) return;
+  const w = img.offsetWidth * pvZoom, h = img.offsetHeight * pvZoom;
+  const mx = Math.max(0, (w - window.innerWidth) / 2);
+  const my = Math.max(0, (h - window.innerHeight) / 2);
+  pvPanX = Math.min(mx, Math.max(-mx, pvPanX));
+  pvPanY = Math.min(my, Math.max(-my, pvPanY));
+}
+
+// Приблизить, удержав под пальцем ту точку, на которую человек смотрит.
+// Без этого снимок при щипке уезжает из-под пальцев, и попасть
+// на нужное место невозможно.
+function pvUvelichit(novyy, fx, fy, plavno){
+  const img = document.getElementById('pvImg');
+  if(!img) return;
+  novyy = Math.min(PV_MAX, Math.max(1, novyy));
+  const W = window.innerWidth, H = window.innerHeight;
+  const cx = W/2 + pvPanX, cy = H/2 + pvPanY;      // где сейчас середина снимка
+  const ox = (fx - cx) / pvZoom, oy = (fy - cy) / pvZoom;
+  pvZoom = novyy;
+  if(pvZoom === 1){ pvPanX = 0; pvPanY = 0; }
+  else { pvPanX = fx - W/2 - ox*novyy; pvPanY = fy - H/2 - oy*novyy; }
+  pvPredel();
+  pvPrimenit(!!plavno);
+}
+
+function pvSbros(plavno){
+  pvZoom = 1; pvPanX = 0; pvPanY = 0;
+  pvPrimenit(!!plavno);
+}
+
 async function photoViewerShow(){
   const a = pvList[pvIdx];
   if(!a) return;
+  // новый снимок показываем целиком: приближение от предыдущего
+  // к нему отношения не имеет
+  pvSbros(false);
   const img = document.getElementById('pvImg');
   const cnt = document.getElementById('pvCount');
   const when = document.getElementById('pvWhen');
@@ -7377,6 +7445,7 @@ async function photoViewerClose(){
   await photoViewerFlushNote();
   const box = document.getElementById('photoViewer');
   if(box) box.style.display = 'none';
+  pvSbros(false);
   const img = document.getElementById('pvImg');
   if(img) img.removeAttribute('src');   // не держим картинку в памяти
   const note = document.getElementById('pvNote');
@@ -11481,22 +11550,119 @@ document.getElementById('previewClose') && document.getElementById('previewClose
   // задеть экран, и снимок захлопывался бы посреди разглядывания.
   box.addEventListener('click', e=>{ if(e.target === box) photoViewerClose(); });
 
+  // ЖЕСТЫ НА СНИМКЕ: листание, закрытие, приближение.
+  //
   // Свайп. Порог в 40 точек: меньше — и снимок будет листаться
   // от случайного касания.
-  let x0 = null, y0 = null;
+  //
+  // ПОКА НЕ ПРИБЛИЖЕНО — всё как было. Стоит приблизить, и листание
+  // со свайпом вниз выключаются: иначе человек тянет снимок вбок,
+  // чтобы рассмотреть край, а тот улистывается на соседний.
+  let x0 = null, y0 = null, kasanie0 = 0, poslednee = 0;
+  let shchipok = null;   // {d0, z0} — расстояние между пальцами в начале
+  let tyanem = null;     // {x, y, panX, panY} — таскаем приближённый снимок
+
+  const svoyo = e => !(e.target && e.target.closest &&
+                       e.target.closest('.pv-note, .pv-btn'));
+
   box.addEventListener('touchstart', e=>{
-    const t = e.changedTouches[0]; x0 = t.clientX; y0 = t.clientY;
+    if(!svoyo(e)) return;
+    if(e.touches.length === 2){
+      const [a, b] = e.touches;
+      shchipok = { d0: Math.hypot(a.clientX-b.clientX, a.clientY-b.clientY), z0: pvZoom };
+      tyanem = null; x0 = null;         // это жест, а не свайп
+      return;
+    }
+    const t = e.touches[0];
+    x0 = t.clientX; y0 = t.clientY; kasanie0 = Date.now();
+    tyanem = pvZoom > 1 ? { x:t.clientX, y:t.clientY, panX:pvPanX, panY:pvPanY } : null;
   }, { passive:true });
+
+  box.addEventListener('touchmove', e=>{
+    if(shchipok && e.touches.length === 2){
+      const [a, b] = e.touches;
+      const d = Math.hypot(a.clientX-b.clientX, a.clientY-b.clientY);
+      if(shchipok.d0 > 8){
+        pvUvelichit(shchipok.z0 * (d / shchipok.d0),
+                    (a.clientX+b.clientX)/2, (a.clientY+b.clientY)/2, false);
+      }
+      x0 = null;
+      return;
+    }
+    if(tyanem && e.touches.length === 1){
+      const t = e.touches[0];
+      pvPanX = tyanem.panX + (t.clientX - tyanem.x);
+      pvPanY = tyanem.panY + (t.clientY - tyanem.y);
+      pvPredel(); pvPrimenit(false);
+      x0 = null;                        // это перетаскивание, а не свайп
+    }
+  }, { passive:true });
+
   box.addEventListener('touchend', e=>{
-    if(x0 === null) return;
+    if(e.touches.length === 0){ shchipok = null; tyanem = null; }
+    if(!svoyo(e) || x0 === null) return;
     const t = e.changedTouches[0];
     const dx = t.clientX - x0, dy = t.clientY - y0;
+    const bylo = Date.now() - kasanie0;
     x0 = null;
+
+    // ДВОЙНОЕ КАСАНИЕ — приблизить туда, куда ткнули, и обратно.
+    // Короткое касание почти без движения, второе в пределах 300 мс.
+    if(bylo < 300 && Math.abs(dx) < 12 && Math.abs(dy) < 12){
+      const teper = Date.now();
+      if(teper - poslednee < 300){
+        poslednee = 0;
+        pvUvelichit(pvZoom > 1 ? 1 : 2.5, t.clientX, t.clientY, true);
+        return;
+      }
+      poslednee = teper;
+      return;
+    }
+
+    if(pvZoom > 1) return;              // приближено — не листаем и не закрываем
     // Горизонтальный жест листает, вертикальный (вниз) закрывает —
     // так же, как в галерее телефона.
     if(Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy)) photoViewerStep(dx < 0 ? 1 : -1);
     else if(dy > 60 && Math.abs(dy) > Math.abs(dx)) photoViewerClose();
   }, { passive:true });
+
+  // ---------- то же самое мышью, на компьютере ----------
+  box.addEventListener('wheel', e=>{
+    if(!svoyo(e)) return;
+    e.preventDefault();
+    const shag = e.deltaMode === 1 ? e.deltaY/3 : e.deltaMode === 2 ? e.deltaY : e.deltaY/100;
+    pvUvelichit(pvZoom * Math.pow(1.15, -Math.max(-3, Math.min(3, shag))),
+                e.clientX, e.clientY, false);
+  }, { passive:false });
+
+  const img = document.getElementById('pvImg');
+  if(img){
+    img.addEventListener('dblclick', e=>{
+      e.preventDefault();
+      pvUvelichit(pvZoom > 1 ? 1 : 2.5, e.clientX, e.clientY, true);
+    });
+    // перетаскивание мышью — только когда есть что таскать
+    let myshka = null;
+    img.addEventListener('pointerdown', e=>{
+      if(e.pointerType === 'touch' || pvZoom <= 1) return;
+      myshka = { x:e.clientX, y:e.clientY, panX:pvPanX, panY:pvPanY };
+      img.classList.add('pv-tyanem');
+      try{ img.setPointerCapture(e.pointerId); }catch(_){}
+      e.preventDefault();
+    });
+    img.addEventListener('pointermove', e=>{
+      if(!myshka) return;
+      pvPanX = myshka.panX + (e.clientX - myshka.x);
+      pvPanY = myshka.panY + (e.clientY - myshka.y);
+      pvPredel(); pvPrimenit(false);
+    });
+    const brosili = ()=>{ myshka = null; img.classList.remove('pv-tyanem'); };
+    img.addEventListener('pointerup', brosili);
+    img.addEventListener('pointercancel', brosili);
+    // Картинку нельзя утаскивать как файл: иначе браузер вместо
+    // перетаскивания снимка начнёт своё «перетащить изображение».
+    img.addEventListener('dragstart', e=> e.preventDefault());
+  }
 
   // Подпись сохраняем, когда человек ушёл из поля или нажал «готово».
   // Сохраняем по тому номеру, который лежал в поле, а НЕ по текущему
