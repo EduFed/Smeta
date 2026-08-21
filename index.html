@@ -542,7 +542,17 @@
   }
   /* Кнопки крупные: на объекте в перчатках и с грязными руками
      мелкая цель не нажимается. */
-  .pv-close{ top:14px; right:14px; width:44px; height:44px; font-size:20px; }
+  /* КРЕСТИК УЧИТЫВАЕТ ЧЁЛКУ (20 августа 2026).
+     Стояло просто top:14px — и на iPhone кнопка залезала под часы
+     и вырез: нажатие забирала система, а не приложение. Владелец:
+     «крестик закрытия убегает наверх на чёлку».
+     Внизу этой же панели отступ под «домашнюю полоску» уже был
+     (.pv-bar), а сверху — забыли. На компьютере и в браузере
+     env(...) = 0, поэтому там ничего не меняется. */
+  .pv-close{
+    top:calc(14px + env(safe-area-inset-top, 0px));
+    right:14px; width:44px; height:44px; font-size:20px;
+  }
   .pv-prev, .pv-next{ top:50%; transform:translateY(-50%); width:52px; height:52px; font-size:30px; }
   .pv-prev{ left:10px; } .pv-next{ right:10px; }
   .pv-btn:disabled{ opacity:.25; cursor:default; }
@@ -2915,7 +2925,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-19-90';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-20-91';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
