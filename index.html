@@ -2935,7 +2935,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-20-92';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-20-93';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -7306,6 +7306,12 @@ async function photoUpload(proj, roomId, file, kind){
 // у снимка нет и быть не может: хранилище закрыто.
 let pvList = [];      // снимки текущего помещения
 let pvIdx  = 0;
+// Номер показа. Человек листает быстрее, чем грузятся картинки: пока
+// едет один снимок, он свайпает дальше. Ответ, пришедший с опозданием,
+// не должен проявлять уже неактуальный снимок — сравниваем номер.
+// Та же семья ошибок, что грабля 56: медленный ответ доводит до конца
+// работу, которая давно никому не нужна.
+let pvPokaz = 0;
 
 async function photoViewerOpen(roomId, id){
   const proj = currentProject();
@@ -7332,7 +7338,10 @@ const PV_MAX = 5;
 function pvPrimenit(plavno){
   const img = document.getElementById('pvImg');
   if(!img) return;
-  img.style.transition = plavno ? 'transform .18s ease' : 'none';
+  // Прозрачность гладим ВСЕГДА, а движение — только когда просили.
+  // Раньше здесь стояло 'none' целиком, и это заодно выключало плавную
+  // смену снимка: она живёт на той же строке стилей.
+  img.style.transition = (plavno ? 'transform .18s ease, ' : '') + 'opacity .16s ease';
   img.style.transform = 'translate(' + pvPanX + 'px,' + pvPanY + 'px) scale(' + pvZoom + ')';
   img.classList.toggle('pv-uvel', pvZoom > 1);
 }
@@ -7397,11 +7406,30 @@ async function photoViewerShow(){
   // Один снимок — листать некуда, кнопки не показываем вовсе
   if(prev) prev.style.display = pvList.length > 1 ? 'flex' : 'none';
   if(next) next.style.display = pvList.length > 1 ? 'flex' : 'none';
+  // ПЛАВНАЯ СМЕНА. Снимок гаснет, меняется и проявляется — иначе при
+  // листании картинка сменяется рывком, а на медленной связи между
+  // старой и новой мелькает пустота.
+  const moy = ++pvPokaz;
+  if(img) img.style.opacity = '0';
   try{
     const urls = await photoViewUrls([a.id]);
-    if(img && urls[a.id]) img.src = urls[a.id];
+    if(moy !== pvPokaz) return;            // пока ждали, ушли на другой снимок
+    if(img && urls[a.id]){
+      // Ждём готовности картинки, но не дольше секунды: если снимок
+      // не пришёл, лучше показать что есть, чем оставить чёрный экран.
+      await new Promise(gotovo=>{
+        let bylo = false;
+        const raz = ()=>{ if(!bylo){ bylo = true; gotovo(); } };
+        img.onload = raz; img.onerror = raz;
+        setTimeout(raz, 1000);
+        img.src = urls[a.id];
+      });
+      if(moy !== pvPokaz) return;
+      img.style.opacity = '1';
+    }
   }catch(e){
     console.error('Photo view failed', e);
+    if(img && moy === pvPokaz) img.style.opacity = '1';   // не оставляем чёрный экран
   }
 }
 
@@ -7446,8 +7474,9 @@ async function photoViewerClose(){
   const box = document.getElementById('photoViewer');
   if(box) box.style.display = 'none';
   pvSbros(false);
+  pvPokaz++;                            // всё, что едет сейчас, уже не нужно
   const img = document.getElementById('pvImg');
-  if(img) img.removeAttribute('src');   // не держим картинку в памяти
+  if(img){ img.style.opacity = ''; img.removeAttribute('src'); }   // не держим картинку в памяти
   const note = document.getElementById('pvNote');
   if(note){ note.value = ''; delete note.dataset.forId; }
   pvList = []; pvIdx = 0;
