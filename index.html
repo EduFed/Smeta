@@ -2652,9 +2652,9 @@
        Середина ленты по-прежнему зовётся pvImg: к ней привязано
        приближение. -->
   <div class="pv-lenta" id="pvLenta">
-    <div class="pv-kadr"><img class="pv-img" id="pvImgL" alt=""></div>
-    <div class="pv-kadr"><img class="pv-img" id="pvImg" alt="Фотография помещения"></div>
-    <div class="pv-kadr"><img class="pv-img" id="pvImgR" alt=""></div>
+    <div class="pv-kadr"><img class="pv-img" alt=""></div>
+    <div class="pv-kadr"><img class="pv-img" alt="Фотография помещения"></div>
+    <div class="pv-kadr"><img class="pv-img" alt=""></div>
   </div>
   <button type="button" class="pv-btn pv-next" id="pvNext" title="Следующий снимок" aria-label="Следующий">›</button>
   <div class="pv-bar">
@@ -2960,7 +2960,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-22-99';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-22-101';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -7360,7 +7360,7 @@ let pvZoom = 1, pvPanX = 0, pvPanY = 0;
 const PV_MAX = 5;
 
 function pvPrimenit(plavno, perehod){
-  const img = document.getElementById('pvImg');
+  const img = pvSredniy();
   if(!img) return;
   // Прозрачность гладим ВСЕГДА, а движение — только когда просили.
   // Раньше здесь стояло 'none' целиком, и это заодно выключало плавную
@@ -7377,7 +7377,7 @@ function pvPrimenit(plavno, perehod){
 // что вылезло за границы. Считаем от размера ДО приближения (offsetWidth),
 // потому что transform на него не влияет.
 function pvPredel(){
-  const img = document.getElementById('pvImg');
+  const img = pvSredniy();
   if(!img) return;
   const w = img.offsetWidth * pvZoom, h = img.offsetHeight * pvZoom;
   const mx = Math.max(0, (w - window.innerWidth) / 2);
@@ -7390,7 +7390,7 @@ function pvPredel(){
 // Без этого снимок при щипке уезжает из-под пальцев, и попасть
 // на нужное место невозможно.
 function pvUvelichit(novyy, fx, fy, plavno){
-  const img = document.getElementById('pvImg');
+  const img = pvSredniy();
   if(!img) return;
   novyy = Math.min(PV_MAX, Math.max(1, novyy));
   const W = window.innerWidth, H = window.innerHeight;
@@ -7417,6 +7417,15 @@ function pvSbros(plavno){
 // уводи за край, между старым снимком и новым оставался пробел на время
 // загрузки — владелец назвал это «на секунду возникает чёрный экран».
 // Полосой этот пробел закрывается устройством, а не подгонкой времени.
+// КАДРЫ ИЩЕМ ПО МЕСТУ В ЛЕНТЕ, а не по имени. Имена пришлось убрать:
+// при листании мы ПЕРЕСТАВЛЯЕМ сами кадры, а не подменяем в них картинки,
+// и «средний» — это тот, кто сейчас стоит вторым, кем бы он ни был.
+function pvKadry(){
+  const l = document.getElementById('pvLenta');
+  return l ? Array.prototype.slice.call(l.querySelectorAll('.pv-img')) : [];
+}
+function pvSredniy(){ return pvKadry()[1] || null; }
+
 let pvSdvig = 0;                 // на сколько утянута полоса, точки
 const pvUrls = new Map();        // номер снимка → ссылка, чтобы не просить дважды
 
@@ -7441,12 +7450,16 @@ function pvRasstavit(){
   const n = pvList.length;
   if(!n) return null;
   const nomera = [ (pvIdx - 1 + n) % n, pvIdx, (pvIdx + 1) % n ];
-  ['pvImgL','pvImg','pvImgR'].forEach((id, k)=>{
-    const el = document.getElementById(id);
-    if(!el) return;
+  // Адрес меняем ТОЛЬКО если он отличается. После перестановки кадров
+  // средний и один из соседей уже держат нужные снимки — их не трогаем
+  // вовсе. Тронуть видимый кадр значит заставить его погаснуть на время
+  // загрузки: владелец видел это как моргание.
+  pvKadry().forEach((el, k)=>{
     const a = pvList[nomera[k]], u = a && pvUrls.get(a.id);
-    if(u){ if(el.src !== u) el.src = u; }
-    else el.removeAttribute('src');
+    // Ссылки ещё нет — НЕ обнуляем: пустой кадр это гарантированная
+    // вспышка, а прежняя картинка на долю секунды в кадре за краем
+    // не видна вовсе. Как ссылка приедет, pvZapolnit поставит верную.
+    if(u && el.src !== u) el.src = u;
   });
   return nomera;
 }
@@ -7520,7 +7533,28 @@ async function photoViewerStep(d, uzheProehali){
       pvLentaPrimenit('transform .24s ease-out');
       await new Promise(r=>setTimeout(r, 250));
     }
+    // ПЕРЕСТАВЛЯЕМ САМ КАДР, А НЕ КАРТИНКУ В НЁМ.
+    //
+    // Тут была третья по счёту причина моргания, и самая упрямая.
+    // Доехав до соседа, на экране стоит крайний кадр — а мы в этот миг
+    // меняли в нём адрес картинки, чтобы подготовить его под следующий
+    // снимок. Браузер на время загрузки гасит картинку, и видимый кадр
+    // моргал. Не каждый раз — только когда новый снимок не успевал
+    // подхватиться из памяти, оттого и «через раз».
+    //
+    // Теперь тот кадр, что уже показан, ПЕРЕЕЗЖАЕТ в середину как есть,
+    // со своей картинкой. Новый адрес получает только тот кадр, который
+    // уехал за край и человеку не виден.
+    const l = document.getElementById('pvLenta');
+    if(l && l.children.length === 3){
+      if(d > 0) l.appendChild(l.firstElementChild);
+      else      l.insertBefore(l.lastElementChild, l.firstElementChild);
+    }
     pvIdx = (pvIdx + d + pvList.length) % pvList.length;
+    // Перестановка и возврат полосы — в одной отрисовке, иначе на кадр
+    // покажется не тот снимок.
+    pvSdvig = 0;
+    pvLentaPrimenit('none');
     await photoViewerShow();
   } finally { pvEdet = false; }
 }
@@ -7534,10 +7568,7 @@ async function photoViewerClose(){
   pvSbros(false);
   pvSdvig = 0; pvLentaPrimenit('none');
   // не держим картинки в памяти — все три кадра
-  ['pvImgL','pvImg','pvImgR'].forEach(id=>{
-    const el = document.getElementById(id);
-    if(el){ el.style.opacity = ''; el.removeAttribute('src'); }
-  });
+  pvKadry().forEach(el=>{ el.style.opacity = ''; el.removeAttribute('src'); });
   pvUrls.clear();
   const note = document.getElementById('pvNote');
   if(note){ note.value = ''; delete note.dataset.forId; }
@@ -11837,7 +11868,7 @@ document.getElementById('previewClose') && document.getElementById('previewClose
                 e.clientX, e.clientY, false);
   }, { passive:false });
 
-  const img = document.getElementById('pvImg');
+  const img = pvSredniy();
   if(img){
     img.addEventListener('dblclick', e=>{
       e.preventDefault();
