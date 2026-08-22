@@ -2935,7 +2935,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-22-94';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-22-95';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -7335,13 +7335,16 @@ async function photoViewerOpen(roomId, id){
 let pvZoom = 1, pvPanX = 0, pvPanY = 0;
 const PV_MAX = 5;
 
-function pvPrimenit(plavno){
+function pvPrimenit(plavno, perehod){
   const img = document.getElementById('pvImg');
   if(!img) return;
   // Прозрачность гладим ВСЕГДА, а движение — только когда просили.
   // Раньше здесь стояло 'none' целиком, и это заодно выключало плавную
   // смену снимка: она живёт на той же строке стилей.
-  img.style.transition = (plavno ? 'transform .18s ease, ' : '') + 'opacity .16s ease';
+  // perehod — задать переход дословно: нужно листанию, которое ведёт
+  // и движение, и прозрачность своим временем.
+  img.style.transition = perehod !== undefined ? perehod
+      : (plavno ? 'transform .18s ease, ' : '') + 'opacity .16s ease';
   img.style.transform = 'translate(' + pvPanX + 'px,' + pvPanY + 'px) scale(' + pvZoom + ')';
   img.classList.toggle('pv-uvel', pvZoom > 1);
 }
@@ -7381,9 +7384,31 @@ function pvSbros(plavno){
   pvPrimenit(!!plavno);
 }
 
-async function photoViewerShow(){
+// napravlenie: +1 листаем вперёд, -1 назад, 0 или не задано — просто показать.
+//
+// ПОЧЕМУ НЕ ПРОСТО ГАСИТЬ И ПРОЯВЛЯТЬ. Так было в сборке -93, и владелец
+// сказал: «плавности нет, резко меняются». Причина в том, что гашение
+// ничего не ждало: если снимок уже в кэше телефона, весь цикл проходит
+// за миллисекунды и глаз не успевает ничего увидеть. На стенде значения
+// прозрачности были правильные — а человек видел рывок.
+//
+// Теперь переход занимает своё время всегда: старый снимок уезжает
+// в сторону свайпа и гаснет, новый въезжает с другой стороны. Заодно
+// движение совпадает с направлением пальца, и понятно, куда листаешь.
+async function photoViewerShow(napravlenie){
   const a = pvList[pvIdx];
   if(!a) return;
+  const img0 = document.getElementById('pvImg');
+  const moy0 = ++pvPokaz;
+  const shag = Math.min(90, Math.round(window.innerWidth * 0.18));
+  if(img0 && napravlenie){
+    // 1. увести старый снимок
+    pvZoom = 1; pvPanY = 0; pvPanX = napravlenie > 0 ? -shag : shag;
+    pvPrimenit(false, 'transform .14s ease, opacity .14s ease');
+    img0.style.opacity = '0';
+    await new Promise(r=>setTimeout(r, 140));
+    if(moy0 !== pvPokaz) return;      // пока уезжал, свайпнули ещё раз
+  }
   // новый снимок показываем целиком: приближение от предыдущего
   // к нему отношения не имеет
   pvSbros(false);
@@ -7406,10 +7431,7 @@ async function photoViewerShow(){
   // Один снимок — листать некуда, кнопки не показываем вовсе
   if(prev) prev.style.display = pvList.length > 1 ? 'flex' : 'none';
   if(next) next.style.display = pvList.length > 1 ? 'flex' : 'none';
-  // ПЛАВНАЯ СМЕНА. Снимок гаснет, меняется и проявляется — иначе при
-  // листании картинка сменяется рывком, а на медленной связи между
-  // старой и новой мелькает пустота.
-  const moy = ++pvPokaz;
+  const moy = moy0;
   if(img) img.style.opacity = '0';
   try{
     const urls = await photoViewUrls([a.id]);
@@ -7425,7 +7447,23 @@ async function photoViewerShow(){
         img.src = urls[a.id];
       });
       if(moy !== pvPokaz) return;
-      img.style.opacity = '1';
+      if(napravlenie){
+        // ставим новый снимок с той стороны, откуда он «приходит»,
+        // и только потом пускаем — иначе браузер не увидит начала
+        // движения и покажет сразу конечное положение
+        pvPanX = napravlenie > 0 ? shag : -shag;
+        pvPrimenit(false, 'none');
+        img.style.opacity = '0';
+        void img.offsetWidth;                       // заставляем пересчитать
+        pvPanX = 0;
+        pvPrimenit(false, 'transform .2s ease, opacity .2s ease');
+        img.style.opacity = '1';
+        await new Promise(r=>setTimeout(r, 200));
+        if(moy !== pvPokaz) return;
+        pvPrimenit(false);                          // вернуть обычный переход
+      } else {
+        img.style.opacity = '1';
+      }
     }
   }catch(e){
     console.error('Photo view failed', e);
@@ -7449,7 +7487,7 @@ async function photoViewerStep(d){
   await photoViewerFlushNote();
   // по кругу: с последнего на первый и обратно
   pvIdx = (pvIdx + d + pvList.length) % pvList.length;
-  photoViewerShow();
+  photoViewerShow(d > 0 ? 1 : -1);
 }
 
 // ПОДПИСЬ К СНИМКУ.
