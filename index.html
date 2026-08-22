@@ -534,6 +534,15 @@
     display:flex; align-items:center; justify-content:center;
     touch-action:none;   /* чтобы свайп листал, а не скроллил страницу */
   }
+  .pv-lenta{
+    position:absolute; inset:0; display:flex;
+    will-change:transform; touch-action:none;
+  }
+  .pv-kadr{
+    flex:0 0 100%; height:100%;
+    display:flex; align-items:center; justify-content:center;
+    overflow:hidden;
+  }
   .pv-img{
     max-width:100%; max-height:100%; object-fit:contain; display:block;
     /* приближение крутим через transform: он не заставляет страницу
@@ -546,7 +555,13 @@
   .pv-img.pv-uvel{ cursor:grab; }
   .pv-img.pv-tyanem{ cursor:grabbing; }
   .pv-btn{
-    position:absolute; border:none; background:rgba(255,255,255,.14); color:#fff;
+    /* НА СВЕТЛОМ СНИМКЕ КНОПКА ПРОПАДАЛА. Была почти прозрачная белая
+       на белом фоне — крестик становился не виден, и человек не понимал,
+       куда нажимать. Теперь подложка тёмная и с тенью: читается и на
+       белой плитке, и на чёрном проёме. */
+    position:absolute; z-index:3; border:none;
+    background:rgba(0,0,0,.55); color:#fff;
+    box-shadow:0 1px 6px rgba(0,0,0,.45);
     border-radius:50%; cursor:pointer; line-height:1; padding:0;
     display:flex; align-items:center; justify-content:center;
   }
@@ -567,7 +582,7 @@
   .pv-prev{ left:10px; } .pv-next{ right:10px; }
   .pv-btn:disabled{ opacity:.25; cursor:default; }
   .pv-bar{
-    position:absolute; left:0; right:0; bottom:0; padding:12px 16px calc(12px + env(safe-area-inset-bottom));
+    position:absolute; z-index:3; left:0; right:0; bottom:0; padding:12px 16px calc(12px + env(safe-area-inset-bottom));
     display:flex; flex-direction:column; gap:8px;
     color:#fff; font-family:'JetBrains Mono',monospace; font-size:12px;
     background:linear-gradient(transparent, rgba(0,0,0,.75));
@@ -2630,7 +2645,17 @@
 <div class="photo-viewer no-print" id="photoViewer" style="display:none;">
   <button type="button" class="pv-btn pv-close" id="pvClose" title="Закрыть" aria-label="Закрыть">✕</button>
   <button type="button" class="pv-btn pv-prev" id="pvPrev" title="Предыдущий снимок" aria-label="Предыдущий">‹</button>
-  <img class="pv-img" id="pvImg" alt="Фотография помещения">
+  <!-- ЛЕНТА ИЗ ТРЁХ КАДРОВ: предыдущий, текущий, следующий.
+       Снимки склеены в полосу и едут вместе с пальцем — следующий уже
+       стоит справа и загружен заранее. Прежняя механика подменяла адрес
+       у одной картинки, и между старым и новым был виден чёрный экран.
+       Середина ленты по-прежнему зовётся pvImg: к ней привязано
+       приближение. -->
+  <div class="pv-lenta" id="pvLenta">
+    <div class="pv-kadr"><img class="pv-img" id="pvImgL" alt=""></div>
+    <div class="pv-kadr"><img class="pv-img" id="pvImg" alt="Фотография помещения"></div>
+    <div class="pv-kadr"><img class="pv-img" id="pvImgR" alt=""></div>
+  </div>
   <button type="button" class="pv-btn pv-next" id="pvNext" title="Следующий снимок" aria-label="Следующий">›</button>
   <div class="pv-bar">
     <div class="pv-meta">
@@ -2935,7 +2960,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-22-97';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-22-98';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -7311,7 +7336,6 @@ let pvIdx  = 0;
 // не должен проявлять уже неактуальный снимок — сравниваем номер.
 // Та же семья ошибок, что грабля 56: медленный ответ доводит до конца
 // работу, которая давно никому не нужна.
-let pvPokaz = 0;
 
 async function photoViewerOpen(roomId, id){
   const proj = currentProject();
@@ -7384,46 +7408,55 @@ function pvSbros(plavno){
   pvPrimenit(!!plavno);
 }
 
-// napravlenie: +1 листаем вперёд, -1 назад, 0 или не задано — просто показать.
+// ---------- ЛЕНТА ----------
+// Снимки склеены в полосу из трёх кадров: предыдущий, текущий, следующий.
+// Полоса едет вместе с пальцем, и следующий снимок уже стоит справа —
+// загруженный заранее. Оттого его видно сразу, а не после чёрной паузы.
 //
-// ПОЧЕМУ НЕ ПРОСТО ГАСИТЬ И ПРОЯВЛЯТЬ. Так было в сборке -93, и владелец
-// сказал: «плавности нет, резко меняются». Причина в том, что гашение
-// ничего не ждало: если снимок уже в кэше телефона, весь цикл проходит
-// за миллисекунды и глаз не успевает ничего увидеть. На стенде значения
-// прозрачности были правильные — а человек видел рывок.
-//
-// Теперь переход занимает своё время всегда: старый снимок уезжает
-// в сторону свайпа и гаснет, новый въезжает с другой стороны. Заодно
-// движение совпадает с направлением пальца, и понятно, куда листаешь.
-async function photoViewerShow(napravlenie){
+// Было до этого: одна картинка, которой подменяли адрес. Сколько её ни
+// уводи за край, между старым снимком и новым оставался пробел на время
+// загрузки — владелец назвал это «на секунду возникает чёрный экран».
+// Полосой этот пробел закрывается устройством, а не подгонкой времени.
+let pvSdvig = 0;                 // на сколько утянута полоса, точки
+const pvUrls = new Map();        // номер снимка → ссылка, чтобы не просить дважды
+
+function pvShirina(){
+  const box = document.getElementById('photoViewer');
+  return (box && box.clientWidth) || window.innerWidth;
+}
+
+function pvLentaPrimenit(perehod){
+  const l = document.getElementById('pvLenta');
+  if(!l) return;
+  l.style.transition = perehod || 'none';
+  l.style.transform = 'translateX(' + (-pvShirina() + pvSdvig) + 'px)';
+}
+
+// Заполнить три кадра вокруг текущего номера. Ссылки просим пачкой
+// и запоминаем: листание туда-обратно не должно дёргать сервер заново.
+async function pvZapolnit(){
+  const n = pvList.length;
+  if(!n) return;
+  const nomera = [ (pvIdx - 1 + n) % n, pvIdx, (pvIdx + 1) % n ];
+  const nado = [...new Set(nomera.map(i=>pvList[i]).filter(a=>a && !pvUrls.has(a.id)).map(a=>a.id))];
+  if(nado.length){
+    try{
+      const urls = await photoViewUrls(nado);
+      Object.keys(urls || {}).forEach(k=> pvUrls.set(k, urls[k]));
+    }catch(e){ console.error('Photo view failed', e); }
+  }
+  ['pvImgL','pvImg','pvImgR'].forEach((id, k)=>{
+    const el = document.getElementById(id);
+    if(!el) return;
+    const a = pvList[nomera[k]], u = a && pvUrls.get(a.id);
+    if(u){ if(el.src !== u) el.src = u; }
+    else el.removeAttribute('src');
+  });
+}
+
+async function photoViewerShow(){
   const a = pvList[pvIdx];
   if(!a) return;
-  const img0 = document.getElementById('pvImg');
-  const moy0 = ++pvPokaz;
-  // Уводим НА ВСЮ ШИРИНУ ЭКРАНА, а не на чуть-чуть. Так снимок уходит
-  // за край целиком, и подмена картинки происходит там, где её не видно.
-  // Прежняя сборка прятала подмену затемнением — владелец сказал:
-  // «фото затемняются, давай просто перелистывание». Затемнения больше
-  // нет нигде: снимок только едет.
-  const shag = window.innerWidth;
-  if(img0 && napravlenie){
-    pvZoom = 1; pvPanY = 0; pvPanX = napravlenie > 0 ? -shag : shag;
-    pvPrimenit(false, 'transform .16s ease-in');
-    await new Promise(r=>setTimeout(r, 160));
-    if(moy0 !== pvPokaz) return;      // пока уезжал, свайпнули ещё раз
-  }
-  // ЗА КРАЕМ И ОСТАЁМСЯ, пока не приедет новый адрес.
-  //
-  // Здесь стоял pvSbros(false) — он возвращал картинку в центр СРАЗУ
-  // после увода, то есть ДО подмены адреса. И всё время, пока грузится
-  // новый снимок, в центре снова висел старый: владелец увидел это как
-  // «экран моргает другим фото, только потом перелистывает».
-  //
-  // Приближение сбрасываем, а положение не трогаем: снимок должен
-  // оставаться за краем ровно до того мига, когда покажется новый.
-  if(napravlenie){ pvZoom = 1; pvPanY = 0; }
-  else { pvSbros(false); }
-  const img = document.getElementById('pvImg');
   const cnt = document.getElementById('pvCount');
   const when = document.getElementById('pvWhen');
   const note = document.getElementById('pvNote');
@@ -7442,54 +7475,12 @@ async function photoViewerShow(napravlenie){
   // Один снимок — листать некуда, кнопки не показываем вовсе
   if(prev) prev.style.display = pvList.length > 1 ? 'flex' : 'none';
   if(next) next.style.display = pvList.length > 1 ? 'flex' : 'none';
-  const moy = moy0;
-  try{
-    const urls = await photoViewUrls([a.id]);
-    if(moy !== pvPokaz) return;            // пока ждали, ушли на другой снимок
-    if(img && urls[a.id]){
-      // Ждём готовности картинки, но не дольше секунды: если снимок
-      // не пришёл, лучше показать что есть, чем оставить чёрный экран.
-      await new Promise(gotovo=>{
-        let bylo = false;
-        const raz = ()=>{ if(!bylo){ bylo = true; gotovo(); } };
-        img.onload = raz; img.onerror = raz;
-        setTimeout(raz, 1000);
-        img.src = urls[a.id];
-      });
-      if(moy !== pvPokaz) return;
-      if(napravlenie){
-        // ставим новый снимок за тем краем, откуда он «приходит»,
-        // и только потом пускаем — иначе браузер не увидит начала
-        // движения и покажет сразу конечное положение
-        pvPanX = napravlenie > 0 ? shag : -shag;
-        pvPrimenit(false, 'none');
-        void img.offsetWidth;                       // заставляем пересчитать
-        pvPanX = 0;
-        pvPrimenit(false, 'transform .22s ease-out');
-        await new Promise(r=>setTimeout(r, 220));
-        if(moy !== pvPokaz) return;
-        pvPrimenit(false);                          // вернуть обычный переход
-      }
-    } else if(moy === pvPokaz){
-      // ССЫЛКИ НА СНИМОК НЕ ПРИШЛО. Раньше это было незаметно: картинка
-      // висела в центре. Теперь она уведена за край, и если её там
-      // бросить — человек увидит пустой чёрный экран и решит, что
-      // приложение сломалось. Возвращаем на место: пусть лучше останется
-      // прежний снимок, чем ничего.
-      pvPanX = 0; pvPrimenit(false);
-    }
-  }catch(e){
-    console.error('Photo view failed', e);
-    // снимок не пришёл — возвращаем холст на место, чтобы экран
-    // не остался с уехавшей за край картинкой
-    if(moy === pvPokaz){ pvPanX = 0; pvPrimenit(false); }
-  }
+  pvSbros(false);
+  pvSdvig = 0;
+  pvLentaPrimenit('none');
+  await pvZapolnit();
 }
 
-// Перед тем как уйти со снимка — дописать подпись, если её правили.
-// Иначе человек напишет и пролистнёт (или закроет), а подпись пропадёт:
-// потерянная правка выглядит как «не сохранилось» и подрывает доверие
-// ко всему остальному.
 async function photoViewerFlushNote(){
   const note = document.getElementById('pvNote');
   if(!note || !note.dataset.forId) return;
@@ -7497,27 +7488,24 @@ async function photoViewerFlushNote(){
   catch(e){ console.error('Note save failed', e); }
 }
 
-async function photoViewerStep(d){
-  if(!pvList.length) return;
-  await photoViewerFlushNote();
-  // по кругу: с последнего на первый и обратно
-  pvIdx = (pvIdx + d + pvList.length) % pvList.length;
-  photoViewerShow(d > 0 ? 1 : -1);
-}
-
-// ПОДПИСЬ К СНИМКУ.
-// Пишется сразу в базу, а не общим сохранением: снимки в saveDiff
-// не участвуют вовсе (см. блок ФОТОГРАФИИ). Одна строка — один запрос,
-// и отказ по ней не отменяет ничего другого (грабля 10).
-async function photoSaveNote(id, text){
-  const proj = currentProject();
-  const a = projectPhotos(proj).find(x => x.id === id);
-  if(!a) return;
-  const val = (text || '').trim().slice(0, 200);
-  if(val === (a.note || '')) return;          // не изменилось — не тревожим сервер
-  const upd = await sb.from('attachments').update({ note: val }).eq('id', id);
-  if(upd.error) throw upd.error;
-  a.note = val;
+// Пролистнуть на соседний кадр. Полоса доезжает до него, а потом
+// мгновенно переставляется обратно в середину и перезаполняется — человек
+// этого не видит, зато следующее листание опять едет из середины.
+let pvEdet = false;
+async function photoViewerStep(d, uzheProehali){
+  if(pvList.length < 2 || pvEdet) return;
+  pvEdet = true;
+  try{
+    await photoViewerFlushNote();
+    const W = pvShirina();
+    if(!uzheProehali){
+      pvSdvig = d > 0 ? -W : W;
+      pvLentaPrimenit('transform .24s ease-out');
+      await new Promise(r=>setTimeout(r, 250));
+    }
+    pvIdx = (pvIdx + d + pvList.length) % pvList.length;
+    await photoViewerShow();
+  } finally { pvEdet = false; }
 }
 
 async function photoViewerClose(){
@@ -7527,9 +7515,13 @@ async function photoViewerClose(){
   const box = document.getElementById('photoViewer');
   if(box) box.style.display = 'none';
   pvSbros(false);
-  pvPokaz++;                            // всё, что едет сейчас, уже не нужно
-  const img = document.getElementById('pvImg');
-  if(img){ img.style.opacity = ''; img.removeAttribute('src'); }   // не держим картинку в памяти
+  pvSdvig = 0; pvLentaPrimenit('none');
+  // не держим картинки в памяти — все три кадра
+  ['pvImgL','pvImg','pvImgR'].forEach(id=>{
+    const el = document.getElementById(id);
+    if(el){ el.style.opacity = ''; el.removeAttribute('src'); }
+  });
+  pvUrls.clear();
   const note = document.getElementById('pvNote');
   if(note){ note.value = ''; delete note.dataset.forId; }
   pvList = []; pvIdx = 0;
@@ -11711,32 +11703,52 @@ document.getElementById('previewClose') && document.getElementById('previewClose
   // задеть экран, и снимок захлопывался бы посреди разглядывания.
   box.addEventListener('click', e=>{ if(e.target === box) photoViewerClose(); });
 
-  // ЖЕСТЫ НА СНИМКЕ: листание, закрытие, приближение.
+  // ЖЕСТЫ НА ЛЕНТЕ: тянем полосу, приближаем, закрываем.
   //
-  // Свайп. Порог в 40 точек: меньше — и снимок будет листаться
-  // от случайного касания.
+  // ЛЕНТА ЕДЕТ ЗА ПАЛЬЦЕМ ОДИН К ОДНОМУ. Не «свайпнул — и оно само
+  // перелистнулось», а «тянешь — и следующий кадр выезжает справа».
+  // Отпустил, протянув больше пятой части экрана, — доезжает до соседа;
+  // меньше — возвращается на место.
   //
-  // ПОКА НЕ ПРИБЛИЖЕНО — всё как было. Стоит приблизить, и листание
-  // со свайпом вниз выключаются: иначе человек тянет снимок вбок,
-  // чтобы рассмотреть край, а тот улистывается на соседний.
+  // ПОКА НЕ ПРИБЛИЖЕНО — тянется полоса. Приблизили — тот же палец
+  // таскает сам снимок внутри кадра, а полоса стоит: иначе человек
+  // разглядывает край и случайно улистывает.
   let x0 = null, y0 = null, kasanie0 = 0, poslednee = 0;
   let shchipok = null;   // {d0, z0} — расстояние между пальцами в начале
   let tyanem = null;     // {x, y, panX, panY} — таскаем приближённый снимок
+  let lenta = null;      // {x, y} — тянем саму полосу
 
   const svoyo = e => !(e.target && e.target.closest &&
                        e.target.closest('.pv-note, .pv-btn'));
+
+  // отпустили полосу: доехать до соседа или вернуться
+  const otpustili = async (dx)=>{
+    const W = pvShirina();
+    lenta = null;
+    if(pvList.length > 1 && Math.abs(dx) > W * 0.2){
+      const d = dx < 0 ? 1 : -1;
+      pvSdvig = d > 0 ? -W : W;
+      pvLentaPrimenit('transform .18s ease-out');
+      await new Promise(r=>setTimeout(r, 190));
+      await photoViewerStep(d, true);      // доехали сами — только переставить
+    } else {
+      pvSdvig = 0;
+      pvLentaPrimenit('transform .18s ease-out');
+    }
+  };
 
   box.addEventListener('touchstart', e=>{
     if(!svoyo(e)) return;
     if(e.touches.length === 2){
       const [a, b] = e.touches;
       shchipok = { d0: Math.hypot(a.clientX-b.clientX, a.clientY-b.clientY), z0: pvZoom };
-      tyanem = null; x0 = null;         // это жест, а не свайп
+      tyanem = null; lenta = null; x0 = null;
       return;
     }
     const t = e.touches[0];
     x0 = t.clientX; y0 = t.clientY; kasanie0 = Date.now();
-    tyanem = pvZoom > 1 ? { x:t.clientX, y:t.clientY, panX:pvPanX, panY:pvPanY } : null;
+    if(pvZoom > 1){ tyanem = { x:t.clientX, y:t.clientY, panX:pvPanX, panY:pvPanY }; lenta = null; }
+    else { lenta = { x:t.clientX, y:t.clientY }; tyanem = null; }
   }, { passive:true });
 
   box.addEventListener('touchmove', e=>{
@@ -11755,21 +11767,30 @@ document.getElementById('previewClose') && document.getElementById('previewClose
       pvPanX = tyanem.panX + (t.clientX - tyanem.x);
       pvPanY = tyanem.panY + (t.clientY - tyanem.y);
       pvPredel(); pvPrimenit(false);
-      x0 = null;                        // это перетаскивание, а не свайп
+      x0 = null;
+      return;
+    }
+    if(lenta && e.touches.length === 1 && pvList.length > 1){
+      const t = e.touches[0];
+      const dx = t.clientX - lenta.x, dy = t.clientY - lenta.y;
+      // тянут вниз, а не вбок — это закрытие, полосу не трогаем
+      if(Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 12) return;
+      pvSdvig = dx;
+      pvLentaPrimenit('none');
     }
   }, { passive:true });
 
   box.addEventListener('touchend', e=>{
-    if(e.touches.length === 0){ shchipok = null; tyanem = null; }
-    if(!svoyo(e) || x0 === null) return;
+    if(e.touches.length === 0) shchipok = null;
+    if(!svoyo(e) || x0 === null){ if(e.touches.length === 0){ tyanem = null; } return; }
     const t = e.changedTouches[0];
     const dx = t.clientX - x0, dy = t.clientY - y0;
     const bylo = Date.now() - kasanie0;
-    x0 = null;
+    x0 = null; tyanem = null;
 
     // ДВОЙНОЕ КАСАНИЕ — приблизить туда, куда ткнули, и обратно.
-    // Короткое касание почти без движения, второе в пределах 300 мс.
     if(bylo < 300 && Math.abs(dx) < 12 && Math.abs(dy) < 12){
+      lenta = null; pvSdvig = 0; pvLentaPrimenit('none');
       const teper = Date.now();
       if(teper - poslednee < 300){
         poslednee = 0;
@@ -11780,11 +11801,14 @@ document.getElementById('previewClose') && document.getElementById('previewClose
       return;
     }
 
-    if(pvZoom > 1) return;              // приближено — не листаем и не закрываем
-    // Горизонтальный жест листает, вертикальный (вниз) закрывает —
-    // так же, как в галерее телефона.
-    if(Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy)) photoViewerStep(dx < 0 ? 1 : -1);
-    else if(dy > 60 && Math.abs(dy) > Math.abs(dx)) photoViewerClose();
+    if(pvZoom > 1){ lenta = null; return; }   // приближено — не листаем
+    // свайп вниз закрывает, как в галерее телефона
+    if(dy > 60 && Math.abs(dy) > Math.abs(dx)){
+      lenta = null; pvSdvig = 0; pvLentaPrimenit('none');
+      photoViewerClose();
+      return;
+    }
+    if(lenta) otpustili(dx);
   }, { passive:true });
 
   // ---------- то же самое мышью, на компьютере ----------
@@ -11802,24 +11826,38 @@ document.getElementById('previewClose') && document.getElementById('previewClose
       e.preventDefault();
       pvUvelichit(pvZoom > 1 ? 1 : 2.5, e.clientX, e.clientY, true);
     });
-    // перетаскивание мышью — только когда есть что таскать
-    let myshka = null;
-    img.addEventListener('pointerdown', e=>{
-      if(e.pointerType === 'touch' || pvZoom <= 1) return;
-      myshka = { x:e.clientX, y:e.clientY, panX:pvPanX, panY:pvPanY };
-      img.classList.add('pv-tyanem');
-      try{ img.setPointerCapture(e.pointerId); }catch(_){}
+    // Мышью — то же самое: приближено, значит таскаем снимок; нет —
+    // тянем ленту. Полосу тянем от всего просмотрщика, а не от картинки:
+    // курсор легко уходит на чёрное поле рядом, и жест не должен рваться.
+    let myshka = null, lentaM = null;
+    box.addEventListener('pointerdown', e=>{
+      if(e.pointerType === 'touch' || !svoyo(e)) return;
+      if(pvZoom > 1){
+        myshka = { x:e.clientX, y:e.clientY, panX:pvPanX, panY:pvPanY };
+        img.classList.add('pv-tyanem');
+      } else if(pvList.length > 1){
+        lentaM = { x:e.clientX };
+      } else return;
+      try{ box.setPointerCapture(e.pointerId); }catch(_){}
       e.preventDefault();
     });
-    img.addEventListener('pointermove', e=>{
-      if(!myshka) return;
-      pvPanX = myshka.panX + (e.clientX - myshka.x);
-      pvPanY = myshka.panY + (e.clientY - myshka.y);
-      pvPredel(); pvPrimenit(false);
+    box.addEventListener('pointermove', e=>{
+      if(myshka){
+        pvPanX = myshka.panX + (e.clientX - myshka.x);
+        pvPanY = myshka.panY + (e.clientY - myshka.y);
+        pvPredel(); pvPrimenit(false);
+      } else if(lentaM){
+        pvSdvig = e.clientX - lentaM.x;
+        pvLentaPrimenit('none');
+      }
     });
-    const brosili = ()=>{ myshka = null; img.classList.remove('pv-tyanem'); };
-    img.addEventListener('pointerup', brosili);
-    img.addEventListener('pointercancel', brosili);
+    const brosili = (e)=>{
+      if(myshka){ myshka = null; img.classList.remove('pv-tyanem'); return; }
+      if(lentaM){ const dx = e && e.clientX !== undefined ? e.clientX - lentaM.x : 0;
+                  lentaM = null; otpustili(dx); }
+    };
+    box.addEventListener('pointerup', brosili);
+    box.addEventListener('pointercancel', brosili);
     // Картинку нельзя утаскивать как файл: иначе браузер вместо
     // перетаскивания снимка начнёт своё «перетащить изображение».
     img.addEventListener('dragstart', e=> e.preventDefault());
