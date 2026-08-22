@@ -2935,7 +2935,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-22-95';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-22-96';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -7344,7 +7344,7 @@ function pvPrimenit(plavno, perehod){
   // perehod — задать переход дословно: нужно листанию, которое ведёт
   // и движение, и прозрачность своим временем.
   img.style.transition = perehod !== undefined ? perehod
-      : (plavno ? 'transform .18s ease, ' : '') + 'opacity .16s ease';
+      : (plavno ? 'transform .18s ease' : 'none');
   img.style.transform = 'translate(' + pvPanX + 'px,' + pvPanY + 'px) scale(' + pvZoom + ')';
   img.classList.toggle('pv-uvel', pvZoom > 1);
 }
@@ -7400,13 +7400,16 @@ async function photoViewerShow(napravlenie){
   if(!a) return;
   const img0 = document.getElementById('pvImg');
   const moy0 = ++pvPokaz;
-  const shag = Math.min(90, Math.round(window.innerWidth * 0.18));
+  // Уводим НА ВСЮ ШИРИНУ ЭКРАНА, а не на чуть-чуть. Так снимок уходит
+  // за край целиком, и подмена картинки происходит там, где её не видно.
+  // Прежняя сборка прятала подмену затемнением — владелец сказал:
+  // «фото затемняются, давай просто перелистывание». Затемнения больше
+  // нет нигде: снимок только едет.
+  const shag = window.innerWidth;
   if(img0 && napravlenie){
-    // 1. увести старый снимок
     pvZoom = 1; pvPanY = 0; pvPanX = napravlenie > 0 ? -shag : shag;
-    pvPrimenit(false, 'transform .14s ease, opacity .14s ease');
-    img0.style.opacity = '0';
-    await new Promise(r=>setTimeout(r, 140));
+    pvPrimenit(false, 'transform .16s ease-in');
+    await new Promise(r=>setTimeout(r, 160));
     if(moy0 !== pvPokaz) return;      // пока уезжал, свайпнули ещё раз
   }
   // новый снимок показываем целиком: приближение от предыдущего
@@ -7432,7 +7435,6 @@ async function photoViewerShow(napravlenie){
   if(prev) prev.style.display = pvList.length > 1 ? 'flex' : 'none';
   if(next) next.style.display = pvList.length > 1 ? 'flex' : 'none';
   const moy = moy0;
-  if(img) img.style.opacity = '0';
   try{
     const urls = await photoViewUrls([a.id]);
     if(moy !== pvPokaz) return;            // пока ждали, ушли на другой снимок
@@ -7448,26 +7450,24 @@ async function photoViewerShow(napravlenie){
       });
       if(moy !== pvPokaz) return;
       if(napravlenie){
-        // ставим новый снимок с той стороны, откуда он «приходит»,
+        // ставим новый снимок за тем краем, откуда он «приходит»,
         // и только потом пускаем — иначе браузер не увидит начала
         // движения и покажет сразу конечное положение
         pvPanX = napravlenie > 0 ? shag : -shag;
         pvPrimenit(false, 'none');
-        img.style.opacity = '0';
         void img.offsetWidth;                       // заставляем пересчитать
         pvPanX = 0;
-        pvPrimenit(false, 'transform .2s ease, opacity .2s ease');
-        img.style.opacity = '1';
-        await new Promise(r=>setTimeout(r, 200));
+        pvPrimenit(false, 'transform .22s ease-out');
+        await new Promise(r=>setTimeout(r, 220));
         if(moy !== pvPokaz) return;
         pvPrimenit(false);                          // вернуть обычный переход
-      } else {
-        img.style.opacity = '1';
       }
     }
   }catch(e){
     console.error('Photo view failed', e);
-    if(img && moy === pvPokaz) img.style.opacity = '1';   // не оставляем чёрный экран
+    // снимок не пришёл — возвращаем холст на место, чтобы экран
+    // не остался с уехавшей за край картинкой
+    if(moy === pvPokaz){ pvPanX = 0; pvPrimenit(false); }
   }
 }
 
