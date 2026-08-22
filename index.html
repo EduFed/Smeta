@@ -2935,7 +2935,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-20-93';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-22-94';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -8287,6 +8287,7 @@ let uiContractDays = '';
 let uiContractDate = '';
 let uiSettlementAmount = '';
 let uiStageNo = '';
+let uiDopNo = '';        // номер дополнительного соглашения на доп. работы
 
 // ---------- СТЕНЫ (типы фигур) ----------
 // ---------- ФОРМЫ ПОМЕЩЕНИЯ (режим "размеры помещения") ----------
@@ -10450,6 +10451,30 @@ function condK(proj){
 
 // Итог считается по тем же строкам, что печатаются в смете, а не отдельной
 // формулой. Иначе два разных способа счёта рано или поздно разойдутся.
+// СУММА ПО СМЕТЕ — без дополнительных работ. Именно она идёт
+// в договор, в расписку и в карточку заказчика: договор заключают
+// на смету, а доп. работы появляются позже своим соглашением.
+function smetaTotal(proj){
+  return buildEstimateData(proj, { bezDop:true }).total;
+}
+
+// ДОПОЛНИТЕЛЬНЫЕ РАБОТЫ отдельным списком и суммой — для своего
+// соглашения. Цены считаем той же надбавкой condK, что и в смете,
+// иначе одна и та же работа стоила бы по-разному в двух документах.
+function dopRaboty(proj){
+  const k = condK(proj);
+  const items = (proj.extraWorks||[])
+    .filter(e=>(e.name||'').trim() || num(e.qty) || num(e.price))
+    .map(e=>{
+      const price = Math.round(num(e.price) * k);
+      return { name:e.name||'—', unit:UNIT_LABEL[e.unit]||'', qty:num(e.qty),
+               price:price, sum:num(e.qty)*price };
+    });
+  return { items, total: items.reduce((a,i)=> a + i.sum, 0) };
+}
+
+// СУММА ПРОЕКТА ЦЕЛИКОМ — смета и доп. работы вместе. Ею живут список
+// проектов и акт приёма-сдачи: там нужно всё, что заказчик заплатит.
 function projectTotal(proj){
   return buildEstimateData(proj).total;
 }
@@ -10615,7 +10640,17 @@ function formatDate(iso){
 function safeName(proj){
   return (proj.name||'проект').replace(/[^\wа-яА-ЯёЁ \-]/g,'').trim() || 'проект';
 }
-function buildEstimateData(proj){
+// opts.bezDop — не включать дополнительные работы.
+// Решение владельца 22 августа 2026: доп. работы уходят из сметы
+// в отдельное дополнительное соглашение, которое подписывают по ходу
+// работы. Сумма договора считается по смете, без них.
+//
+// Умолчание оставлено прежним (доп. работы включаются) НАРОЧНО: эту
+// сборку данных читают и список проектов, и акт, и наряд, и им нужна
+// полная сумма. Кто хочет смету без доп. работ — просит об этом явно.
+// Это та же грабля 43: меняя источник, найти всех читателей.
+function buildEstimateData(proj, opts){
+  const bezDop = !!(opts && opts.bezDop);
   const groups = [];
   const byId = catalogById();
   const k = condK(proj);   // 1, если надбавки идут отдельной строкой
@@ -10656,7 +10691,7 @@ function buildEstimateData(proj){
       const price = Math.round(num(e.price) * k);
       return { name:e.name||'—', unit:UNIT_LABEL[e.unit]||'', qty:num(e.qty), price:price, sum:num(e.qty)*price };
     });
-  if(extra.length) groups.push({ room:'Дополнительные работы', items:extra });
+  if(extra.length && !bezDop) groups.push({ room:'Дополнительные работы', items:extra });
   // надбавки отдельной строкой — только если они не размазаны по ценам
   const cLines = (naryad || condSpread(proj)) ? [] : condLines(proj);
   if(cLines.length){
@@ -10668,7 +10703,7 @@ function buildEstimateData(proj){
 }
 
 function smetaPdfDef(proj){
-  const { groups, total } = buildEstimateData(proj);
+  const { groups, total } = buildEstimateData(proj, { bezDop: !isNaryad(proj) });
   const c = proj.customer || {};
   const body = [[
     {text:'№',style:'th'},{text:'Наименование работ',style:'th'},{text:'Ед.',style:'th'},
@@ -10721,7 +10756,7 @@ function smetaPdfDef(proj){
 }
 
 function smetaXlsxBlob(proj){
-  const { groups, total } = buildEstimateData(proj);
+  const { groups, total } = buildEstimateData(proj, { bezDop: !isNaryad(proj) });
   const c = proj.customer || {};
   const cn = contractNumber(proj);
   const date = _or(formatDate(c.date), '«___» __________ 20___ г.');
@@ -10755,7 +10790,7 @@ function smetaXlsxBlob(proj){
 // Данные берутся из buildEstimateData() — того же источника, что PDF и Excel,
 // поэтому цифры гарантированно совпадают.
 function smetaText(proj){
-  const { groups, total } = buildEstimateData(proj);
+  const { groups, total } = buildEstimateData(proj, { bezDop: !isNaryad(proj) });
   const c  = proj.customer || {};
   const L  = [];
 
@@ -11049,7 +11084,8 @@ function rastorzhenieBlocks(proj){
 
 function dogovorBlocks(proj){
   const c = proj.customer||{};
-  const total = projectTotal(proj);
+  // по смете, без доп. работ: они уходят своим соглашением
+  const total = smetaTotal(proj);
   const date = _or(formatDate(c.date), '«___» __________ 20___ г.');
   const cn = contractNumber(proj);
   const B = [];
@@ -11071,7 +11107,7 @@ function dogovorBlocks(proj){
   P('2.3. Дальнейшая оплата производится поэтапно, по факту выполнения соответствующего этапа Работ, на основании подписанного Сторонами акта этапа — в течение 2 (двух) рабочих дней после его подписания.');
   P('2.4. Окончательный расчёт производится после подписания Сторонами итогового акта приёма-сдачи выполненных Работ, не позднее 2 (двух) рабочих дней после его подписания.');
   P('2.5. Оплата производится наличными денежными средствами или переводом на реквизиты, указанные Подрядчиком. Получение денежных средств подтверждается распиской Подрядчика.');
-  P('2.6. Дополнительные работы, необходимость которых выявлена в ходе выполнения, согласовываются Сторонами и включаются в общую Смету с указанием их объёма, стоимости и сроков выполнения. Обновлённая Смета является неотъемлемой частью настоящего Договора.');
+  P('2.6. Дополнительные работы, необходимость которых выявлена в ходе выполнения, в стоимость, указанную в п. 2.1, не входят. Такие работы согласовываются Сторонами и оформляются отдельным дополнительным соглашением с указанием их наименования, объёма и стоимости. Подписанное Сторонами дополнительное соглашение является неотъемлемой частью настоящего Договора и оплачивается Заказчиком дополнительно.');
   P('2.7. Подрядчик вправе требовать увеличения стоимости Работ, если изменения, внесённые Заказчиком после подписания Договора и Сметы, увеличивают объём Работ.');
 
   H('3. Сроки выполнения работ');
@@ -11146,7 +11182,7 @@ function dogovorBlocks(proj){
 
 function raspiskaBlocks(proj){
   const c = proj.customer||{};
-  const total = projectTotal(proj);
+  const total = smetaTotal(proj);   // расписка по договору — значит по смете
   const date = _or(formatDate(c.date), '«___» __________ 20___ г.');
   const cn = contractNumber(proj);
   const compDate = _or(formatDate(uiContractDate), '«___» __________ 20___ г.');
@@ -11175,9 +11211,49 @@ function aktBlocks(proj){
   P('приёма-сдачи выполненных работ', {align:'center', gap:6, style:'small'});
   P(`г. ${_or(c.city,'____________________')},          ${compDate}`, {align:'right', gap:12, style:'small'});
   P(`${execFioD()}, именуемый в дальнейшем «Подрядчик», с одной стороны, и ${_or(c.fio)}, именуемый(-ая) в дальнейшем «Заказчик», с другой стороны, составили настоящий Акт о нижеследующем:`, {gap:8});
-  P(`1. На дату подписания настоящего Акта Подрядчик передал, а Заказчик принял выполненные работы по Договору № ${cn} от ${date} в полном объёме.`);
+  P(`1. На дату подписания настоящего Акта Подрядчик передал, а Заказчик принял выполненные работы по Договору № ${cn} от ${date}, включая работы по подписанным Сторонами дополнительным соглашениям к нему, в полном объёме.`);
   P('2. Заказчик не имеет претензий к качеству, срокам и объёму выполненных работ, указанных в п. 1 настоящего Акта.');
-  P(`3. Общая стоимость выполненных работ по Договору составляет ${amountInline(total)}. Расчёты между Сторонами произведены в полном объёме с учётом ранее внесённого аванса и оплаты выполненных этапов работ; окончательный расчёт произведён, финансовых претензий Стороны друг к другу не имеют.`, {gap:16});
+  P(`3. Общая стоимость выполненных работ составляет ${amountInline(total)}, в том числе по Договору ${amountInline(smetaTotal(proj))} и по дополнительным соглашениям к нему ${amountInline(dopRaboty(proj).total)}. Расчёты между Сторонами произведены в полном объёме с учётом ранее внесённого аванса и оплаты выполненных этапов работ; окончательный расчёт произведён, финансовых претензий Стороны друг к другу не имеют.`, {gap:16});
+  B.push({ sig:true, pName: fioShort(ex().fio), zName: fioShort(c.fio) });
+  return B;
+}
+
+// ДОПОЛНИТЕЛЬНОЕ СОГЛАШЕНИЕ НА ДОПОЛНИТЕЛЬНЫЕ РАБОТЫ.
+// Решение владельца 22 августа 2026: доп. работы уходят из сметы
+// и оформляются отдельно — документ появляется по ходу работы,
+// подписывается тогда же, а в акте приёма-сдачи на него ссылаются.
+//
+// Номер вписывается руками или задаётся полем: соглашений за стройку
+// бывает несколько, и без номера в акте на них не сослаться.
+function dopSoglRabotyBlocks(proj){
+  const c = proj.customer||{};
+  const date = _or(formatDate(c.date), '«___» __________ 20___ г.');
+  const cn = contractNumber(proj);
+  const compDate = _or(formatDate(uiContractDate), '«___» __________ 20___ г.');
+  const nomer = _or(uiDopNo, '____');
+  const { items, total } = dopRaboty(proj);
+  const B = [];
+  const P=(t,o)=>B.push(Object.assign({text:t,style:'normal'},o||{}));
+  P(`Дополнительное соглашение № ${nomer}`, {style:'h1', align:'center', gap:2});
+  P(`к Договору оказания услуг № ${cn} от ${date}`, {align:'center', gap:6, style:'small'});
+  P(`г. ${_or(c.city,'____________________')},          ${compDate}`, {align:'right', gap:12, style:'small'});
+  P(`${execFioD()}, именуемый в дальнейшем «Подрядчик», с одной стороны, и ${_or(c.fio)}, именуемый(-ая) в дальнейшем «Заказчик», с другой стороны, заключили настоящее Дополнительное соглашение о нижеследующем:`, {gap:8});
+  P(`1. В ходе выполнения работ по Договору № ${cn} от ${date} выявлена необходимость выполнения дополнительных работ, не вошедших в Смету (Приложение № 1 к Договору).`);
+  P('2. Стороны согласовали выполнение следующих дополнительных работ:', {gap:4});
+  if(items.length){
+    items.forEach((it, i)=>{
+      const kolvo = it.qty ? (fmt(it.qty) + (it.unit ? ' ' + it.unit : '')) : '—';
+      P(`2.${i+1}. ${it.name} — ${kolvo} × ${fmtMoney(it.price)} = ${fmtMoney(it.sum)}`,
+        {style:'small', gap:2});
+    });
+  } else {
+    P('2.1. ______________________________________________ — ______ × ______ = ______',
+      {style:'small', gap:2});
+  }
+  P(`3. Общая стоимость дополнительных работ составляет ${amountInline(total)}.`, {gap:4});
+  P('4. Стоимость, указанная в п. 3 настоящего Соглашения, не входит в стоимость работ по Договору и оплачивается Заказчиком дополнительно.');
+  P('5. Срок выполнения работ по Договору увеличивается на время, необходимое для выполнения дополнительных работ, согласованных настоящим Соглашением.');
+  P('6. Настоящее Соглашение вступает в силу с момента подписания Сторонами и является неотъемлемой частью Договора.', {gap:16});
   B.push({ sig:true, pName: fioShort(ex().fio), zName: fioShort(c.fio) });
   return B;
 }
@@ -11309,16 +11385,18 @@ async function generateDoc(proj, docType, format, action, btn){
       await ensureXLSX();
       blob = smetaXlsxBlob(proj);
       filename = `${isNaryad(proj) ? 'Наряд' : 'Смета'}_${nm}.xlsx`;
-    } else if(['dogovor','raspiska','akt_priem','akt_etapa','akt_defects','dopsrok','rastorzhenie'].includes(docType)){
+    } else if(['dogovor','raspiska','akt_priem','akt_etapa','akt_defects','dopsrok','dopsogl','rastorzhenie'].includes(docType)){
       const map = {
         dogovor: dogovorBlocks, raspiska: raspiskaBlocks, akt_priem: aktBlocks,
         akt_etapa: aktEtapaBlocks, akt_defects: aktDefectsBlocks,
-        dopsrok: dopSrokBlocks, rastorzhenie: rastorzhenieBlocks,
+        dopsrok: dopSrokBlocks, dopsogl: dopSoglRabotyBlocks,
+        rastorzhenie: rastorzhenieBlocks,
       };
       const titles = {
         dogovor:'Договор', raspiska:'Расписка', akt_priem:'Акт_приёма-сдачи',
         akt_etapa:'Акт_этапа', akt_defects:'Акт_о_недостатках',
-        dopsrok:'Доп_соглашение_сроки', rastorzhenie:'Соглашение_о_расторжении',
+        dopsrok:'Доп_соглашение_сроки', dopsogl:'Доп_соглашение_работы',
+        rastorzhenie:'Соглашение_о_расторжении',
       };
       const blocks = map[docType](proj);
       const title = titles[docType];
@@ -11360,7 +11438,8 @@ let previewBlobUrl = null;
 const DOC_TITLES = {
   smeta:'Смета', dogovor:'Договор', raspiska:'Расписка', akt_priem:'Акт приёма-сдачи',
   akt_etapa:'Акт этапа', akt_defects:'Акт о недостатках',
-  dopsrok:'Доп. соглашение о сроках', rastorzhenie:'Соглашение о расторжении',
+  dopsrok:'Доп. соглашение о сроках', dopsogl:'Доп. соглашение на доп. работы',
+  rastorzhenie:'Соглашение о расторжении',
 };
 let previewSlowTimer = null;
 
@@ -12934,7 +13013,7 @@ function renderEmptyState(){
 }
 
 function renderSmetaBlock(proj){
-  const grandTotal = projectTotal(proj);
+  const grandTotal = smetaTotal(proj);
   // Таблица сметы убрана с экрана: её видно в готовом документе.
   // Здесь остаётся только итог.
   return `
@@ -13186,6 +13265,7 @@ function renderDogovorDocPanel(proj){
   const fields = [];
   if(t !== 'dogovor') fields.push(`<div class="cust-field"><label>Дата составления</label><input type="date" value="${escapeAttr(uiContractDate)}" data-contract-date></div>`);
   if(t === 'akt_etapa') fields.push(`<div class="cust-field"><label>Номер этапа</label><input type="text" placeholder="напр. 1" value="${escapeAttr(uiStageNo)}" data-stageno></div>`);
+  if(t === 'dopsogl') fields.push(`<div class="cust-field"><label>Номер доп. соглашения</label><input type="text" placeholder="напр. 1" value="${escapeAttr(uiDopNo)}" data-dopno></div>`);
   if(t === 'dopsrok') fields.push(`<div class="cust-field"><label>Количество рабочих дней</label><input type="text" inputmode="numeric" placeholder="если пусто — прочерк" value="${escapeAttr(uiContractDays)}" data-contract-days></div>`);
   if(t === 'raspiska' || t === 'akt_etapa' || t === 'rastorzhenie'){
     const lbl = t === 'akt_etapa' ? 'Сумма этапа, ₽' : t === 'raspiska' ? 'Полученная сумма, ₽' : 'Сумма взаиморасчёта, ₽';
@@ -13205,6 +13285,7 @@ function renderDogovorDocPanel(proj){
             ${opt('akt_etapa','Акт этапа')}
             ${opt('akt_priem','Акт приёма-сдачи выполненных работ')}
             ${opt('akt_defects','Акт о выявленных недостатках (по п. 6.5)')}
+            ${opt('dopsogl','Дополнительное соглашение на дополнительные работы')}
             ${opt('dopsrok','Дополнительное соглашение о сроках')}
             ${opt('rastorzhenie','Соглашение о расторжении')}
           </select>
@@ -13297,7 +13378,10 @@ function renderPayoutBlock(proj){
 function renderCustomerBlock(proj){
   const c = proj.customer || {};
   const open = !!uiCustomerOpen[proj.id];
-  const total = projectTotal(proj);
+  // «Стоимость работ (из сметы)» — та же сумма, что уйдёт в договор,
+  // то есть без доп. работ. Иначе человек видит на экране одно число,
+  // а в договоре другое, и решает, что документ ошибся.
+  const total = smetaTotal(proj);
   const field = (key,label,ph,type)=>{
     const err = validateCustomer(key, c[key]);
     return `<div class="cust-field">
@@ -14525,6 +14609,8 @@ function attachHandlers(){
   if(sett) sett.addEventListener('input', ()=>{ uiSettlementAmount = sett.value; });
   const stg = main.querySelector('[data-stageno]');
   if(stg) stg.addEventListener('input', ()=>{ uiStageNo = stg.value; });
+  const dpn = document.querySelector('[data-dopno]');
+  if(dpn) dpn.addEventListener('input', ()=>{ uiDopNo = dpn.value; });
 
   // суммы надбавок лежат вне блока сметы — обновляем их отдельно.
   // Заодно правим сумму в шапке свёрнутого блока: человек чаще всего
@@ -15187,8 +15273,8 @@ function updateDerived(proj){
   });
   const sm = document.getElementById('smetaBlock');
   if(sm) sm.innerHTML = renderSmetaBlock(proj);
-  // стоимость в блоке договора
-  const total = projectTotal(proj);
+  // стоимость в блоке договора — по смете, как и в самом договоре
+  const total = smetaTotal(proj);
   const ct = document.querySelector(`[data-cust-total="${proj.id}"]`);
   const ctw = document.querySelector(`[data-cust-total-words="${proj.id}"]`);
   if(ct) ct.textContent = fmtMoney(total);
