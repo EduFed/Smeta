@@ -2960,7 +2960,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-22-98';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-22-99';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -7432,19 +7432,15 @@ function pvLentaPrimenit(perehod){
   l.style.transform = 'translateX(' + (-pvShirina() + pvSdvig) + 'px)';
 }
 
-// Заполнить три кадра вокруг текущего номера. Ссылки просим пачкой
-// и запоминаем: листание туда-обратно не должно дёргать сервер заново.
-async function pvZapolnit(){
+// РАССТАВИТЬ КАДРЫ ИЗ ПАМЯТИ — синхронно, без единого ожидания.
+// Это важно именно тем, что синхронно: полосу возвращают в середину
+// сразу следом, и обе правки должны попасть в одну отрисовку. Разорви
+// их ожиданием — и на один кадр в центре мелькнёт прежний снимок.
+// Владелец: «фото снова моргает».
+function pvRasstavit(){
   const n = pvList.length;
-  if(!n) return;
+  if(!n) return null;
   const nomera = [ (pvIdx - 1 + n) % n, pvIdx, (pvIdx + 1) % n ];
-  const nado = [...new Set(nomera.map(i=>pvList[i]).filter(a=>a && !pvUrls.has(a.id)).map(a=>a.id))];
-  if(nado.length){
-    try{
-      const urls = await photoViewUrls(nado);
-      Object.keys(urls || {}).forEach(k=> pvUrls.set(k, urls[k]));
-    }catch(e){ console.error('Photo view failed', e); }
-  }
   ['pvImgL','pvImg','pvImgR'].forEach((id, k)=>{
     const el = document.getElementById(id);
     if(!el) return;
@@ -7452,6 +7448,21 @@ async function pvZapolnit(){
     if(u){ if(el.src !== u) el.src = u; }
     else el.removeAttribute('src');
   });
+  return nomera;
+}
+
+// Догрузить недостающие ссылки и расставить ещё раз. Просим пачкой
+// и запоминаем: листание туда-обратно не должно дёргать сервер заново.
+async function pvZapolnit(){
+  const nomera = pvRasstavit();
+  if(!nomera) return;
+  const nado = [...new Set(nomera.map(i=>pvList[i]).filter(a=>a && !pvUrls.has(a.id)).map(a=>a.id))];
+  if(!nado.length) return;
+  try{
+    const urls = await photoViewUrls(nado);
+    Object.keys(urls || {}).forEach(k=> pvUrls.set(k, urls[k]));
+  }catch(e){ console.error('Photo view failed', e); }
+  pvRasstavit();
 }
 
 async function photoViewerShow(){
@@ -7476,6 +7487,12 @@ async function photoViewerShow(){
   if(prev) prev.style.display = pvList.length > 1 ? 'flex' : 'none';
   if(next) next.style.display = pvList.length > 1 ? 'flex' : 'none';
   pvSbros(false);
+  // ПОРЯДОК ЗДЕСЬ И ЕСТЬ ВСЁ. Сначала ставим снимки по кадрам из памяти,
+  // и только потом возвращаем полосу в середину — обе правки уходят
+  // в одну отрисовку, и подмены не видно. Наоборот было в сборке -98:
+  // полоса прыгала в середину, где ещё висел прежний снимок, и он
+  // моргал ровно на кадр.
+  pvRasstavit();
   pvSdvig = 0;
   pvLentaPrimenit('none');
   await pvZapolnit();
