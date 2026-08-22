@@ -2935,7 +2935,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-22-96';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-22-97';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -7412,9 +7412,17 @@ async function photoViewerShow(napravlenie){
     await new Promise(r=>setTimeout(r, 160));
     if(moy0 !== pvPokaz) return;      // пока уезжал, свайпнули ещё раз
   }
-  // новый снимок показываем целиком: приближение от предыдущего
-  // к нему отношения не имеет
-  pvSbros(false);
+  // ЗА КРАЕМ И ОСТАЁМСЯ, пока не приедет новый адрес.
+  //
+  // Здесь стоял pvSbros(false) — он возвращал картинку в центр СРАЗУ
+  // после увода, то есть ДО подмены адреса. И всё время, пока грузится
+  // новый снимок, в центре снова висел старый: владелец увидел это как
+  // «экран моргает другим фото, только потом перелистывает».
+  //
+  // Приближение сбрасываем, а положение не трогаем: снимок должен
+  // оставаться за краем ровно до того мига, когда покажется новый.
+  if(napravlenie){ pvZoom = 1; pvPanY = 0; }
+  else { pvSbros(false); }
   const img = document.getElementById('pvImg');
   const cnt = document.getElementById('pvCount');
   const when = document.getElementById('pvWhen');
@@ -7462,6 +7470,13 @@ async function photoViewerShow(napravlenie){
         if(moy !== pvPokaz) return;
         pvPrimenit(false);                          // вернуть обычный переход
       }
+    } else if(moy === pvPokaz){
+      // ССЫЛКИ НА СНИМОК НЕ ПРИШЛО. Раньше это было незаметно: картинка
+      // висела в центре. Теперь она уведена за край, и если её там
+      // бросить — человек увидит пустой чёрный экран и решит, что
+      // приложение сломалось. Возвращаем на место: пусть лучше останется
+      // прежний снимок, чем ничего.
+      pvPanX = 0; pvPrimenit(false);
     }
   }catch(e){
     console.error('Photo view failed', e);
