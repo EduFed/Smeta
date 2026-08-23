@@ -588,23 +588,48 @@
     background:linear-gradient(transparent, rgba(0,0,0,.75));
   }
   .pv-meta{ display:flex; justify-content:space-between; gap:12px; }
-  /* Комментарии под снимком. Высота ограничена: снимок важнее переписки,
-     и заслонять его целиком нельзя. Длинная ветка прокручивается внутри. */
+  /* КОММЕНТАРИИ ПУЗЫРЬКАМИ, как в переписке.
+     Владелец: «может, как в инстаграме или телеграме?» — выбран
+     телеграмный вид. Причина не в моде: своё справа, чужое слева
+     читается ГЛАЗОМ, до того как человек прочёл имя. На снимке это
+     важнее, чем в ленте: смотрят на фотографию, а не на текст.
+     Инстаграмный вид (имя жирным и текст следом одной строкой)
+     на длинных подписях вроде «Серега плиточник. Санузел 1…»
+     сливается в сплошную кашу.
+     Высота ограничена: снимок важнее переписки, длинная ветка
+     прокручивается внутри. */
   .pv-komm{
-    display:flex; flex-direction:column; gap:9px;
+    display:flex; flex-direction:column; gap:6px;
     max-height:30vh; overflow-y:auto; overscroll-behavior:contain;
+    padding-right:2px;
   }
   .pv-komm:empty{ display:none; }
-  .pv-k-shapka{ display:flex; gap:8px; align-items:baseline; flex-wrap:wrap; }
-  .pv-k-avtor{ font-weight:600; color:#fff; }
-  .pv-k-svoy .pv-k-avtor{ color:var(--orange); }
-  .pv-k-kogda{ font-size:10px; color:rgba(255,255,255,.55); }
+  .pv-k{
+    max-width:82%; align-self:flex-start;
+    background:rgba(255,255,255,.13);
+    border-radius:14px 14px 14px 4px;
+    padding:7px 11px 6px;
+  }
+  /* Своё — справа и своим цветом. Хвостик пузырька зеркальный. */
+  .pv-k-svoy{
+    align-self:flex-end;
+    background:rgba(232,98,44,.30);
+    border-radius:14px 14px 4px 14px;
+  }
+  .pv-k-avtor{
+    display:block; font-size:11px; font-weight:700; line-height:1.25;
+    margin-bottom:2px;
+    /* длинная подпись не должна раздувать пузырь на весь экран */
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
   .pv-k-telo{ font-size:13px; line-height:1.4; color:#fff; word-break:break-word; }
-  .pv-k-knopki{ display:flex; gap:12px; margin-left:auto; }
+  .pv-k-niz{ display:flex; align-items:center; gap:10px; margin-top:3px; }
+  .pv-k-kogda{ font-size:10px; color:rgba(255,255,255,.5); margin-left:auto; }
+  .pv-k-knopki{ display:flex; gap:10px; }
   .pv-k-knopki button{
     background:none; border:none; padding:0; cursor:pointer;
-    font-family:inherit; font-size:11px; color:rgba(255,255,255,.6);
-    border-bottom:1px solid rgba(255,255,255,.25);
+    font-family:inherit; font-size:11px; color:rgba(255,255,255,.7);
+    border-bottom:1px solid rgba(255,255,255,.3);
   }
   .pv-k-knopki button:hover{ color:#fff; }
   .pv-add{ display:flex; gap:8px; align-items:center; }
@@ -2994,7 +3019,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-23-102';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-23-103';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -7664,6 +7689,23 @@ async function kommPravit(id, text){
   if(error) throw error;
 }
 
+// ЦВЕТ АВТОРА — свой у каждого и всегда один и тот же.
+// Владелец: «нужно автора выделить цветом». Цвет выводим из номера
+// человека, а не раздаём по очереди: тогда Серёга всюду одного цвета,
+// в любом снимке и после перезагрузки. Раздача по порядку появления
+// давала бы разный цвет у разных снимков — и цвет перестал бы что-либо
+// значить.
+// Оттенки подобраны светлыми: пузырь тёмный, и тёмный текст на нём
+// не прочесть.
+const KOMM_CVETA = ['#7FD1FF','#9AE6A0','#FFC46B','#FF9EC4',
+                    '#C7A6FF','#6FE0D0','#FFD966','#A8C7FF'];
+function kommCvet(id){
+  const t = String(id || '');
+  let h = 0;
+  for(let i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) >>> 0;
+  return KOMM_CVETA[h % KOMM_CVETA.length];
+}
+
 // Показ. СВОЁ и ЧУЖОЕ различаем на экране: у своего есть «правка»
 // и «удалить», у чужого их нет вовсе. Показать кнопку, которую сервер
 // отобьёт, — обмануть человека дважды: он и нажмёт, и получит отказ.
@@ -7677,32 +7719,38 @@ function kommRisovat(){
     const svoy = moy && k.author_id === moy;
     // Имя автора берём оттуда же, откуда метки назначений. Не приехало —
     // нейтральное слово, а не выдуманное имя и не пустота.
-    const imya = svoy ? 'вы'
-      : (k.author_id ? escapeHtml(assigneeLabel(proj, k.author_id)) : 'автор удалён');
+    const imya = k.author_id ? escapeHtml(assigneeLabel(proj, k.author_id))
+                             : 'автор удалён';
     const kogda = k.created_at ? new Date(k.created_at).toLocaleString('ru-RU',
                   { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' }) : '';
     const pravlen = k.updated_at ? ' · правлен' : '';
+    // Своё имя в своём пузыре не пишем: он и так справа, и это ваше.
+    // Место в пузыре дорогое, а «вы» ничего не сообщает.
+    const shapka = svoy ? '' :
+      `<span class="pv-k-avtor" style="color:${kommCvet(k.author_id)}"
+             title="${escapeAttr(imya)}">${imya}</span>`;
     if(pvKommPravim === k.id){
       return `<div class="pv-k pv-k-svoy">
-        <div class="pv-k-shapka"><span class="pv-k-avtor">${imya}</span>
-          <span class="pv-k-kogda">${kogda}${pravlen}</span></div>
         <input type="text" class="pv-note" id="pvKommPravka" maxlength="1000"
                value="${escapeAttr(k.body || '')}" enterkeyhint="done">
-        <div class="pv-k-knopki">
-          <button type="button" data-komm-sohr="${k.id}">Сохранить</button>
-          <button type="button" data-komm-otmena="1">Отмена</button>
+        <div class="pv-k-niz">
+          <span class="pv-k-knopki">
+            <button type="button" data-komm-sohr="${k.id}">Сохранить</button>
+            <button type="button" data-komm-otmena="1">Отмена</button>
+          </span>
+          <span class="pv-k-kogda">${kogda}${pravlen}</span>
         </div></div>`;
     }
     return `<div class="pv-k ${svoy ? 'pv-k-svoy' : ''}">
-      <div class="pv-k-shapka">
-        <span class="pv-k-avtor">${imya}</span>
-        <span class="pv-k-kogda">${kogda}${pravlen}</span>
+      ${shapka}
+      <div class="pv-k-telo">${escapeHtml(k.body || '')}</div>
+      <div class="pv-k-niz">
         ${svoy ? `<span class="pv-k-knopki">
             <button type="button" data-komm-pravka="${k.id}">правка</button>
             <button type="button" data-komm-udal="${k.id}">удалить</button>
           </span>` : ''}
+        <span class="pv-k-kogda">${kogda}${pravlen}</span>
       </div>
-      <div class="pv-k-telo">${escapeHtml(k.body || '')}</div>
     </div>`;
   }).join('');
   box.scrollTop = box.scrollHeight;    // свежее внизу, как в переписке
