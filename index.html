@@ -531,8 +531,14 @@
   /* ПРОСМОТР НА ВЕСЬ ЭКРАН */
   .photo-viewer{
     position:fixed; inset:0; z-index:9999; background:rgba(0,0,0,.94);
-    display:flex; align-items:center; justify-content:center;
+    /* Столбиком: сверху снимок, снизу разговор. Раньше полоса лежала
+       наложением, и на широком снимке закрывала фотографию. */
+    display:flex; flex-direction:column; align-items:stretch;
     touch-action:none;   /* чтобы свайп листал, а не скроллил страницу */
+  }
+  .pv-scene{
+    position:relative; flex:1 1 auto; min-height:0; width:100%;
+    display:flex; align-items:center; justify-content:center;
   }
   .pv-lenta{
     position:absolute; inset:0; display:flex;
@@ -582,10 +588,14 @@
   .pv-prev{ left:10px; } .pv-next{ right:10px; }
   .pv-btn:disabled{ opacity:.25; cursor:default; }
   .pv-bar{
-    position:absolute; z-index:3; left:0; right:0; bottom:0; padding:12px 16px calc(12px + env(safe-area-inset-bottom));
+    position:relative; z-index:3; flex:0 0 auto;
+    padding:10px 16px calc(10px + env(safe-area-inset-bottom));
     display:flex; flex-direction:column; gap:8px;
     color:#fff; font-family:'JetBrains Mono',monospace; font-size:12px;
-    background:linear-gradient(transparent, rgba(0,0,0,.75));
+    /* Своя подложка, а не растяжка по снимку: полоса больше не лежит
+       на фотографии, и затемнять под собой ей нечего. */
+    background:rgba(0,0,0,.55);
+    border-top:1px solid rgba(255,255,255,.10);
   }
   .pv-meta{ display:flex; justify-content:space-between; gap:12px; }
   /* КОММЕНТАРИИ ПУЗЫРЬКАМИ, как в переписке.
@@ -2701,6 +2711,11 @@
      смешать две разные вещи в одном месте. -->
 <div class="photo-viewer no-print" id="photoViewer" style="display:none;">
   <button type="button" class="pv-btn pv-close" id="pvClose" title="Закрыть" aria-label="Закрыть">✕</button>
+  <!-- ОБЛАСТЬ СНИМКА. Отделена от полосы комментариев нарочно: раньше
+       комментарии лежали ПОВЕРХ фотографии и на широком снимке закрывали
+       самое важное. Теперь снимок занимает то, что осталось над полосой,
+       а стрелки стоят по центру именно снимка, а не всего окна. -->
+  <div class="pv-scene">
   <button type="button" class="pv-btn pv-prev" id="pvPrev" title="Предыдущий снимок" aria-label="Предыдущий">‹</button>
   <!-- ЛЕНТА ИЗ ТРЁХ КАДРОВ: предыдущий, текущий, следующий.
        Снимки склеены в полосу и едут вместе с пальцем — следующий уже
@@ -2714,6 +2729,7 @@
     <div class="pv-kadr"><img class="pv-img" alt=""></div>
   </div>
   <button type="button" class="pv-btn pv-next" id="pvNext" title="Следующий снимок" aria-label="Следующий">›</button>
+  </div>
   <div class="pv-bar">
     <div class="pv-meta">
       <span id="pvCount"></span>
@@ -3028,7 +3044,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-23-104';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-23-105';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
