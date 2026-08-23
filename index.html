@@ -598,23 +598,32 @@
      сливается в сплошную кашу.
      Высота ограничена: снимок важнее переписки, длинная ветка
      прокручивается внутри. */
+  /* ВСЕ РЕПЛИКИ В ОДНОЙ КОЛОНКЕ, СЛЕВА.
+     Сначала было как в телеграме — своё справа, чужое слева. На телефоне
+     так и читается, а на широком экране пузыри разъезжались на полторы
+     тысячи точек, и владелец сказал: «диалог оторван друг от друга».
+     Он прав: в переписке стороны работают потому, что колонка узкая,
+     а у нас лента во всю ширину окна.
+     Теперь колонка узкая и одна, а своё отличается ЦВЕТОМ — тем самым,
+     о котором и была просьба. Взгляд идёт сверху вниз одной линией. */
   .pv-komm{
     display:flex; flex-direction:column; gap:6px;
+    max-width:560px;
     max-height:30vh; overflow-y:auto; overscroll-behavior:contain;
     padding-right:2px;
   }
   .pv-komm:empty{ display:none; }
   .pv-k{
-    max-width:82%; align-self:flex-start;
+    align-self:flex-start; max-width:100%;
     background:rgba(255,255,255,.13);
-    border-radius:14px 14px 14px 4px;
+    border-radius:4px 14px 14px 14px;
+    border-left:3px solid rgba(255,255,255,.22);
     padding:7px 11px 6px;
   }
-  /* Своё — справа и своим цветом. Хвостик пузырька зеркальный. */
+  /* Своё — тем же строем, но своим цветом: и заливка, и полоска слева. */
   .pv-k-svoy{
-    align-self:flex-end;
     background:rgba(232,98,44,.30);
-    border-radius:14px 14px 4px 14px;
+    border-left-color:var(--orange);
   }
   .pv-k-avtor{
     display:block; font-size:11px; font-weight:700; line-height:1.25;
@@ -632,7 +641,7 @@
     border-bottom:1px solid rgba(255,255,255,.3);
   }
   .pv-k-knopki button:hover{ color:#fff; }
-  .pv-add{ display:flex; gap:8px; align-items:center; }
+  .pv-add{ display:flex; gap:8px; align-items:center; max-width:560px; }
   .pv-add .pv-note{ flex:1; }
   .pv-add .btn{ flex:0 0 auto; }
   .pv-k-pusto{ font-size:12px; color:rgba(255,255,255,.55); }
@@ -3019,7 +3028,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-23-103';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-23-104';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
