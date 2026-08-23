@@ -588,6 +588,29 @@
     background:linear-gradient(transparent, rgba(0,0,0,.75));
   }
   .pv-meta{ display:flex; justify-content:space-between; gap:12px; }
+  /* Комментарии под снимком. Высота ограничена: снимок важнее переписки,
+     и заслонять его целиком нельзя. Длинная ветка прокручивается внутри. */
+  .pv-komm{
+    display:flex; flex-direction:column; gap:9px;
+    max-height:30vh; overflow-y:auto; overscroll-behavior:contain;
+  }
+  .pv-komm:empty{ display:none; }
+  .pv-k-shapka{ display:flex; gap:8px; align-items:baseline; flex-wrap:wrap; }
+  .pv-k-avtor{ font-weight:600; color:#fff; }
+  .pv-k-svoy .pv-k-avtor{ color:var(--orange); }
+  .pv-k-kogda{ font-size:10px; color:rgba(255,255,255,.55); }
+  .pv-k-telo{ font-size:13px; line-height:1.4; color:#fff; word-break:break-word; }
+  .pv-k-knopki{ display:flex; gap:12px; margin-left:auto; }
+  .pv-k-knopki button{
+    background:none; border:none; padding:0; cursor:pointer;
+    font-family:inherit; font-size:11px; color:rgba(255,255,255,.6);
+    border-bottom:1px solid rgba(255,255,255,.25);
+  }
+  .pv-k-knopki button:hover{ color:#fff; }
+  .pv-add{ display:flex; gap:8px; align-items:center; }
+  .pv-add .pv-note{ flex:1; }
+  .pv-add .btn{ flex:0 0 auto; }
+  .pv-k-pusto{ font-size:12px; color:rgba(255,255,255,.55); }
   .pv-note{
     width:100%; padding:10px 12px; min-height:44px;
     border:1px solid rgba(255,255,255,.28); border-radius:var(--radius);
@@ -2662,12 +2685,23 @@
       <span id="pvCount"></span>
       <span id="pvWhen"></span>
     </div>
-    <!-- Подпись к снимку. Колонка note в attachments заведена ещё
-         31 июля 2026 и всё это время пустовала. Пишем прямо здесь:
-         человек разглядывает снимок и тут же подписывает, что на нём. -->
-    <input type="text" class="pv-note" id="pvNote" maxlength="200"
-           placeholder="Подпись к снимку: что здесь важно…"
-           autocomplete="off" enterkeyhint="done">
+    <!-- КОММЕНТАРИИ ВМЕСТО ПОДПИСИ (с 2026-08-23).
+         Была одна подпись на снимок, общая: прораб написал, мастер
+         открыл и переписал — и первая запись исчезла, никто не заметил.
+         Автор при этом не хранился вовсе, а в споре с заказчиком это
+         половина ценности.
+         Теперь у каждой записи свой автор и своё время. Правит и удаляет
+         только автор: ни прораб, ни владелец проекта чужих слов
+         не трогают — это держат и сторож в базе, и политика.
+         Единственная подпись, что была написана, перенесена в комментарии
+         миграцией 22 августа. -->
+    <div class="pv-komm" id="pvKomm"></div>
+    <div class="pv-add">
+      <input type="text" class="pv-note" id="pvKommVvod" maxlength="1000"
+             placeholder="Написать комментарий…"
+             autocomplete="off" enterkeyhint="send">
+      <button type="button" class="btn btn-primary btn-sm" id="pvKommOtpr">Отправить</button>
+    </div>
   </div>
 </div>
 
@@ -2960,7 +2994,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-22-101';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-23-102';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -7483,17 +7517,13 @@ async function photoViewerShow(){
   if(!a) return;
   const cnt = document.getElementById('pvCount');
   const when = document.getElementById('pvWhen');
-  const note = document.getElementById('pvNote');
   if(cnt)  cnt.textContent  = (pvIdx + 1) + ' из ' + pvList.length;
   if(when) when.textContent = photoTitle(a);
-  // Подпись подставляем ДО показа картинки: она приходит из уже
-  // загруженных данных, а картинка — из сети. Иначе на медленной
-  // связи в поле секунду висела бы подпись от предыдущего снимка,
-  // и человек мог бы дописать её не туда.
-  if(note){
-    note.value = a.note || '';
-    note.dataset.forId = a.id;      // к какому снимку относится то, что в поле
-  }
+  // Поле ввода очищаем СРАЗУ, до картинки: иначе на медленной связи
+  // недописанный чужому снимку текст уехал бы не туда.
+  const vvod = document.getElementById('pvKommVvod');
+  if(vvod){ vvod.value = ''; vvod.dataset.forId = a.id; }
+  kommPokazat(a);                   // грузится отдельно, картинку не держит
   const prev = document.getElementById('pvPrev');
   const next = document.getElementById('pvNext');
   // Один снимок — листать некуда, кнопки не показываем вовсе
@@ -7511,12 +7541,13 @@ async function photoViewerShow(){
   await pvZapolnit();
 }
 
-async function photoViewerFlushNote(){
-  const note = document.getElementById('pvNote');
-  if(!note || !note.dataset.forId) return;
-  try{ await photoSaveNote(note.dataset.forId, note.value); }
-  catch(e){ console.error('Note save failed', e); }
-}
+// Раньше здесь дописывалась подпись к снимку, если человек её правил
+// и ушёл со снимка, не убрав палец с поля. Подписи больше нет —
+// её заменили комментарии, а комментарий уходит на сервер сразу
+// по «Отправить», и терять при листании нечего.
+// Оставлено пустым нарочно: зовут её из двух мест, и убирать вызовы
+// ради одной строки — лишний повод что-то задеть.
+async function photoViewerFlushNote(){ }
 
 // Пролистнуть на соседний кадр. Полоса доезжает до него, а потом
 // мгновенно переставляется обратно в середину и перезаполняется — человек
@@ -7570,10 +7601,15 @@ async function photoViewerClose(){
   // не держим картинки в памяти — все три кадра
   pvKadry().forEach(el=>{ el.style.opacity = ''; el.removeAttribute('src'); });
   pvUrls.clear();
-  const note = document.getElementById('pvNote');
-  if(note){ note.value = ''; delete note.dataset.forId; }
+  // Комментарии и поле ввода чистим: следующий снимок откроется своими,
+  // а недописанный текст не должен всплыть под чужой фотографией.
+  pvKomm = []; pvKommPravim = null; pvKommZanyat = false;
+  const kbox = document.getElementById('pvKomm');
+  if(kbox) kbox.innerHTML = '';
+  const vvod = document.getElementById('pvKommVvod');
+  if(vvod){ vvod.value = ''; delete vvod.dataset.forId; }
   pvList = []; pvIdx = 0;
-  render();          // подписи видны в подсказках миниатюр — перерисуем
+  render();
 }
 
 // ---------- УДАЛЕНИЕ ----------
@@ -7584,6 +7620,122 @@ async function photoViewerClose(){
 // Здесь спрашиваем подтверждение, потому что снимок скрытых работ,
 // удалённый по ошибке, не восстановить, а спор может начаться
 // через полгода.
+// ---------- КОММЕНТАРИИ К СНИМКУ ----------
+// База под них сделана и проверена цепочкой 22 августа 2026: у каждой
+// записи свой автор, правит и удаляет только он. Приложение НЕ решает,
+// кому что можно — оно только показывает. Настоящие пределы стерегут
+// политика и сторож в базе, и если приложение ошибётся, сервер откажет.
+let pvKomm = [];          // комментарии показанного снимка
+let pvKommPravim = null;  // номер того, который сейчас правят
+let pvKommZanyat = false; // запрос в полёте — чтобы не отправить дважды
+
+async function kommZagruzit(attachmentId){
+  const { data, error } = await sb.from('attachment_comments')
+    .select('id, attachment_id, author_id, body, created_at, updated_at')
+    .eq('attachment_id', attachmentId)
+    .order('created_at', { ascending: true });
+  if(error) throw error;
+  return data || [];
+}
+
+async function kommDobavit(a, text){
+  const val = (text || '').trim().slice(0, 1000);
+  if(!val) return null;
+  // Номер проекта берём у текущего проекта: снимок лежит внутри него
+  // и своего номера в состоянии не носит. В базе стоит проверка, что
+  // проект комментария совпадает с проектом снимка — подставить чужой
+  // не выйдет, но и присылать заведомо неверное незачем.
+  const proj = currentProject();
+  if(!proj) return null;
+  const { data, error } = await sb.from('attachment_comments')
+    .insert({ attachment_id: a.id, project_id: proj.id,
+              author_id: currentUser.id, body: val })
+    .select('id, attachment_id, author_id, body, created_at, updated_at')
+    .single();
+  if(error) throw error;
+  return data;
+}
+
+async function kommPravit(id, text){
+  const val = (text || '').trim().slice(0, 1000);
+  if(!val) return;
+  const { error } = await sb.from('attachment_comments')
+    .update({ body: val }).eq('id', id);
+  if(error) throw error;
+}
+
+// Показ. СВОЁ и ЧУЖОЕ различаем на экране: у своего есть «правка»
+// и «удалить», у чужого их нет вовсе. Показать кнопку, которую сервер
+// отобьёт, — обмануть человека дважды: он и нажмёт, и получит отказ.
+function kommRisovat(){
+  const box = document.getElementById('pvKomm');
+  if(!box) return;
+  const proj = currentProject();
+  const moy = currentUser && currentUser.id;
+  if(!pvKomm.length){ box.innerHTML = ''; return; }
+  box.innerHTML = pvKomm.map(k=>{
+    const svoy = moy && k.author_id === moy;
+    // Имя автора берём оттуда же, откуда метки назначений. Не приехало —
+    // нейтральное слово, а не выдуманное имя и не пустота.
+    const imya = svoy ? 'вы'
+      : (k.author_id ? escapeHtml(assigneeLabel(proj, k.author_id)) : 'автор удалён');
+    const kogda = k.created_at ? new Date(k.created_at).toLocaleString('ru-RU',
+                  { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' }) : '';
+    const pravlen = k.updated_at ? ' · правлен' : '';
+    if(pvKommPravim === k.id){
+      return `<div class="pv-k pv-k-svoy">
+        <div class="pv-k-shapka"><span class="pv-k-avtor">${imya}</span>
+          <span class="pv-k-kogda">${kogda}${pravlen}</span></div>
+        <input type="text" class="pv-note" id="pvKommPravka" maxlength="1000"
+               value="${escapeAttr(k.body || '')}" enterkeyhint="done">
+        <div class="pv-k-knopki">
+          <button type="button" data-komm-sohr="${k.id}">Сохранить</button>
+          <button type="button" data-komm-otmena="1">Отмена</button>
+        </div></div>`;
+    }
+    return `<div class="pv-k ${svoy ? 'pv-k-svoy' : ''}">
+      <div class="pv-k-shapka">
+        <span class="pv-k-avtor">${imya}</span>
+        <span class="pv-k-kogda">${kogda}${pravlen}</span>
+        ${svoy ? `<span class="pv-k-knopki">
+            <button type="button" data-komm-pravka="${k.id}">правка</button>
+            <button type="button" data-komm-udal="${k.id}">удалить</button>
+          </span>` : ''}
+      </div>
+      <div class="pv-k-telo">${escapeHtml(k.body || '')}</div>
+    </div>`;
+  }).join('');
+  box.scrollTop = box.scrollHeight;    // свежее внизу, как в переписке
+}
+
+// Загрузить комментарии показанного снимка. Номер снимка сверяем при
+// возврате: человек листает быстрее, чем отвечает сервер, и ответ
+// на прошлый снимок не должен подписаться под нынешним.
+async function kommPokazat(a){
+  const box = document.getElementById('pvKomm');
+  if(!box || !a) return;
+  pvKomm = []; pvKommPravim = null; kommRisovat();
+  if(!sb || !currentUser) return;
+  try{
+    const spisok = await kommZagruzit(a.id);
+    const teper = pvList[pvIdx];
+    if(!teper || teper.id !== a.id) return;      // уже другой снимок
+    pvKomm = spisok;
+    kommRisovat();
+  }catch(e){
+    console.error('Comments load failed', e);
+    const teper = pvList[pvIdx];
+    if(teper && teper.id === a.id){
+      box.innerHTML = '<div class="pv-k-pusto">Комментарии не загрузились</div>';
+    }
+  }
+}
+
+async function kommUdalit(id){
+  const { error } = await sb.from('attachment_comments').delete().eq('id', id);
+  if(error) throw error;
+}
+
 async function photoDelete(proj, id){
   const del = await sb.from('attachments').delete().eq('id', id);
   if(del.error) throw del.error;
@@ -11915,30 +12067,88 @@ document.getElementById('previewClose') && document.getElementById('previewClose
   // Сохраняем по тому номеру, который лежал в поле, а НЕ по текущему
   // снимку: если пролистнуть с открытой клавиатурой, подпись уехала бы
   // на соседний снимок.
-  const note = document.getElementById('pvNote');
-  if(note){
-    const save = async ()=>{
-      const id = note.dataset.forId;
-      if(!id) return;
-      try{
-        await photoSaveNote(id, note.value);
-      }catch(e){
-        console.error('Note save failed', e);
-        // Причина висит на месте, а не мелькает (грабля 12)
-        const when = document.getElementById('pvWhen');
-        if(when) when.textContent = navigator.onLine
-          ? 'Подпись не сохранилась' : 'Нет связи — подпись не сохранилась';
+  // ---------- КОММЕНТАРИИ ----------
+  const vvod = document.getElementById('pvKommVvod');
+  const kbox = document.getElementById('pvKomm');
+
+  // Причину неудачи вешаем на место и не мигаем ею (грабля 12):
+  // строка состояния сменяется быстрее, чем человек успевает прочитать.
+  const beda = (chto)=>{
+    const when = document.getElementById('pvWhen');
+    if(when) when.textContent = navigator.onLine ? chto : 'Нет связи — ' + chto.toLowerCase();
+  };
+
+  const otpravit = async ()=>{
+    if(!vvod || pvKommZanyat) return;
+    const a = pvList[pvIdx];
+    const text = (vvod.value || '').trim();
+    if(!a || !text) return;
+    pvKommZanyat = true;
+    try{
+      const novyy = await kommDobavit(a, text);
+      // пока летел запрос, могли пролистнуть — не подписываем чужой снимок
+      const teper = pvList[pvIdx];
+      if(novyy && teper && teper.id === a.id){
+        pvKomm.push(novyy); kommRisovat();
       }
-    };
-    note.addEventListener('blur', save);
-    note.addEventListener('keydown', e=>{
-      if(e.key === 'Enter'){ e.preventDefault(); note.blur(); }
+      if(vvod.dataset.forId === a.id) vvod.value = '';
+    }catch(e){
+      console.error('Comment add failed', e);
+      beda('Комментарий не отправился');
+    } finally { pvKommZanyat = false; }
+  };
+
+  const knopka = document.getElementById('pvKommOtpr');
+  if(knopka) knopka.addEventListener('click', e=>{ e.stopPropagation(); otpravit(); });
+
+  if(vvod){
+    vvod.addEventListener('keydown', e=>{
+      if(e.key === 'Enter'){ e.preventDefault(); otpravit(); }
       // стрелки в поле ввода двигают текст, а не листают снимки
       e.stopPropagation();
     });
-    // свайп по полю не должен листать снимок
-    note.addEventListener('touchstart', e=> e.stopPropagation(), { passive:true });
-    note.addEventListener('touchend',   e=> e.stopPropagation(), { passive:true });
+    // жест по полю не должен листать снимок
+    vvod.addEventListener('touchstart', e=> e.stopPropagation(), { passive:true });
+    vvod.addEventListener('touchend',   e=> e.stopPropagation(), { passive:true });
+  }
+
+  // Правка и удаление СВОЕГО. Кнопки рисуются только у своих записей,
+  // но настоящий заслон не здесь, а в базе: сторож и политика не дадут
+  // тронуть чужое, даже если приложение ошибётся.
+  if(kbox){
+    kbox.addEventListener('touchstart', e=> e.stopPropagation(), { passive:true });
+    kbox.addEventListener('touchend',   e=> e.stopPropagation(), { passive:true });
+    kbox.addEventListener('click', async e=>{
+      const el = e.target.closest && e.target.closest('button');
+      if(!el) return;
+      e.stopPropagation();
+      const pravka = el.getAttribute('data-komm-pravka');
+      const udal   = el.getAttribute('data-komm-udal');
+      const sohr   = el.getAttribute('data-komm-sohr');
+      if(pravka){ pvKommPravim = pravka; kommRisovat();
+                  const p = document.getElementById('pvKommPravka'); if(p) p.focus(); return; }
+      if(el.getAttribute('data-komm-otmena')){ pvKommPravim = null; kommRisovat(); return; }
+      if(sohr){
+        const p = document.getElementById('pvKommPravka');
+        const text = p ? (p.value || '').trim() : '';
+        if(!text) return;
+        try{
+          await kommPravit(sohr, text);
+          const k = pvKomm.find(x=>x.id === sohr);
+          if(k){ k.body = text; k.updated_at = new Date().toISOString(); }
+          pvKommPravim = null; kommRisovat();
+        }catch(err){ console.error('Comment edit failed', err); beda('Правка не сохранилась'); }
+        return;
+      }
+      if(udal){
+        if(!confirm('Удалить свой комментарий? Восстановить его будет нельзя.')) return;
+        try{
+          await kommUdalit(udal);
+          pvKomm = pvKomm.filter(x=>x.id !== udal);
+          kommRisovat();
+        }catch(err){ console.error('Comment delete failed', err); beda('Комментарий не удалился'); }
+      }
+    });
   }
 
   // Клавиши — для работы за компьютером
