@@ -597,6 +597,30 @@
     background:rgba(0,0,0,.55);
     border-top:1px solid rgba(255,255,255,.10);
   }
+  /* ШИРОКИЙ ЭКРАН — РАЗГОВОР ОТДЕЛЬНОЙ КОЛОНКОЙ СЛЕВА.
+     Владелец: «лучше выделить немного места слева под комментарии,
+     колонку». Внизу полосой они отъедали высоту у снимка, а высота
+     на широком экране и есть то, чего снимку не хватает: он упирается
+     в неё, а по бокам остаётся пустота. Колонка забирает как раз
+     пустоту.
+     На узком экране остаётся полоса снизу: колонка в 340 точек
+     на телефоне не оставила бы от фотографии ничего. */
+  @media (min-width:900px){
+    .photo-viewer{ flex-direction:row; align-items:stretch; }
+    .pv-bar{
+      order:-1;                      /* слева, хотя в разметке идёт после */
+      flex:0 0 340px; max-width:340px; height:100%;
+      overflow-y:auto; overscroll-behavior:contain;
+      padding:16px 16px calc(16px + env(safe-area-inset-bottom));
+      border-top:none;
+      border-right:1px solid rgba(255,255,255,.10);
+      background:rgba(0,0,0,.72);
+    }
+    /* в колонке высоту разговора не жмём — её и так ограничивает окно */
+    .pv-komm{ max-height:none; max-width:none; flex:1 1 auto; }
+    .pv-add{ max-width:none; }
+    .pv-meta{ flex-direction:column; gap:4px; }
+  }
   .pv-meta{ display:flex; justify-content:space-between; gap:12px; }
   /* КОММЕНТАРИИ ПУЗЫРЬКАМИ, как в переписке.
      Владелец: «может, как в инстаграме или телеграме?» — выбран
@@ -3044,7 +3068,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-23-105';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-23-106';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -7513,7 +7537,13 @@ function pvSredniy(){ return pvKadry()[1] || null; }
 let pvSdvig = 0;                 // на сколько утянута полоса, точки
 const pvUrls = new Map();        // номер снимка → ссылка, чтобы не просить дважды
 
+// Ширина одного кадра ленты. Берём у ОБЛАСТИ СНИМКА, а не у окна:
+// на широком экране слева стоит колонка комментариев, и снимку остаётся
+// меньше. Считай мы по окну — лента уезжала бы мимо, и листание
+// промахивалось бы ровно на ширину колонки.
 function pvShirina(){
+  const scene = document.querySelector('.pv-scene');
+  if(scene && scene.clientWidth) return scene.clientWidth;
   const box = document.getElementById('photoViewer');
   return (box && box.clientWidth) || window.innerWidth;
 }
