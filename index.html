@@ -3143,7 +3143,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-24-109';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-25-110';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -7531,6 +7531,8 @@ async function photoViewerOpen(roomId, id){
   if(box){ box.classList.remove('komm-otkryt'); box.style.display = 'flex'; }
   const kn = document.getElementById('pvKommKnopka');
   if(kn) kn.setAttribute('aria-expanded', 'false');
+  pvKommScheta = new Map(); pvKommZagruzhen = null;
+  kommSchetaZagruzit(pvList);        // не ждём: счёт догонит сам
   await photoViewerShow();
 }
 
@@ -7786,6 +7788,13 @@ async function photoViewerClose(){
 // политика и сторож в базе, и если приложение ошибётся, сервер откажет.
 let pvKomm = [];          // комментарии показанного снимка
 let pvKommPravim = null;  // номер того, который сейчас правят
+// ЧИСЛА ДЛЯ ВСЕХ СНИМКОВ КОМНАТЫ, снятые одним запросом при открытии.
+// Владелец 25 августа 2026: «после открытия фото секунды три не видно
+// комментариев, я бы уже свайпнул и не узнал, что там есть».
+// Полный разговор грузится на свой снимок и приезжает не мгновенно —
+// а знать, что разговор ЕСТЬ, надо сразу, иначе его пролистают.
+let pvKommScheta = new Map();   // номер снимка → сколько комментариев
+let pvKommZagruzhen = null;     // для какого снимка список уже приехал
 let pvKommZanyat = false; // запрос в полёте — чтобы не отправить дважды
 
 async function kommZagruzit(attachmentId){
@@ -7849,7 +7858,44 @@ function kommCvet(id){
 // кнопка не работает.
 function kommSchyot(){
   const el = document.getElementById('pvKommSchyot');
-  if(el) el.textContent = pvKomm.length;
+  if(!el) return;
+  const a = pvList[pvIdx];
+  if(a && pvKommZagruzhen === a.id){
+    // список этого снимка приехал — он и есть истина
+    pvKommScheta.set(a.id, pvKomm.length);
+    el.textContent = pvKomm.length;
+    return;
+  }
+  // список ещё в пути: показываем число из общего замера. Нет и его —
+  // многоточие, а не ноль и не пустота. «0» соврал бы, что разговора
+  // нет, а пустота выглядит поломкой; многоточие честно говорит
+  // «считаю» — и человек не пролистает снимок, решив, что тут пусто.
+  const n = (a && pvKommScheta.has(a.id)) ? pvKommScheta.get(a.id) : null;
+  el.textContent = (n === null) ? '…' : n;
+}
+
+// Числа для всех снимков комнаты — ОДНИМ запросом. Отдельный запрос
+// на снимок означал бы столько же ожиданий, сколько снимков, и счёт
+// появлялся бы по мере листания, то есть с тем же опозданием.
+async function kommSchetaZagruzit(spisok){
+  if(!sb || !currentUser || !spisok || !spisok.length) return;
+  const ids = spisok.map(a => a.id).filter(Boolean);
+  if(!ids.length) return;
+  try{
+    const { data, error } = await sb.from('attachment_comments')
+      .select('attachment_id').in('attachment_id', ids);
+    if(error) throw error;
+    const schet = new Map();
+    for(const r of (data || [])) schet.set(r.attachment_id, (schet.get(r.attachment_id) || 0) + 1);
+    // Снимок без единого комментария в ответ не попадает — ставим ноль
+    // сами, иначе на кнопке осталась бы пустота вместо честного нуля.
+    for(const id of ids) if(!schet.has(id)) schet.set(id, 0);
+    pvKommScheta = schet;
+    kommSchyot();
+  }catch(e){
+    // Не смогли — не беда: счёт появится вместе с самим разговором.
+    console.error('Comment counts failed', e);
+  }
 }
 
 // Открыть или закрыть разговор. Снимок сжимается сам: просмотрщик
@@ -7936,13 +7982,14 @@ function kommRisovat(){
 async function kommPokazat(a){
   const box = document.getElementById('pvKomm');
   if(!box || !a) return;
-  pvKomm = []; pvKommPravim = null; kommRisovat();
+  pvKomm = []; pvKommPravim = null; pvKommZagruzhen = null; kommRisovat();
   if(!sb || !currentUser) return;
   try{
     const spisok = await kommZagruzit(a.id);
     const teper = pvList[pvIdx];
     if(!teper || teper.id !== a.id) return;      // уже другой снимок
     pvKomm = spisok;
+    pvKommZagruzhen = a.id;
     kommRisovat();
   }catch(e){
     console.error('Comments load failed', e);
