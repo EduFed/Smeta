@@ -514,6 +514,21 @@
      покрасило схемы почти в цвет фона (грабля 38). */
   .ph-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px;margin-bottom:10px;}
   .ph-item{position:relative;}
+  /* ЗНАЧОК РАЗГОВОРА НА ПЛИТКЕ (с 2026-08-25).
+     Владелец: «как я должен узнать, что кто-то добавил комментарий?»
+     Ответ до этого дня был — никак: число было видно только внутри
+     просмотрщика, то есть уже после того, как снимок открыли.
+     Тёмный значок — разговор есть. Оранжевый — есть НОВОЕ для вас,
+     и это разные вещи: первое сообщает, второе зовёт. */
+  .ph-komm{
+    position:absolute; left:5px; bottom:5px; z-index:2;
+    display:flex; align-items:center; gap:4px;
+    padding:2px 7px 2px 5px; border-radius:99px;
+    background:rgba(0,0,0,.66); color:#fff;
+    font-size:11px; line-height:1.5; pointer-events:none;
+  }
+  .ph-komm svg{ width:11px; height:11px; fill:none; stroke:currentColor; stroke-width:2.2; }
+  .ph-komm-novoe{ background:var(--orange); font-weight:700; }
   .ph-thumb{
     aspect-ratio:1/1;border:1px solid var(--paper-line);border-radius:var(--radius);
     background:var(--paper);overflow:hidden;display:flex;align-items:center;justify-content:center;
@@ -3165,7 +3180,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-25-111';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-25-112';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -7874,6 +7889,82 @@ function kommCvet(id){
 // Показ. СВОЁ и ЧУЖОЕ различаем на экране: у своего есть «правка»
 // и «удалить», у чужого их нет вовсе. Показать кнопку, которую сервер
 // отобьёт, — обмануть человека дважды: он и нажмёт, и получит отказ.
+// ---------- ЗНАЧКИ РАЗГОВОРА НА ПЛИТКАХ ----------
+// Что известно про каждый снимок: сколько всего комментариев и сколько
+// НОВЫХ для меня. Новое считается по времени отметки прочтения, а своё
+// новым не бывает никогда — это главное правило задачи 25-01.
+let kommMeta = new Map();      // номер снимка → { vsego, novyh }
+let kommMetaTaymer = null;
+
+// Один отложенный сбор на всё дерево: помещений много, рисуются они
+// по одному, а запрос нужен один.
+function kommMetaPozzhe(){
+  clearTimeout(kommMetaTaymer);
+  kommMetaTaymer = setTimeout(kommMetaZagruzit, 250);
+}
+
+async function kommMetaZagruzit(){
+  const proj = currentProject();
+  if(!proj || !sb || !currentUser) return;
+  const ids = (proj.photos || []).map(a => a.id).filter(Boolean);
+  if(!ids.length){ kommMeta = new Map(); return; }
+  try{
+    // Два запроса разом: сами комментарии (только то, что нужно для
+    // счёта) и мои отметки прочтения. Тексты не тянем — они ни к чему.
+    const [komm, otm] = await Promise.all([
+      sb.from('attachment_comments').select('attachment_id, created_at, author_id').in('attachment_id', ids),
+      sb.from('comment_reads').select('attachment_id, seen_at').in('attachment_id', ids)
+    ]);
+    if(komm.error) throw komm.error;
+    if(otm.error)  throw otm.error;
+    const videl = new Map((otm.data || []).map(r => [r.attachment_id, r.seen_at]));
+    const m = new Map();
+    for(const id of ids) m.set(id, { vsego: 0, novyh: 0 });
+    for(const k of (komm.data || [])){
+      const z = m.get(k.attachment_id);
+      if(!z) continue;
+      z.vsego++;
+      const kogda = videl.get(k.attachment_id);
+      // своё новым не бывает; чужое ново, если отметки нет вовсе
+      // или комментарий свежее её
+      if(k.author_id !== currentUser.id && (!kogda || k.created_at > kogda)) z.novyh++;
+    }
+    kommMeta = m;
+    kommZnachkiRisovat();
+  }catch(e){
+    // Не смогли — молчим: значок пропадёт, но приложение работает.
+    console.error('Comment meta failed', e);
+  }
+}
+
+function kommZnachkiRisovat(){
+  document.querySelectorAll('[data-ph-komm]').forEach(el=>{
+    const z = kommMeta.get(el.getAttribute('data-ph-komm'));
+    if(!z || !z.vsego){ el.innerHTML = ''; return; }
+    const novoe = z.novyh > 0;
+    el.innerHTML = `<span class="ph-komm ${novoe ? 'ph-komm-novoe' : ''}"
+        title="${novoe ? z.novyh + ' новых из ' + z.vsego : 'комментариев: ' + z.vsego}">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 9.9 9.9 0 0 1-3.2-.5L3 21l1.7-4.6A8.2 8.2 0 0 1 3 11.5a8.4 8.4 0 0 1 9-8.4 8.4 8.4 0 0 1 9 8.4z"/></svg>
+      ${novoe ? z.novyh : z.vsego}</span>`;
+  });
+}
+
+// Отметить снимок прочитанным. Зовём при ОТКРЫТИИ разговора — так решил
+// владелец: правило простое и предсказуемое, платим тем, что мельком
+// открытый разговор считается прочитанным.
+async function kommOtmetit(a){
+  if(!a || !sb || !currentUser) return;
+  const z = kommMeta.get(a.id);
+  if(z){ z.novyh = 0; kommZnachkiRisovat(); }   // на экране сразу, не дожидаясь сервера
+  try{
+    await sb.from('comment_reads')
+      .upsert({ user_id: currentUser.id, attachment_id: a.id, seen_at: new Date().toISOString() },
+              { onConflict: 'user_id,attachment_id' });
+  }catch(e){
+    console.error('Comment read mark failed', e);
+  }
+}
+
 // Число на кнопке. Держим его отдельно от рисования списка: список
 // при пустом разговоре не рисуется вовсе, а ноль на кнопке показать
 // всё равно надо — иначе непонятно, то ли комментариев нет, то ли
@@ -7932,6 +8023,7 @@ function kommPerekluchit(otkryt){
   if(stanet){
     const box = document.getElementById('pvKomm');
     if(box) box.scrollTop = box.scrollHeight;   // свежее внизу
+    kommOtmetit(pvList[pvIdx]);                 // открыл — значит прочитал
   }
 }
 
@@ -14290,6 +14382,7 @@ function renderRoom(room){
 // сначала ставим рамки, а картинки подставляет photoFillThumbs,
 // когда сервер ответит.
 function renderRoomPhotos(room){
+  kommMetaPozzhe();      // один сбор на всё дерево, с отсрочкой
   const proj = currentProject();
   const list = roomPhotos(proj, room.id);
   const lim  = photoLimit(proj);
@@ -14308,6 +14401,7 @@ function renderRoomPhotos(room){
         ${list.map(a=>`
           <div class="ph-item" data-ph-id="${a.id}" title="${escapeAttr(photoHint(a))}">
             <div class="ph-thumb" data-ph-thumb="${a.id}"><span class="ph-wait">…</span></div>
+            <span class="ph-komm-mesto" data-ph-komm="${a.id}"></span>
             <button type="button" class="ph-del no-print" data-ph-del="${a.id}" title="Удалить снимок">✕</button>
           </div>`).join('')}
       </div>
