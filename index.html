@@ -672,7 +672,23 @@
     font-size:12px; font-weight:700; color:#101010;
     text-transform:uppercase; user-select:none;
   }
-  .pv-k-soderzh{ min-width:0; max-width:calc(100% - 38px); flex:1 1 auto; }
+  /* ПУЗЫРЬ, КАК В МЕССЕНДЖЕРЕ. Владелец 25 августа 2026: «хочется,
+     чтобы выглядело как в телеграм».
+     Пузырь тут делает то, чего не делала строка: показывает границу
+     одной реплики. В ленте из десятка коротких сообщений строки
+     сливаются в сплошной текст, и непонятно, где кончился один
+     человек и начался другой.
+     Стороны при этом не возвращаем — владелец отменил их дважды.
+     Поэтому своё подписано словом «Вы» и залито своим цветом:
+     без сторон подпись и есть единственный признак. */
+  .pv-k-soderzh{
+    min-width:0; max-width:calc(100% - 38px); width:fit-content;
+    background:rgba(255,255,255,.09);
+    border-radius:14px 14px 14px 14px;
+    border-top-left-radius:5px;      /* «хвостик» к значку, как в переписке */
+    padding:7px 11px 5px;
+  }
+  .pv-k-svoy .pv-k-soderzh{ background:rgba(232,98,44,.20); }
   .pv-k-shapka{ display:flex; align-items:baseline; gap:7px; flex-wrap:wrap; }
   .pv-k-avtor{
     font-size:12px; font-weight:600; line-height:1.3;
@@ -682,7 +698,13 @@
     font-size:13.5px; line-height:1.45; color:#fff;
     word-break:break-word; margin-top:1px;
   }
-  .pv-k-niz{ display:flex; align-items:center; gap:14px; margin-top:4px; }
+  /* Время внизу справа внутри пузыря — там же, где его ищут в любой
+     переписке. Раньше оно стояло в шапке рядом с именем и спорило
+     с ним за первую строку. */
+  .pv-k-niz{
+    display:flex; align-items:center; justify-content:flex-end;
+    gap:14px; margin-top:2px;
+  }
   .pv-k-kogda{ font-size:11px; color:rgba(255,255,255,.45); }
   .pv-k-knopki{ display:flex; gap:14px; }
   /* Подчёркивание убрано: в образце действия — просто мелкий серый
@@ -3143,7 +3165,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-25-110';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-25-111';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -7934,14 +7956,16 @@ function kommRisovat(){
     // изображений у людей в приложении нет, и заводить их ради
     // разговора не стоит: буква решает ту же задачу — узнать своего
     // с одного взгляда, не читая подписи.
-    const bukva = escapeHtml((imya.trim()[0] || '?'));
+    const bukva = escapeHtml(svoy ? 'В' : (imya.trim()[0] || '?'));
     const znachok = `<span class="pv-k-ava" style="background:${cvet}"
              title="${escapeAttr(imya)}">${bukva}</span>`;
-    // Имя пишем всегда, и своё тоже. Раньше своё опускали, потому что
-    // строка стояла с вашей стороны и подпись была лишней. Сторон больше
-    // нет — без подписи своё стало бы неотличимым от чужого.
+    // Своё подписываем словом «Вы» — как в любой переписке. Владелец
+    // 25 августа 2026: «когда пишу я, чтобы отображалось как "вы"».
+    // Собственная почта в подписи ничего не сообщает: человек и так
+    // знает, кто он, а место в пузыре дорогое.
+    const podpis_imya = svoy ? 'Вы' : imya;
     const podpis = `<span class="pv-k-avtor" style="color:${cvet}"
-             title="${escapeAttr(imya)}">${imya}</span>`;
+             title="${escapeAttr(imya)}">${podpis_imya}</span>`;
     if(pvKommPravim === k.id){
       return `<div class="pv-k pv-k-svoy">
         ${znachok}
@@ -7959,17 +7983,15 @@ function kommRisovat(){
     return `<div class="pv-k ${svoy ? 'pv-k-svoy' : ''}">
       ${znachok}
       <div class="pv-k-soderzh">
-        <div class="pv-k-shapka">
-          ${podpis}
-          <span class="pv-k-kogda">${kogda}${pravlen}</span>
-        </div>
+        <div class="pv-k-shapka">${podpis}</div>
         <div class="pv-k-telo">${escapeHtml(k.body || '')}</div>
-        ${svoy ? `<div class="pv-k-niz">
-          <span class="pv-k-knopki">
+        <div class="pv-k-niz">
+          ${svoy ? `<span class="pv-k-knopki">
             <button type="button" data-komm-pravka="${k.id}">Править</button>
             <button type="button" data-komm-udal="${k.id}">Удалить</button>
-          </span>
-        </div>` : ''}
+          </span>` : ''}
+          <span class="pv-k-kogda">${kogda}${pravlen}</span>
+        </div>
       </div>
     </div>`;
   }).join('');
