@@ -3105,7 +3105,7 @@
       <div class="auth-field">
         <label>Пароль</label>
         <div class="auth-pass-wrap">
-          <input type="password" id="authPass" autocomplete="current-password" placeholder="минимум 6 символов">
+          <input type="password" id="authPass" autocomplete="current-password" placeholder="минимум 8 символов">
           <button type="button" class="auth-eye" id="authEye" aria-label="Показать пароль" title="Показать пароль"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 12S5 5.5 12 5.5 22.5 12 22.5 12 19 18.5 12 18.5 1.5 12 1.5 12z"/><circle cx="12" cy="12" r="3.2"/></svg></button>
         </div>
       </div>
@@ -3130,7 +3130,7 @@
       <div class="auth-field">
         <label>Новый пароль</label>
         <div class="auth-pass-wrap">
-          <input type="password" id="authNewPass" autocomplete="new-password" placeholder="минимум 6 символов">
+          <input type="password" id="authNewPass" autocomplete="new-password" placeholder="минимум 8 символов">
           <button type="button" class="auth-eye" id="authEye2" aria-label="Показать пароль" title="Показать пароль"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 12S5 5.5 12 5.5 22.5 12 22.5 12 19 18.5 12 18.5 1.5 12 1.5 12z"/><circle cx="12" cy="12" r="3.2"/></svg></button>
         </div>
       </div>
@@ -3180,7 +3180,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-25-112';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-26-113';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -8194,7 +8194,7 @@ function translateAuthError(m){
   if(/already registered/i.test(m))   return 'Такой логин уже зарегистрирован — просто войдите';
   if(/rate limit|too many|over_email_send_rate/i.test(m))
     return 'Слишком много писем подряд. Почтовый сервис ограничивает отправку — подождите и попробуйте позже';
-  if(/password should be/i.test(m))   return 'Пароль должен быть не короче 6 символов';
+  if(/password should be/i.test(m))   return 'Пароль должен быть не короче 8 символов';
   if(/already confirmed/i.test(m))    return 'Почта уже подтверждена — просто войдите';
   if(/same as the old|same_password/i.test(m)) return 'Новый пароль совпадает со старым';
   if(/expired|invalid.*token/i.test(m)) return 'Ссылка устарела. Запросите новое письмо';
@@ -8252,7 +8252,7 @@ async function doSignUp(){
   if(isGhostClick()) return;   // это нажатие по капче, а не по кнопке
   const email = document.getElementById('authEmail').value.trim();
   const pass  = document.getElementById('authPass').value;
-  if(!email || pass.length < 6){ authMsg('Логин и пароль от 6 символов', 'err'); return; }
+  if(!email || pass.length < 8){ authMsg('Логин и пароль от 8 символов', 'err'); return; }
 
   // Без согласия регистрация не идёт. Требование 152-ФЗ: согласие должно быть
   // конкретным и данным по собственной воле, то есть отдельным действием.
@@ -8427,7 +8427,7 @@ function showResetForm(){
 
 async function doSetPassword(){
   const pass = document.getElementById('authNewPass').value;
-  if(pass.length < 6){ authMsg('Пароль должен быть не короче 6 символов', 'err'); return; }
+  if(pass.length < 8){ authMsg('Пароль должен быть не короче 8 символов', 'err'); return; }
   authMsg('Сохраняем…');
   const { error } = await authCall(sb.auth.updateUser({ password: pass }));
   if(error){ authMsg(translateAuthError(error.message), 'err'); return; }
