@@ -3180,7 +3180,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-26-113';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-27-114';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -7216,6 +7216,17 @@ async function loadFromCloud(){
         state.ui.seeded = new Date().toISOString();
         scheduleSave();
       }
+
+      // СНИМКИ, КОТОРЫХ БОЛЬШЕ НЕТ В ОТВЕТЕ СЕРВЕРА, УБИРАЕМ С УСТРОЙСТВА.
+      // Сервер отдаёт только то, что разрешают политики, и отдельного
+      // события «доступ отобрали» не существует — пропажа из ответа
+      // и есть этот сигнал. Стоит ЗДЕСЬ, а не в applyRows: сюда приходят
+      // только с настоящим ответом сервера. Показ копии с устройства
+      // (медленная связь, офлайн, неотправленные правки) идёт мимо,
+      // и склад от этого не страдает — иначе обрыв связи стирал бы
+      // картинки, право на которые никто не отнимал.
+      // Не ждём: уборка не должна задерживать экран.
+      try{ fotoSkladSverit(fotoIdsRazreshennye()).catch(()=>{}); }catch(_){}
     };
 
     const quick = await Promise.race([ job, timeoutMark(NET_TIMEOUT_MS) ]);
@@ -7300,6 +7311,254 @@ const PHOTO_VIEW_TTL = 8 * 60 * 1000; // подпись живёт 10 минут
 // Адреса на просмотр: только в памяти страницы, id → { url, at }.
 // Перезагрузка страницы их теряет, и это правильно.
 const photoUrlCache = new Map();
+
+// ============================================================
+//  СКЛАД СНИМКОВ НА УСТРОЙСТВЕ
+// ============================================================
+// ЗАЧЕМ. За месяц (замер панели Beget 26 августа 2026) из хранилища
+// скачано 288 МБ при объёме корзины 9,42 МБ — в тридцать раз больше.
+// Причина: адреса подписанные, живут восемь минут и лежат только
+// в памяти страницы. Перезагрузил — скачал всё заново. Платит за это
+// не только наш счёт, но и мегабайты мастера на объекте.
+//
+// ЧТО ХРАНИМ. Саму картинку, по номеру снимка. АДРЕС НЕ ХРАНИМ НИКОГДА:
+// он подписанный и недолгий, а подпись не привязана к личности — то есть
+// сохранённая ссылка это переданный доступ. Ключ склада — номер снимка,
+// и только он.
+//
+// ПОЧЕМУ ОТДЕЛЬНАЯ ОБЛАСТЬ. Снимок неизменен: по номеру всегда лежит
+// одна и та же картинка, устаревания не бывает. Сборка же меняется
+// каждый день. Смешивать эти два срока жизни нельзя, поэтому склад
+// не привязан к версии — как CACHE_LIB, но своим именем и своими
+// правилами уборки.
+//
+// ГЛАВНОЕ ПРАВИЛО ЗДЕСЬ, И ОНО ВАЖНЕЕ ЭКОНОМИИ.
+// Снимок неизменен, а ПРАВО ЕГО ВИДЕТЬ — изменчиво. Мастера убирают
+// из проекта, снимок удаляют, проект стирают. Картинка, осевшая
+// на устройстве, останется там и после того, как человек потерял право
+// её видеть. Поэтому склад чистится в четырёх местах, и все четыре
+// обязательны:
+//   1) выход из аккаунта — весь склад целиком (doSignOut);
+//   2) удаление снимка (photoDelete);
+//   3) полная перезагрузка списка с сервера — снимок пропал из ответа,
+//      значит доступа больше нет (fotoSkladSverit из loadFromCloud);
+//   4) удаление проектов на этом устройстве, до ответа сервера.
+// Это та же семья, что задача 26-02 про уборку в хранилище: обещание
+// «удалено» должно исполняться везде, куда мы это положили.
+const FOTO_SKLAD   = 'smeta-foto-v1';       // область Cache API, к сборке НЕ привязана
+const FOTO_PREDEL  = 200 * 1024 * 1024;     // 200 МБ — решение владельца 27 августа 2026
+const FOTO_ZHURNAL = 'foto-sklad-v1';       // localStorage: id → { b: байты, t: когда открывали }
+
+// Номер снимка → blob-адрес. Живёт, пока жива страница: один адрес
+// на снимок, а не на каждый показ, иначе они копятся в памяти вкладки.
+const fotoAdresa = new Map();
+
+function fotoMozhno(){
+  try{ return typeof caches !== 'undefined' && !!caches; }catch(_){ return false; }
+}
+// Ключ склада строится ТОЛЬКО из номера снимка. Такого адреса на сайте
+// нет и запросов по нему никто не делает — он нужен лишь как имя полки.
+function fotoKluch(id){ return '/__foto__/' + encodeURIComponent(id); }
+function fotoIdIzKlyucha(u){
+  try{
+    const p = new URL(u, location.href).pathname;
+    if(p.indexOf('/__foto__/') !== 0) return null;
+    return decodeURIComponent(p.slice('/__foto__/'.length));
+  }catch(_){ return null; }
+}
+
+function fotoZhurnal(){
+  try{
+    const s = localStorage.getItem(FOTO_ZHURNAL);
+    const o = s ? JSON.parse(s) : null;
+    return (o && typeof o === 'object') ? o : {};
+  }catch(_){ return {}; }
+}
+function fotoZhurnalPisat(z){
+  try{ localStorage.setItem(FOTO_ZHURNAL, JSON.stringify(z)); }catch(_){}
+}
+// Отметка «открывали сейчас» — по ней и вытесняем, когда упрёмся в предел.
+function fotoOtmetit(id, bayty){
+  const z = fotoZhurnal();
+  const bylo = z[id] || {};
+  z[id] = { b: Number(bayty) || Number(bylo.b) || 0, t: Date.now() };
+  fotoZhurnalPisat(z);
+}
+// Отпустить blob-адрес. Не отпустишь — вкладка держит картинку в памяти
+// до самого закрытия, даже если снимок давно удалён.
+function fotoZabyt(id){
+  const u = fotoAdresa.get(id);
+  if(u){ try{ URL.revokeObjectURL(u); }catch(_){} }
+  fotoAdresa.delete(id);
+}
+
+// Взять со склада. Ни одного сетевого запроса — в этом весь смысл.
+// Возвращает blob-адрес или null, если снимка на устройстве нет.
+async function fotoSkladVzyat(id){
+  const est = fotoAdresa.get(id);
+  if(est){ fotoOtmetit(id); return est; }
+  if(!fotoMozhno()) return null;
+  try{
+    const c = await caches.open(FOTO_SKLAD);
+    const res = await c.match(fotoKluch(id));
+    if(!res) return null;
+    const blob = await res.blob();
+    if(!blob || !blob.size) return null;
+    const u = URL.createObjectURL(blob);
+    fotoAdresa.set(id, u);
+    fotoOtmetit(id, blob.size);
+    return u;
+  }catch(_){ return null; }
+}
+
+// Положить готовые байты на полку. Отдельной функцией, потому что зовут
+// её из двух мест: после скачивания по подписи и сразу после загрузки
+// своего снимка — там байты уже в руках. Два одинаковых куска рядом
+// однажды разошлись бы, и разошлись бы молча.
+async function fotoSkladPolozhitBlob(id, blob){
+  if(!fotoMozhno() || !blob || !blob.size) return;
+  try{
+    const c = await caches.open(FOTO_SKLAD);
+    await c.put(fotoKluch(id),
+      new Response(blob, { headers: { 'Content-Type': blob.type || 'image/jpeg' } }));
+    fotoOtmetit(id, blob.size);
+    await fotoSkladPodzhat();
+  }catch(_){}
+}
+
+// Положить на склад: скачать по подписи ОДИН раз и оставить у себя.
+// Возвращает blob-адрес. Не смогли (нет разрешения хранилища, обрыв) —
+// возвращаем null, и показ идёт по подписи, ровно как до этой правки.
+// Скачивание здесь ЕДИНСТВЕННОЕ: картинку в <img> ставим уже свою,
+// иначе первый показ стоил бы двух загрузок вместо одной.
+async function fotoSkladPolozhit(id, url){
+  let blob = null;
+  try{
+    const res = await fetch(url);
+    if(!res || !res.ok) return null;
+    blob = await res.blob();
+  }catch(_){ return null; }
+  if(!blob || !blob.size) return null;
+  const u = URL.createObjectURL(blob);
+  fotoAdresa.set(id, u);
+  await fotoSkladPolozhitBlob(id, blob);
+  return u;
+}
+
+// Уложиться в предел: вытесняем те, что дольше всех не открывали.
+//
+// ЖУРНАЛ ПЕРЕЧИТЫВАЕМ ПЕРЕД ЗАПИСЬЮ, а не пишем свою копию: пока идёт
+// удаление, в него дописывают соседние снимки той же пачки, и запись
+// устаревшей копии стёрла бы их отметки. Та же ошибка, что в грабле 40, —
+// сравнивать надо с тем, что есть сейчас, а не с тем, что запомнили.
+// И сжимаем по одному за раз: два одновременных прохода посчитали бы
+// один и тот же объём дважды и вытеснили лишнее.
+let fotoZhmyom = false;
+async function fotoSkladPodzhat(){
+  if(!fotoMozhno() || fotoZhmyom) return;
+  fotoZhmyom = true;
+  try{
+    const z = fotoZhurnal();
+    let vsego = 0;
+    Object.keys(z).forEach(k=>{ vsego += Number(z[k] && z[k].b) || 0; });
+    if(vsego <= FOTO_PREDEL) return;
+    // Самые давние — первыми. Только что открытые стоят в конце списка,
+    // поэтому картинка, которая сейчас на экране, вытеснена быть не может.
+    const poryadok = Object.keys(z).sort((a,b)=>
+      (Number(z[a] && z[a].t) || 0) - (Number(z[b] && z[b].t) || 0));
+    const vytesneno = [];
+    const c = await caches.open(FOTO_SKLAD);
+    for(const id of poryadok){
+      if(vsego <= FOTO_PREDEL) break;
+      vsego -= Number(z[id] && z[id].b) || 0;
+      try{ await c.delete(fotoKluch(id)); }catch(_){}
+      fotoZabyt(id);
+      vytesneno.push(id);
+    }
+    if(vytesneno.length){
+      const svezh = fotoZhurnal();
+      vytesneno.forEach(id=>{ delete svezh[id]; });
+      fotoZhurnalPisat(svezh);
+    }
+  }catch(_){}
+  finally{ fotoZhmyom = false; }
+}
+
+// Убрать со склада поимённо. Возвращает, сколько записей и правда удалено:
+// «прошло без ошибки» доказательством не считается (грабля 44).
+async function fotoSkladUdalit(ids){
+  const spisok = (Array.isArray(ids) ? ids : [ids]).filter(Boolean);
+  if(!spisok.length) return 0;
+  let c = null;
+  if(fotoMozhno()){ try{ c = await caches.open(FOTO_SKLAD); }catch(_){ c = null; } }
+  let ubrano = 0;
+  for(const id of spisok){
+    fotoZabyt(id);
+    photoUrlCache.delete(id);
+    try{ pvUrls.delete(id); }catch(_){}
+    if(c){ try{ if(await c.delete(fotoKluch(id))) ubrano++; }catch(_){} }
+  }
+  // Журнал правим ПОСЛЕ всех ожиданий и по свежей копии — см. пояснение
+  // в fotoSkladPodzhat выше.
+  const z = fotoZhurnal();
+  spisok.forEach(id=>{ delete z[id]; });
+  fotoZhurnalPisat(z);
+  return ubrano;
+}
+
+// Вытереть склад целиком — при выходе из аккаунта. На общем телефоне
+// чужие снимки не должны пережить выход ни на секунду.
+async function fotoSkladOchistit(){
+  Array.from(fotoAdresa.keys()).forEach(id=> fotoZabyt(id));
+  fotoAdresa.clear();
+  photoUrlCache.clear();
+  try{ pvUrls.clear(); }catch(_){}
+  try{ localStorage.removeItem(FOTO_ZHURNAL); }catch(_){}
+  if(!fotoMozhno()) return;
+  try{ await caches.delete(FOTO_SKLAD); }catch(_){}
+}
+
+// Все номера снимков, которые сервер сейчас разрешает видеть.
+function fotoIdsRazreshennye(){
+  const out = [];
+  (state.projects || []).forEach(p=> projectPhotos(p).forEach(a=>{ if(a && a.id) out.push(a.id); }));
+  return out;
+}
+
+// СВЕРКА С ОТВЕТОМ СЕРВЕРА. Снимок пропал из ответа — значит права
+// его видеть больше нет: сервер отдаёт только разрешённое политиками,
+// отдельного события «доступ отобрали» не существует.
+// Идём не по журналу, а по самому складу: журнал живёт в localStorage
+// и может пропасть отдельно от картинок — тогда осиротевшие снимки
+// остались бы на устройстве навсегда.
+async function fotoSkladSverit(razresheno){
+  const nado = new Set(razresheno || []);
+  Array.from(fotoAdresa.keys()).forEach(id=>{ if(!nado.has(id)) fotoZabyt(id); });
+  Array.from(photoUrlCache.keys()).forEach(id=>{ if(!nado.has(id)) photoUrlCache.delete(id); });
+  const z = fotoZhurnal();
+  let menyali = false;
+  Object.keys(z).forEach(id=>{ if(!nado.has(id)){ delete z[id]; menyali = true; } });
+  if(menyali) fotoZhurnalPisat(z);
+  if(!fotoMozhno()) return 0;
+  let ubrano = 0;
+  try{
+    const c = await caches.open(FOTO_SKLAD);
+    const zapisi = await c.keys();
+    for(const req of zapisi){
+      const id = fotoIdIzKlyucha(req.url);
+      if(id && !nado.has(id)){ try{ if(await c.delete(req)) ubrano++; }catch(_){} }
+    }
+  }catch(_){}
+  return ubrano;
+}
+
+// Снимки перечисленных проектов — убрать с устройства сразу, не дожидаясь
+// сервера. Зовём там, где проект стирают на этом устройстве.
+function fotoZabytProekty(proekty){
+  const ids = [];
+  (proekty || []).forEach(p=> projectPhotos(p).forEach(a=>{ if(a && a.id) ids.push(a.id); }));
+  if(ids.length) fotoSkladUdalit(ids).catch(()=>{});
+}
 
 // Предел снимков на проект.
 //
@@ -7412,12 +7671,42 @@ async function photoAsk(body){
   return data;
 }
 
-// Подписи на просмотр — пачкой (обработчик берёт до 50 за раз).
-// Просим только те, чей адрес истёк или неизвестен: каждая просьба —
-// это запрос к базе от имени человека.
-async function photoViewUrls(ids){
+// Адреса на показ. ПОРЯДОК ЗДЕСЬ И ЕСТЬ ВСЯ ЗАДАЧА:
+// есть на устройстве — показать оттуда; нет — попросить подпись,
+// скачать, положить, показать.
+//
+// Склад проверяется ДО сетевого похода, а не вместе с ним. Иначе при
+// обрыве связи весь пакет получал бы одну ошибку на всех — даже те
+// снимки, чьи байты давно лежат на устройстве. Это ровно то, что
+// грабля 48 называет «отсутствие сведений принимается за сведение».
+//
+// gotov(id, адрес) — необязательный, зовётся, как только снимок готов.
+// Он нужен, чтобы картинки появлялись поодиночке, а не все разом:
+// иначе видимый снимок ждал бы самого медленного соседа, а листающий
+// на объекте увидел бы это как «тупит». Лежащие на устройстве отдаются
+// первым же вызовом, ещё до единого запроса к сети.
+//
+// Подписи просим пачкой (обработчик берёт до 50 за раз) и только
+// на те, чего на устройстве нет: каждая просьба — это запрос к базе
+// от имени человека.
+async function photoViewUrls(ids, gotov){
+  const out = {};
+  const otdat = (id, u)=>{ out[id] = u; if(gotov){ try{ gotov(id, u); }catch(_){} } };
+  const uniq = Array.from(new Set((ids || []).filter(Boolean)));
+  if(!uniq.length) return out;
+
+  // 1. Что уже на устройстве — отдаём сразу, не трогая сеть вовсе.
+  const svoi = await Promise.all(uniq.map(id => fotoSkladVzyat(id).catch(()=>null)));
+  const ostalos = [];
+  uniq.forEach((id, i)=>{
+    if(svoi[i]) otdat(id, svoi[i]);
+    else ostalos.push(id);
+  });
+  if(!ostalos.length) return out;
+
+  // 2. Остальным нужна подпись.
   const now = Date.now();
-  const need = ids.filter(id=>{
+  const need = ostalos.filter(id=>{
     const c = photoUrlCache.get(id);
     return !c || (now - c.at) > PHOTO_VIEW_TTL;
   });
@@ -7426,8 +7715,16 @@ async function photoViewUrls(ids){
     const links = (data && data.links) || {};
     Object.keys(links).forEach(id => photoUrlCache.set(id, { url: links[id], at: now }));
   }
-  const out = {};
-  ids.forEach(id=>{ const c = photoUrlCache.get(id); if(c) out[id] = c.url; });
+
+  // 3. Скачать один раз и оставить у себя. Не вышло — показываем
+  //    по подписи, как до этой правки: хуже прежнего быть не должно.
+  await Promise.all(ostalos.map(async id=>{
+    const c = photoUrlCache.get(id);
+    if(!c) return;
+    let u = null;
+    try{ u = await fotoSkladPolozhit(id, c.url); }catch(_){ u = null; }
+    otdat(id, u || c.url);
+  }));
   return out;
 }
 
@@ -7537,6 +7834,10 @@ async function photoUpload(proj, roomId, file, kind){
     id, targetType:'room', targetId: roomId, kind: row.kind, path,
     w, h, size: blob.size, takenAt: row.taken_at, note:'', position: row.position
   });
+  // ТОЛЬКО ЧТО ОТПРАВЛЕННЫЙ СНИМОК КЛАДЁМ НА СКЛАД СРАЗУ. Байты у нас
+  // уже в руках — те самые, что ушли в хранилище. Не положить значит
+  // скачать их обратно через секунду, когда мастер посмотрит, что снял.
+  try{ await fotoSkladPolozhitBlob(id, blob); }catch(_){}
   return id;
 }
 
@@ -7704,7 +8005,11 @@ async function pvZapolnit(){
   const nado = [...new Set(nomera.map(i=>pvList[i]).filter(a=>a && !pvUrls.has(a.id)).map(a=>a.id))];
   if(!nado.length) return;
   try{
-    const urls = await photoViewUrls(nado);
+    // Расставляем по одному, как только снимок готов: видимый кадр
+    // не должен ждать соседей. Тот, что уже лежит на устройстве,
+    // встаёт мгновенно — и встаёт даже при обрыве связи, потому что
+    // склад проверяется до сетевого похода.
+    const urls = await photoViewUrls(nado, (id, u)=>{ pvUrls.set(id, u); pvRasstavit(); });
     Object.keys(urls || {}).forEach(k=> pvUrls.set(k, urls[k]));
   }catch(e){ console.error('Photo view failed', e); }
   pvRasstavit();
@@ -8125,6 +8430,10 @@ async function photoDelete(proj, id){
   const i = projectPhotos(proj).findIndex(a=>a.id === id);
   if(i >= 0) proj.photos.splice(i,1);
   photoUrlCache.delete(id);
+  // Со СКЛАДА НА УСТРОЙСТВЕ — тоже, и это не мелочь: обещание «удалено»
+  // должно исполняться везде, куда мы картинку положили. Иначе снимок
+  // остался бы лежать в браузере у всех, кто его когда-то открывал.
+  try{ await fotoSkladUdalit([id]); }catch(_){}
   // Файл в хранилище остаётся сиротой: удалить его может только сервер,
   // подписи на удаление обработчик не выдаёт. Это осознанный долг,
   // а не забывчивость — уборка сирот делается на сервере отдельно.
@@ -8472,6 +8781,12 @@ async function doSignOut(){
   // намеренно НЕ трогаем: в ней могут лежать неотправленные изменения,
   // и они дождутся следующего входа тем же человеком.
   try{ serverSnap = null; saveServerSnap(); }catch(_){}
+  // СКЛАД СНИМКОВ — ВЫТИРАЕМ ЦЕЛИКОМ, и здесь образец берём именно
+  // с plan-cache и слепка сервера, а не с копии правок: снимки это
+  // чужие в будущем данные, на общем телефоне они не должны пережить
+  // выход ни на секунду. Копия правок живёт дальше нарочно (см. выше),
+  // склад — нет.
+  try{ await fotoSkladOchistit(); }catch(_){}
   // Выход отзывает токен через интернет. При «висящей» сети этот запрос
   // застревал — кнопка «Выйти» не срабатывала. Ждём не дольше 5 секунд,
   // дальше выходим сами: вручную стираем сессию с устройства, чтобы на
@@ -13288,6 +13603,8 @@ function renderSelBar(){
   const b3 = q('data-sel-del');
   if(b3) b3.onclick = ()=>{
     if(!confirm('Удалить выбранные проекты (' + selIds.size + ') без возможности восстановления?')) return;
+    // снимки удалённых проектов — со склада сразу, не дожидаясь сервера
+    fotoZabytProekty(state.projects.filter(p=>selIds.has(p.id)));
     state.projects = state.projects.filter(p=>!selIds.has(p.id));
     if(selIds.has(state.currentProjectId)) state.currentProjectId = (state.projects.find(p=>!p.archived)||{}).id || null;
     off(); scheduleSave(); render();
@@ -13453,6 +13770,7 @@ function projMenu(id, x, y){
       if(a === 'many'){ selMode = true; selIds.clear(); selIds.add(id); renderSidebar(); return; }
       if(a === 'del'){
         if(!confirm('Удалить проект «' + (p.name||'Без названия') + '» без возможности восстановления?')) return;
+        fotoZabytProekty([p]);      // снимки — со склада сразу
         state.projects = state.projects.filter(x=>x.id!==id);
         if(state.currentProjectId === id) state.currentProjectId = (state.projects.find(x=>!x.archived)||{}).id || null;
         scheduleSave(); render();
@@ -13741,6 +14059,7 @@ function attachSidebarHandlers(){
       e.stopPropagation();
       const id = el.getAttribute('data-del');
       if(confirm('Удалить проект без возможности восстановления?')){
+        fotoZabytProekty(state.projects.filter(p=>p.id===id));   // снимки — со склада сразу
         state.projects = state.projects.filter(p=>p.id!==id);
         if(state.currentProjectId===id) state.currentProjectId = firstOpenableProjectId();
         scheduleSave(); render();
@@ -14441,20 +14760,31 @@ async function photoFillThumbs(roomId){
   if(!list.length) return;
   const box = document.querySelector(`.ph-block[data-ph-room="${roomId}"] .ph-grid`);
   if(!box) return;
+  // Ставим каждую картинку, как только она готова, а не все разом.
+  // Лежащие на устройстве встают ещё до похода в сеть — и встают даже
+  // тогда, когда сети нет вовсе и запрос подписи ниже отвалится.
+  const postavit = (id, url)=>{
+    const cell = box.querySelector(`[data-ph-thumb="${id}"]`);
+    if(!cell || !url) return;
+    cell.innerHTML = `<img alt="Фотография помещения" loading="lazy" src="${escapeAttr(url)}">`;
+  };
   try{
-    const urls = await photoViewUrls(list.map(a=>a.id));
+    const urls = await photoViewUrls(list.map(a=>a.id), postavit);
     list.forEach(a=>{
       const cell = box.querySelector(`[data-ph-thumb="${a.id}"]`);
-      if(!cell) return;
+      if(!cell || cell.querySelector('img')) return;
       const url = urls[a.id];
       if(!url){ cell.innerHTML = '<span class="ph-wait">нет доступа</span>'; return; }
-      cell.innerHTML = `<img alt="Фотография помещения" loading="lazy" src="${escapeAttr(url)}">`;
+      postavit(a.id, url);
     });
   }catch(e){
     // Отказ сервера не должен выглядеть обрывом связи, и причина должна
-    // висеть на месте, а не мелькать в строке состояния (грабля 12)
+    // висеть на месте, а не мелькать в строке состояния (грабля 12).
+    // Уже поставленные картинки не трогаем: они пришли со склада,
+    // и отказ сервера их не отменяет.
+    const pochemu = navigator.onLine ? 'не загрузилось' : 'нет сети';
     box.querySelectorAll('.ph-thumb').forEach(c=>{
-      if(!c.querySelector('img')) c.innerHTML = '<span class="ph-wait">не загрузилось</span>';
+      if(!c.querySelector('img')) c.innerHTML = '<span class="ph-wait">' + pochemu + '</span>';
     });
   }
 }
@@ -14877,6 +15207,7 @@ function attachHandlers(){
       const id = el.getAttribute('data-arch-del');
       const p = state.projects.find(x=>x.id===id);
       if(!p || !confirm('Удалить «' + (p.name||'Без названия') + '» навсегда?')) return;
+      fotoZabytProekty([p]);      // снимки — со склада сразу
       state.projects = state.projects.filter(x=>x.id!==id);
       if(state.currentProjectId === id) state.currentProjectId = (state.projects.find(x=>!x.archived)||{}).id || null;
       scheduleSave(); render();
