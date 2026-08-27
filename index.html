@@ -3180,7 +3180,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-27-114';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-27-115';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -14719,7 +14719,19 @@ function renderRoomPhotos(room){
       <div class="ph-grid" data-ph-grid="${room.id}">
         ${list.map(a=>`
           <div class="ph-item" data-ph-id="${a.id}" title="${escapeAttr(photoHint(a))}">
-            <div class="ph-thumb" data-ph-thumb="${a.id}"><span class="ph-wait">…</span></div>
+            <div class="ph-thumb" data-ph-thumb="${a.id}">${
+              // УЖЕ НА УСТРОЙСТВЕ — рисуем сразу, без промежуточной «…».
+              // Владелец 27 августа 2026: «фотографии все одновременно
+              // 2 раза моргают». Причина не в скачивании, а в перерисовке:
+              // дерево перерисовывается дважды (своё состояние, потом ответ
+              // сервера), и каждый раз плитка сбрасывалась в многоточие,
+              // а картинку подставляли заново — отсюда два моргания разом.
+              // Адрес снимка уже лежит в fotoAdresa, взять его можно
+              // без ожидания, прямо здесь.
+              fotoAdresa.has(a.id)
+                ? `<img alt="Фотография помещения" loading="lazy" src="${escapeAttr(fotoAdresa.get(a.id))}">`
+                : '<span class="ph-wait">…</span>'
+            }</div>
             <span class="ph-komm-mesto" data-ph-komm="${a.id}"></span>
             <button type="button" class="ph-del no-print" data-ph-del="${a.id}" title="Удалить снимок">✕</button>
           </div>`).join('')}
