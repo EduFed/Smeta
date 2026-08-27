@@ -3265,7 +3265,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-27-116';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-28-117';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -8746,7 +8746,11 @@ async function consentCheck(){
     // после этой задачи строк у человека станет больше одной, и среди
     // старых наверняка найдётся совпадение с прежней редакцией.
     const last = res.data[0];
-    return (last && last.policy_version === POLICY_VERSION) ? 'est' : 'nado';
+    if(last && last.policy_version === POLICY_VERSION) return 'est';
+    // Различаем два случая: запись была и устарела — против «записи нет
+    // вовсе». Человеку без записи документы не обновляли, и говорить ему
+    // «мы обновили» — неправда на экране про согласие.
+    return last ? 'nado-obnovili' : 'nado-vpervye';
   }catch(_){
     return 'neizvestno';
   }
@@ -8759,9 +8763,16 @@ function consentMsg(text, kind){
   m.className = 'consent-msg' + (kind ? (' ' + kind) : '');
 }
 
-function showConsentGate(){
+// bylo === true — у человека есть запись, но по устаревшей редакции.
+// Тогда «мы обновили документы» правда. Если записи нет вовсе —
+// ему ничего не обновляли, и так писать нельзя: экран про согласие
+// не должен начинаться с неправды.
+function showConsentGate(bylo){
   const ov = document.getElementById('consentOverlay');
   if(!ov) return;
+  const zag = ov.querySelector('.consent-title');
+  if(zag) zag.textContent = bylo ? 'Мы обновили документы'
+                                 : 'Подтвердите согласие';
   // Галочка пустая всегда, в том числе на повторном заходе: согласие —
   // действие человека, а не наша память о его прошлом нажатии.
   consentGateOpen = true;
@@ -9087,7 +9098,11 @@ async function afterLogin(){
   //
   // Раньше рубежа: данные с устройства ещё не показаны, app-ready
   // не выставлен, в облако ничего не уходит.
-  if(await consentCheck() === 'nado'){ showConsentGate(); return; }
+  const nuzhno = await consentCheck();
+  if(nuzhno === 'nado-obnovili' || nuzhno === 'nado-vpervye'){
+    showConsentGate(nuzhno === 'nado-obnovili');
+    return;
+  }
 
   document.body.classList.add('app-ready');
   document.getElementById('userEmail').textContent = currentUser.email || '';
