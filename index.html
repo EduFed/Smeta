@@ -1674,6 +1674,41 @@
   }
   .auth-consent a{color:var(--ink-soft);text-decoration:underline;}
   .auth-consent a:hover{color:var(--ink);}
+
+  /* ---- Экран повторного согласия (задача 27-01, 27 августа 2026) ----
+     Показывается вошедшему человеку, у которого согласие не записано
+     вовсе или записано на редакцию документов, которая больше
+     не действует. Оформление берём у экрана входа целиком: это тот же
+     рубеж перед приложением, и незачем показывать человеку два разных
+     стиля на одном пути.
+     Свой z-index нужен ровно для одного: окно поддержки (2900) должно
+     открываться ПОВЕРХ — иначе отказ превращается в тупик без выхода. */
+  .consent-overlay{ z-index:1500; }
+  .consent-card{ max-width:400px; }
+  .consent-title{
+    font-family:'Space Grotesk','Inter',sans-serif;font-weight:700;font-size:19px;
+    color:var(--ink);margin-bottom:10px;text-align:center;
+  }
+  .consent-text{font-size:13px;line-height:1.6;color:var(--ink-soft);margin-bottom:14px;}
+  .consent-docs{
+    display:flex;flex-direction:column;gap:8px;
+    margin-bottom:16px;padding:12px 14px;
+    background:var(--paper);border:1px solid var(--paper-line);border-radius:var(--radius);
+  }
+  .consent-docs a{font-size:13px;color:var(--ink);text-decoration:underline;}
+  .consent-actions{display:flex;flex-direction:column;gap:9px;margin-top:4px;}
+  .consent-msg{margin-top:10px;font-size:12px;line-height:1.5;min-height:16px;text-align:center;}
+  .consent-msg.err{color:var(--red);}
+  .consent-msg.ok{color:var(--green);}
+  .consent-note{
+    margin-top:16px;padding-top:14px;border-top:1px solid var(--paper-line);
+    font-size:12px;line-height:1.55;color:var(--ink-soft);
+  }
+  .consent-support{
+    background:none;border:none;padding:0;margin:0;
+    font:inherit;color:var(--ink);text-decoration:underline;cursor:pointer;
+  }
+
   .auth-field{display:flex;flex-direction:column;gap:6px;margin-bottom:14px;}
   .auth-field label{font-family:'JetBrains Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:var(--ink-soft);}
   .auth-field input{font-family:'Inter',sans-serif;font-size:14px;border:1px solid var(--paper-line);border-radius:var(--radius);padding:10px 12px;background:var(--paper);color:var(--ink);}
@@ -3148,6 +3183,56 @@
   </div>
 </div>
 
+<!-- Экран повторного согласия.
+     Показывается вошедшему человеку, у которого согласие не записано вовсе
+     либо записано на редакцию документов, которая больше не действует.
+     Проверку ставит afterLogin() — единственная общая точка для всех путей
+     входа (пароль, восстановленная сессия, завершение сброса пароля,
+     приглашение по ссылке идёт подшагом внутри loadFromCloud).
+     Задача 27-01 от 27 августа 2026. -->
+<div class="auth-overlay consent-overlay" id="consentOverlay" style="display:none;">
+  <div class="auth-card consent-card">
+    <div class="consent-title">Мы обновили документы</div>
+    <div class="consent-text">
+      Прочитайте и подтвердите согласие, чтобы продолжить.
+    </div>
+
+    <div class="consent-docs">
+      <a href="privacy.html" target="_blank" rel="noopener">Политика конфиденциальности</a>
+    </div>
+
+    <!-- Галочка пустая. Проставлять её заранее нельзя: согласие должно быть
+         действием человека, а не нашим за него. Это и требование закона,
+         и требование Робокассы к будущим списаниям. -->
+    <label class="auth-consent" id="consentBox">
+      <input type="checkbox" id="consentCheck">
+      <span>Даю согласие на обработку персональных данных и принимаю
+      политику конфиденциальности</span>
+    </label>
+
+    <div class="consent-actions">
+      <button class="btn btn-primary" id="consentAgree">Подтвердить и продолжить</button>
+      <button class="btn btn-outline" id="consentRefuse">Отказаться</button>
+    </div>
+
+    <div class="consent-msg" id="consentMsg"></div>
+
+    <div class="consent-text" style="margin-top:14px;margin-bottom:0;">
+      Если откажетесь — приложение не откроется, но ваши данные останутся
+      на месте, аккаунт не блокируется, и вернуться можно в любой момент.
+    </div>
+
+    <!-- У отказа обязан быть выход. Без него человек заперт: пользоваться
+         не может, а забрать или удалить данные — тоже. Кнопки удаления
+         аккаунта у нас пока нет, поэтому дверь — через поддержку. -->
+    <div class="consent-note">
+      Хотите, чтобы мы удалили ваши данные?
+      <button type="button" class="consent-support" id="consentSupport">Напишите нам</button> —
+      разберём обращение вручную.
+    </div>
+  </div>
+</div>
+
 <!-- Экран «не настроено» -->
 <div class="config-warn" id="configWarn" style="display:none;">
   <div id="configWarnText">
@@ -3180,7 +3265,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-27-115';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-27-116';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -4638,6 +4723,9 @@ function applyLocks(){
        '+ Добавить вид работ');
 }
 let lastAuthUid = null;     // id последнего вошедшего — защита от повторного afterLogin
+// Висит ли экран повторного согласия. Пока висит — в облако не ходим
+// ни за данными, ни за приглашениями (задача 27-01, 27 августа 2026).
+let consentGateOpen = false;
 let pendingSave = false;    // есть несохранённые изменения
 // НОМЕР ПРАВКИ. Растёт на каждое изменение. Нужен, чтобы закончившееся
 // сохранение не гасило признак «есть несохранённое», поставленный правкой,
@@ -7124,6 +7212,16 @@ async function persist(){
 
 async function loadFromCloud(){
   if(!currentUser || !sb) return;
+  // Пока висит экран повторного согласия — в облако не ходим вовсе.
+  // Рубеж стоит в afterLogin, но loadFromCloud зовётся не только оттуда:
+  // при возврате на вкладку (visibilitychange), при восстановлении связи
+  // (reconnectSync), по событию 'online'. Без этой строки человек,
+  // не давший согласия, свернул бы вкладку, вернулся — и приложение
+  // подтянуло бы его данные за спиной у собственной проверки, а заодно
+  // приняло бы приглашение в проект (tryAcceptInvite идёт подшагом ниже).
+  // Стережём одну дверь, а не каждого входящего (грабля 43: меняя
+  // источник, найди ВСЕХ читателей).
+  if(consentGateOpen) return;
 
   const local = readLocal();
 
@@ -8442,6 +8540,11 @@ async function photoDelete(proj, id){
 // ---------- AUTH ----------
 function showLogin(){
   document.getElementById('authOverlay').style.display = 'flex';
+  // Экран согласия лежит выше экрана входа (1500 против 1000) — если его
+  // не убрать, он закроет собой форму входа. Гасим здесь, а не только
+  // в обработчике отказа: выход может прийти и стороной — событием
+  // SIGNED_OUT от библиотеки, когда сессия оборвалась сама.
+  hideConsentGate();
   applyLoginMode();
   initCaptcha();
   hideSplash();
@@ -8595,6 +8698,154 @@ async function doSignUp(){
   if(!data.session){
     authMsg('Аккаунт создан. Подтвердите email по ссылке из письма, затем войдите.', 'ok');
   }
+}
+
+// ============================================================
+//  ПОВТОРНОЕ СОГЛАСИЕ ПРИ СМЕНЕ РЕДАКЦИИ ДОКУМЕНТОВ
+//  Задача 27-01 от 27 августа 2026.
+//
+//  Правило, а не заплатка: записанной редакции нет вовсе или последняя
+//  записанная не равна нынешней (POLICY_VERSION) — просим согласие
+//  снова. Это закрывает и сегодняшний случай (один человек
+//  зарегистрировался 19 июля 2026, за день до появления механизма,
+//  и записи о согласии у него нет), и любую будущую правку документов
+//  юристом.
+//
+//  Новое согласие ложится НОВОЙ строкой, старую не переписываем:
+//  история согласий — это и есть то, что предъявляют (кто, когда,
+//  на какую редакцию). В базе это подстраховано тем, что политик
+//  UPDATE и DELETE на consents нет вовсе — есть только SELECT своего
+//  и INSERT своего.
+// ============================================================
+
+// Возвращает:
+//   'est'        — согласие на нынешнюю редакцию записано, пускаем;
+//   'nado'       — записи нет или редакция устарела, спрашиваем;
+//   'neizvestno' — сервер не ответил.
+//
+// Третий исход — не отговорка, а грабля 48: пока факт неизвестен,
+// решение не принимается вовсе. Запереть человека с его данными
+// из-за отвалившегося Wi-Fi хуже, чем спросить согласие одним входом
+// позже. И это не дыра: настоящий рубеж стоит в базе, а не здесь —
+// без подтверждения строка в consents не появится ни при каком
+// поведении приложения.
+async function consentCheck(){
+  if(LOCAL_TEST) return 'neizvestno';
+  if(!sb || !currentUser || !currentUser.id) return 'neizvestno';
+  try{
+    const res = await withTimeout(
+      sb.from('consents')
+        .select('policy_version, consented_at')
+        .eq('user_id', currentUser.id)
+        .order('consented_at', { ascending: false })
+        .limit(1),
+      8000
+    );
+    if(!res || res.error || !Array.isArray(res.data)) return 'neizvestno';
+    // Сравниваем именно с ПОСЛЕДНЕЙ по времени записью, а не с любой:
+    // после этой задачи строк у человека станет больше одной, и среди
+    // старых наверняка найдётся совпадение с прежней редакцией.
+    const last = res.data[0];
+    return (last && last.policy_version === POLICY_VERSION) ? 'est' : 'nado';
+  }catch(_){
+    return 'neizvestno';
+  }
+}
+
+function consentMsg(text, kind){
+  const m = document.getElementById('consentMsg');
+  if(!m) return;
+  m.textContent = text || '';
+  m.className = 'consent-msg' + (kind ? (' ' + kind) : '');
+}
+
+function showConsentGate(){
+  const ov = document.getElementById('consentOverlay');
+  if(!ov) return;
+  // Галочка пустая всегда, в том числе на повторном заходе: согласие —
+  // действие человека, а не наша память о его прошлом нажатии.
+  consentGateOpen = true;
+  const box = document.getElementById('consentCheck');
+  if(box) box.checked = false;
+  const btn = document.getElementById('consentAgree');
+  if(btn){ btn.disabled = false; btn.textContent = 'Подтвердить и продолжить'; }
+  const btnNo = document.getElementById('consentRefuse');
+  if(btnNo){ btnNo.disabled = false; btnNo.textContent = 'Отказаться'; }
+  consentMsg('');
+  ov.style.display = 'flex';
+  hideSplash();   // заставка лежит поверх всего (z-index 5000) — без этого экран не увидеть
+}
+
+function hideConsentGate(){
+  consentGateOpen = false;
+  const ov = document.getElementById('consentOverlay');
+  if(ov) ov.style.display = 'none';
+}
+
+async function doConsentAgree(){
+  const box = document.getElementById('consentCheck');
+  if(!box || !box.checked){
+    consentMsg('Чтобы продолжить, отметьте согласие', 'err');
+    const lbl = document.getElementById('consentBox');
+    if(lbl){ lbl.style.color = 'var(--red)'; setTimeout(()=>{ lbl.style.color = ''; }, 2500); }
+    return;
+  }
+  if(!navigator.onLine){
+    consentMsg('Нет связи. Попробуйте, когда интернет вернётся', 'err');
+    return;
+  }
+
+  const btn = document.getElementById('consentAgree');
+  if(btn){ btn.disabled = true; btn.textContent = 'Записываем…'; }
+  consentMsg('');
+
+  // Записываем ФАКТ, а не намерение (грабля 56). Экран убираем не по
+  // нажатию и даже не по «ошибки нет», а по СОДЕРЖИМОМУ ответа: сервер
+  // обязан вернуть записанную строку со своим номером.
+  // Колонку id не передаём — она GENERATED ALWAYS, номер выдаёт база
+  // (грабля 55: смотреть схему, а не образец соседнего кода).
+  // consented_at тоже не передаём: пусть время проставит сервер,
+  // часы на устройстве могут врать, а дата согласия — то, что
+  // предъявляют.
+  let ok = false;
+  try{
+    const res = await withTimeout(
+      sb.from('consents')
+        .insert({ user_id: currentUser.id, policy_version: POLICY_VERSION })
+        .select('id, policy_version'),
+      15000
+    );
+    const row = (res && !res.error && Array.isArray(res.data)) ? res.data[0] : null;
+    ok = !!(row && row.id && row.policy_version === POLICY_VERSION);
+  }catch(_){ ok = false; }
+
+  if(!ok){
+    if(btn){ btn.disabled = false; btn.textContent = 'Подтвердить и продолжить'; }
+    consentMsg('Не удалось записать согласие. Проверьте связь и попробуйте ещё раз', 'err');
+    return;
+  }
+
+  hideConsentGate();
+  // Заходим в afterLogin заново, и проверка сходит в базу ещё раз.
+  // Это нарочно: доказательством служит строка, прочитанная с сервера,
+  // а не наш собственный ответ об успехе (грабля 64 — проверять
+  // последствие, а не код возврата).
+  afterLogin();
+}
+
+// Отказ. Внутрь не пускаем — но данных не трогаем, аккаунт не блокируем,
+// никаких сроков и угроз. Человек не нарушитель: документы изменились
+// не по его вине. Выходим на экран входа, вернуться можно в любой момент.
+async function doConsentRefuse(){
+  const btn = document.getElementById('consentRefuse');
+  const btnYes = document.getElementById('consentAgree');
+  if(btn){ btn.disabled = true; btn.textContent = 'Выходим…'; }
+  if(btnYes) btnYes.disabled = true;
+  consentMsg('');
+  try{ await doSignOut(); }catch(_){}
+  hideConsentGate();
+  if(btn){ btn.disabled = false; btn.textContent = 'Отказаться'; }
+  if(btnYes) btnYes.disabled = false;
 }
 
 // ---------- ОБРАЩЕНИЕ В ПОДДЕРЖКУ ----------
@@ -8823,6 +9074,21 @@ async function afterLogin(){
   authLost = false;
   signOutByUser = false;     // вошли заново — снимаем блокировку сетевых попыток
   hideLogin();
+
+  // ---- 0. Согласие на обработку персональных данных ----
+  // Проверка стоит ЗДЕСЬ, а не в трёх местах вызова afterLogin, и это
+  // главное в правке: afterLogin — единственная общая точка для всех
+  // путей входа. Пароль (SIGNED_IN), восстановленная сессия при
+  // открытии страницы, завершение сброса пароля по ссылке из письма —
+  // все три ведут сюда. Приглашение по ссылке отдельным путём не идёт:
+  // оно разбирается подшагом внутри loadFromCloud, то есть уже после
+  // этого рубежа. Поставь проверку в одном из трёх мест — и человек
+  // обойдёт её двумя другими, сам того не зная.
+  //
+  // Раньше рубежа: данные с устройства ещё не показаны, app-ready
+  // не выставлен, в облако ничего не уходит.
+  if(await consentCheck() === 'nado'){ showConsentGate(); return; }
+
   document.body.classList.add('app-ready');
   document.getElementById('userEmail').textContent = currentUser.email || '';
   renderBuildVer();
@@ -9027,6 +9293,17 @@ async function bootstrap(){
   if(sDoneClose) sDoneClose.onclick = closeSupport;
   const sOv = document.getElementById('supportOverlay');
   if(sOv) sOv.onclick = (e)=>{ if(e.target === sOv) closeSupport(); };
+
+  // Экран повторного согласия. Закрытия щелчком по подложке здесь нет
+  // намеренно: это рубеж, а не окно — уйти с него можно только
+  // подтверждением или отказом.
+  const cYes = document.getElementById('consentAgree');
+  if(cYes) cYes.onclick = doConsentAgree;
+  const cNo = document.getElementById('consentRefuse');
+  if(cNo) cNo.onclick = doConsentRefuse;
+  const cSup = document.getElementById('consentSupport');
+  if(cSup) cSup.onclick = openSupport;
+
   document.getElementById('authForgot').onclick = doForgot;
   document.getElementById('authResend').onclick = doResend;
   document.getElementById('authSetPass').onclick = doSetPassword;
