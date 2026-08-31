@@ -1983,6 +1983,18 @@
   .plan-tag.trial{background:var(--orange);color:#fff;}
   .plan-tag.pro{background:var(--green);color:#fff;}
 
+  /* Выбор срока подписки: месяц или год. */
+  .plan-period{display:flex;justify-content:center;gap:8px;margin:0 0 18px;flex-wrap:wrap;}
+  .plan-period-btn{
+    display:flex;flex-direction:column;align-items:center;gap:2px;
+    padding:9px 20px;border:1px solid var(--paper-line);border-radius:999px;
+    background:var(--white);color:var(--ink-soft);font-family:inherit;
+    font-size:14px;font-weight:600;cursor:pointer;line-height:1.2;
+  }
+  .plan-period-btn:hover{border-color:var(--orange);color:var(--ink);}
+  .plan-period-btn.on{background:var(--orange);border-color:var(--orange);color:#fff;}
+  .plan-period-gift{font-size:11px;font-weight:500;opacity:.85;}
+
   /* ---------- ТАРИФ: окно выбора ---------- */
   .plan-overlay{
     position:fixed;inset:0;z-index:2500;
@@ -3048,6 +3060,15 @@
 
     <div class="plan-banner" id="planBanner"></div>
 
+    <!-- ВЫБОР СРОКА. По умолчанию ГОД: «продавать годовую вперёд»
+         (docs/ТАРИФЫ.md). Подарок подписан рядом с годовой ценой и
+         только там - складывать его с пробным периодом нельзя,
+         это обещало бы 2,5 месяца вместо двух. -->
+    <div class="plan-period" id="planPeriod">
+      <button type="button" class="plan-period-btn" data-period="month">На месяц</button>
+      <button type="button" class="plan-period-btn on" data-period="year">На год<span class="plan-period-gift">два месяца в подарок</span></button>
+    </div>
+
     <div class="plan-grid">
       <div class="plan-col" id="planColFree">
         <div class="plan-name"><svg class="plan-logo" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><rect x="6" y="6" width="88" height="88" rx="18" fill="none" stroke="var(--ink-soft)" stroke-width="5"/><path d="M30 64 L30 42 L50 28 L70 42 L70 64" fill="none" stroke="var(--ink-soft)" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/><path d="M43 64 L43 51 L57 51 L57 64" fill="none" stroke="var(--ink-soft)" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/></svg>Бесплатный</div>
@@ -3090,7 +3111,7 @@
       <div class="plan-col" id="planColTeam">
         <div class="plan-name"><svg class="plan-logo" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><rect x="6" y="6" width="88" height="88" rx="18" fill="none" stroke="var(--ink-soft)" stroke-width="5"/><path d="M30 64 L30 42 L50 28 L70 42 L70 64" fill="none" stroke="var(--ink-soft)" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/><path d="M43 64 L43 51 L57 51 L57 64" fill="none" stroke="var(--ink-soft)" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/></svg>Бригада</div>
         <div class="plan-price">1 790 ₽ <small>/ месяц</small></div>
-        <div class="plan-price-note">или 17 900 ₽ в год — два месяца в подарок<br>цена двух подписок, а мест пять</div>
+        <div class="plan-price-note" data-svoyo="цена двух подписок, а мест пять">или 17 900 ₽ в год — два месяца в подарок<br>цена двух подписок, а мест пять</div>
         <ul class="plan-feats">
           <li class="yes"><span class="ic"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>Всё из полного доступа</span></li>
           <li class="lim"><span class="ic">5</span><span>Пять мест: вы и ещё четверо мастеров</span></li>
@@ -3105,7 +3126,7 @@
       <div class="plan-col" id="planColFore">
         <div class="plan-name"><svg class="plan-logo" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><rect x="6" y="6" width="88" height="88" rx="18" fill="none" stroke="var(--ink-soft)" stroke-width="5"/><path d="M30 64 L30 42 L50 28 L70 42 L70 64" fill="none" stroke="var(--ink-soft)" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/><path d="M43 64 L43 51 L57 51 L57 64" fill="none" stroke="var(--ink-soft)" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/></svg>Прораб</div>
         <div class="plan-price">2 900 ₽ <small>/ месяц</small></div>
-        <div class="plan-price-note">или 29 000 ₽ в год — два месяца в подарок<br>для тех, кто нанимает мастеров</div>
+        <div class="plan-price-note" data-svoyo="для тех, кто нанимает мастеров">или 29 000 ₽ в год — два месяца в подарок<br>для тех, кто нанимает мастеров</div>
         <ul class="plan-feats">
           <li class="yes"><span class="ic"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>Всё из «Бригады»</span></li>
           <li class="lim"><span class="ic">10</span><span>Десять мест: вы и ещё девять мастеров</span></li>
@@ -3297,7 +3318,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-31-122';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-31-124';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -4446,6 +4467,7 @@ function renderPlanModal(){
     if(foreCta) foreCta.style.display = '';
   }
 
+  planCenyNarisovat();
   const days = trialDaysLeft();
   colFree.classList.remove('current');
   colPro.classList.remove('current');
@@ -4462,7 +4484,10 @@ function renderPlanModal(){
     banner.innerHTML = '<b>Активна подписка «' +
                        (PLAN_NAME[paidPlan] || 'Полный доступ') + '»</b> до ' +
                        fmtDate(userPlan.plan_until) +
-                       '. Спасибо, что поддерживаете проект.';
+                       // Точку НЕ ставим: русский формат даты уже кончается
+                       // на «г.», и выходило «2027 г..». Видно это в самом
+                       // важном сообщении приложения — после оплаты.
+                       ' Спасибо, что поддерживаете проект.';
     (paidCol || colPro).classList.add('current');
     freeCta.textContent = 'Доступен всегда';
     proCta.textContent = (paidPlan === 'pro') ? 'Продлить подписку'
@@ -4486,6 +4511,7 @@ function renderPlanModal(){
 
 function openPlans(){
   renderPlanModal();
+  planCenyNarisovat();
   document.getElementById('planOverlay').style.display = 'flex';
   track('open_plans');
 }
@@ -4504,27 +4530,138 @@ async function track(event, detail){
   }catch(e){ /* молча */ }
 }
 
-// клик по «Оформить подписку» — показываем форму заявки вместо оплаты
-function startCheckout(){
-  track('click_pro');
-  openLeadForm('pro_month');
+// ---------- ОПЛАТА ПОДПИСКИ (часть 3 плана, 31 августа 2026) ----------
+//
+// ЦЕНУ ЗДЕСЬ ТОЛЬКО ПОКАЗЫВАЕМ. Списывает её база по таблице plan_prices,
+// а приложение шлёт лишь тариф и срок - иначе «Прораб» купили бы за рубль.
+// Числа взяты из docs/ТАРИФЫ.md, единственного источника правды; если они
+// разойдутся с базой, верной будет БАЗА, а это - опечатка на витрине.
+const PLAN_CENY = {
+  pro:     { month: 890,  year: 8900  },
+  brigada: { month: 1790, year: 17900 },
+  prorab:  { month: 2900, year: 29000 }
+};
+const PLAN_KOLONKI = { pro:'planColPro', brigada:'planColTeam', prorab:'planColFore' };
+
+let uiPlanPeriod = 'year';   // по умолчанию год: «продавать годовую вперёд»
+
+function planCenyNarisovat(){
+  document.querySelectorAll('#planPeriod .plan-period-btn').forEach(b=>{
+    b.classList.toggle('on', b.getAttribute('data-period') === uiPlanPeriod);
+  });
+  const god = uiPlanPeriod === 'year';
+  Object.keys(PLAN_CENY).forEach(plan=>{
+    const col = document.getElementById(PLAN_KOLONKI[plan]);
+    if(!col) return;
+    const cena = col.querySelector('.plan-price');
+    const nota = col.querySelector('.plan-price-note');
+    const c = PLAN_CENY[plan];
+    if(cena) cena.innerHTML = fmtMoney(god ? c.year : c.month) +
+      ' <small>/ ' + (god ? 'год' : 'месяц') + '</small>';
+    if(nota){
+      // Подарок подписан ТОЛЬКО рядом с годовой ценой и НЕ складывается
+      // с пробным периодом - см. docs/ТАРИФЫ.md, правило для текстов.
+      const svoyo = nota.getAttribute('data-svoyo') || '';
+      nota.innerHTML = (god
+        ? 'два месяца в подарок: год по цене десяти месяцев'
+        : 'или ' + fmtMoney(c.year) + ' в год — два месяца в подарок')
+        + (svoyo ? '<br>' + svoyo : '');
+    }
+  });
+}
+
+// Нажали «Оформить». Ссылку на оплату считает СЕРВЕР: подпись - это
+// пароль магазина, а index.html скачивает кто угодно.
+async function oplatit(plan){
+  const period = uiPlanPeriod;
+  track('click_' + plan, period);
+  if(LOCAL_TEST){ alert('Локальный режим: оплата не вызывается.'); return; }
+  if(!sb || !currentUser){ showLogin(); return; }
+
+  const btn = document.getElementById({ pro:'planProCta', brigada:'planTeamCta',
+                                        prorab:'planForeCta' }[plan]);
+  const bylo = btn ? btn.textContent : '';
+  if(btn){ btn.disabled = true; btn.textContent = 'Готовим оплату…'; }
+
+  try{
+    const { data, error } = await sb.functions.invoke('robokassa-pay',
+                                                      { body: { plan, period } });
+    if(error) throw error;
+    if(data && data.ok && data.url){
+      // Уходим на страницу оплаты Робокассы. Возврат человека НИЧЕГО
+      // не подтверждает: тариф проставит только уведомление с верной
+      // подписью, которое приходит серверу напрямую.
+      location.href = data.url;
+      return;
+    }
+    throw new Error((data && data.error) || 'Оплата недоступна');
+  }catch(e){
+    console.error('Оплата не началась', e);
+    if(btn){ btn.disabled = false; btn.textContent = bylo; }
+    // ПРИЁМ ОПЛАТЫ ЕЩЁ НЕ НАСТРОЕН - это ожидаемое состояние до
+    // регистрации в Робокассе, а не поломка. Не показываем человеку
+    // ошибку, а возвращаемся к прежнему поведению: заявка. Так спрос
+    // продолжает собираться, и ни один интерес не теряется.
+    const txt = String((e && e.message) || '');
+    if(/не настроен|503/.test(txt)){
+      openLeadForm(plan === 'pro' ? 'pro_month' : (plan === 'brigada' ? 'team' : 'prorab'));
+      const m = document.getElementById('leadMsg');
+      if(m){ m.textContent = 'Оплата картой запускается на днях. Оставьте заявку — напишем, как только включим.';
+             m.className = 'plan-lead-msg'; }
+      return;
+    }
+    alert('Не удалось начать оплату. Проверьте связь и попробуйте ещё раз.');
+  }
+}
+
+function startCheckout(){ oplatit('pro'); }
+
+// ---------- ВОЗВРАЩЕНИЕ С ОПЛАТЫ ----------
+// Робокасса возвращает человека на страницу успеха и дописывает в адрес
+// номер счёта. САМ ЭТОТ ВОЗВРАТ НИЧЕГО НЕ ДОКАЗЫВАЕТ: по такой ссылке
+// перейдёт кто угодно, это обычный переход. Тариф проставляет только
+// уведомление с верной подписью, которое Робокасса шлёт серверу напрямую.
+//
+// Поэтому здесь мы НИЧЕГО не выдаём и ничему не верим - только
+// перечитываем тариф с сервера и объясняем, что происходит. Без этого
+// заплативший вернулся бы на бесплатный тариф и решил, что деньги пропали:
+// уведомление идёт своим путём и может отстать на несколько секунд.
+async function vernulisSOplaty(){
+  const adres = new URL(location.href);
+  if(!adres.searchParams.has('InvId')) return;
+  const schet = adres.searchParams.get('InvId');
+
+  // Адрес чистим сразу: обновление страницы не должно снова открывать окно.
+  ['InvId','OutSum','SignatureValue','Culture','IsTest','Shp_plan','Shp_period']
+    .forEach(k=> adres.searchParams.delete(k));
+  try{ history.replaceState(null, '', adres.toString()); }catch(_){}
+
+  openPlans();
+  const skazat = t => { const b = document.getElementById('planBanner'); if(b) b.innerHTML = t; };
+  skazat('<b>Проверяем оплату…</b> Счёт № ' + escapeHtml(schet) + '.');
+
+  // Ждём до полуминуты, перечитывая тариф. Дождались - окно само покажет
+  // «активна подписка», это уже умеет renderPlanModal.
+  for(let i = 0; i < 10; i++){
+    await loadPlan();
+    if(isPaid()){ renderPlanModal(); renderPlanBtn(); return; }
+    await new Promise(r=> setTimeout(r, 3000));
+  }
+  skazat('<b>Оплата ещё обрабатывается.</b> Счёт № ' + escapeHtml(schet) +
+         '. Подписка включится сама, как только платёж подтвердится, — обычно это минуты. ' +
+         'Деньги при этом не теряются: если через час ничего не изменится, напишите нам ' +
+         'и назовите номер счёта.');
 }
 
 // Кнопка «Бригады» ведёт в ту же форму заявки — оплата ещё не подключена,
 // но какой тариф человек выбрал, знать надо: это единственный источник
 // сведений о спросе до запуска платежей.
-function startTeamCheckout(){
-  track('click_team');
-  openLeadForm('team');
-}
+function startTeamCheckout(){ oplatit('brigada'); }
 
 // «Прораб» — туда же. Отдельная метка нужна, чтобы отличить спрос
 // на совместную работу от спроса на наряды: это разные покупатели,
 // и до запуска платежей других сведений о них не будет.
-function startForeCheckout(){
-  track('click_prorab');
-  openLeadForm('prorab');
-}
+function startForeCheckout(){ oplatit('prorab'); }
 
 function openLeadForm(preset){
   const lead = document.getElementById('planLead');
@@ -9321,6 +9458,8 @@ async function afterLogin(){
   // падает, и данные не подтягивались, пока человек сам что-нибудь не менял.
   // Поэтому если первая попытка не удалась, а сеть есть — пробуем ещё дважды.
   await Promise.all([ loadPlan(), loadFromCloud() ]);
+  // Вернулись с оплаты - не ждём, чтобы не задерживать отрисовку.
+  vernulisSOplaty();
   if(syncOffline && navigator.onLine){
     for(const wait of [1500, 4000]){
       await new Promise(r => setTimeout(r, wait));
@@ -9509,6 +9648,11 @@ async function bootstrap(){
   document.getElementById('planBtn').onclick    = openPlans;
   document.getElementById('planClose').onclick  = closePlans;
   document.getElementById('planProCta').onclick = startCheckout;
+  // Выбор срока. Вешаем ЗДЕСЬ, в bootstrap, а не в bootstrapLocal:
+  // тот выполняется только при LOCAL_TEST, и привязка молча не вставала.
+  document.querySelectorAll('#planPeriod .plan-period-btn').forEach(b=>{
+    b.onclick = ()=>{ uiPlanPeriod = b.getAttribute('data-period'); planCenyNarisovat(); };
+  });
   const teamCtaBtn = document.getElementById('planTeamCta');
   if(teamCtaBtn) teamCtaBtn.onclick = startTeamCheckout;
   const foreCtaBtn = document.getElementById('planForeCta');
