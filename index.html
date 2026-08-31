@@ -846,6 +846,14 @@
   .work-search-input:focus{outline:none;border-color:var(--blue);}
   .work-dropdown{display:none;position:absolute;top:100%;left:0;right:0;z-index:30;max-height:260px;overflow-y:auto;margin-top:4px;background:var(--white);border:1px solid var(--paper-line);border-radius:var(--radius);box-shadow:0 6px 18px rgba(0,0,0,.12);}
   .work-search.open .work-dropdown{display:block;}
+  /* ВЫБОР В ДОП. РАБОТАХ — список В ПОТОКЕ, а не всплывающий.
+     Блок доп. работ живёт внутри .cust-acc/.cust-body, а у обоих
+     overflow:hidden ради сворачивания. Всплывающий список там просто
+     обрезало бы. Прокрутка своя: max-height + overflow-y. */
+  .ew-search{margin-top:12px;}
+  .ew-dropdown{display:none;max-height:220px;overflow-y:auto;margin-top:6px;background:var(--white);border:1px solid var(--paper-line);border-radius:var(--radius);}
+  .ew-search.open .ew-dropdown{display:block;}
+  .ew-actions{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-top:10px;}
   .wd-item{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 12px;cursor:pointer;font-size:13px;color:var(--ink);}
   .wd-item:hover{background:var(--paper);}
   /* УЖЕ В СМЕТЕ (сборка 2026-08-10-09).
@@ -3271,7 +3279,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-30-120';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-30-121';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -9661,6 +9669,7 @@ function saveCollapsed(){
 
 const uiRoomCollapsed = readCollapsed();   // свёрнутые карточки помещений, по id
 const uiWorkSearch = {};      // текст поиска по помещению
+const uiExtraSearch = {};     // текст поиска по справочнику в доп. работах
 let uiWorkSearchRefocus = null; // вернуть фокус после render
 const uiCustomerOpen = {};
 const uiPanel = { smeta:false, zakupka:false, dogovor:false };
@@ -14686,6 +14695,24 @@ function renderExtraWorksBlock(proj){
   // Призраков не берём: позицию удалили осознанно, предлагать её нельзя
   // (то же основание, что у поиска работ помещения).
   const cat = realCatalog().filter(w=>(w.name||'').trim());
+  // Управление то же, каким выбирают работы в помещении: список с поиском
+  // и настоящей прокруткой. Родной <select> стоял здесь до 30 августа 2026 —
+  // в него плохо ложится справочник плиточника: у него свои цены,
+  // считанные от базовой ставки, и свои разделы.
+  const ewTail = w => {
+    const pr = (w.price === '' || w.price === null || w.price === undefined) ? '' : fmtMoney(w.price);
+    return pr ? `<span class="wd-unit">${pr}/${UNIT_LABEL[w.unit]}</span>` : '';
+  };
+  const ewCat = cat.map(w=>
+    `<div class="wd-item" data-ew-add="${escapeAttr(w.id)}" data-name="${escapeAttr((w.name||'').toLowerCase())}"><span>${escapeHtml(w.name)}</span>${ewTail(w)}</div>`).join('');
+  // Справочник плиточника — теми же строками с меткой ▦, что и в поиске
+  // работ помещения. Конфигуратор укладки сюда НЕ выносим: он настраивает
+  // строку под поверхность помещения, а доп. работа ни к одной не привязана.
+  const ewRef = refOn() ? REF_TILING.works.map(w=>{
+    const key = (w.name + ' ' + (w.tags||'') + ' ' + refSecName(w.sec)).toLowerCase();
+    return `<div class="wd-item wd-ref" data-ew-ref-add="${escapeAttr(w.id)}" data-name="${escapeAttr(key)}"><span><span class="wd-ref-mark">▦</span>${escapeHtml(w.name)}</span><span class="wd-unit">${fmtMoney(refWorkPrice(w))}/${UNIT_LABEL[w.unit]}</span></div>`;
+  }).join('') : '';
+  const ewQ = uiExtraSearch[proj.id] || '';
 
   return `
     <div class="section extra-block cust-acc ${open?'open':''}" data-extra-acc="${proj.id}">
@@ -14703,16 +14730,12 @@ function renderExtraWorksBlock(proj){
              В наряд мастера и в общий итог проекта — попадают. -->
         <div class="mat-note">то, что не привязано к помещению: вывоз мусора, доставка, простой. В смету заказчика не входит — печатается дополнительным соглашением. В наряд мастера и в общий итог проекта входит</div>
         <div class="extra-list">${rows}</div>
-        <div class="pm-actions">
-          ${cat.length
-            ? `<select id="ewPick">
-                 <option value="">— выбрать из справочника —</option>
-                 ${cat.map(w=>`<option value="${escapeAttr(w.id)}">${escapeHtml(w.name)}${
-                     (w.price === '' || w.price === null || w.price === undefined)
-                       ? '' : ' · ' + fmtMoney(w.price) + '/' + UNIT_LABEL[w.unit]
-                   }</option>`).join('')}
-               </select>`
-            : `<span class="mat-note">Справочник пуст — заведите позиции в разделе «Виды работ».</span>`}
+        <div class="ew-search" data-ewsearch="${proj.id}">
+          <input type="text" class="work-search-input" placeholder="Поиск и добавление из справочника…" value="${escapeAttr(ewQ)}" data-ewsearch-input="${proj.id}">
+          <div class="ew-dropdown" data-ewsearch-list="${proj.id}">${ewCat}${ewRef}${
+            (ewCat + ewRef) ? '' : '<div class="wd-empty">Справочник пуст — заведите позиции в разделе «Виды работ».</div>'}</div>
+        </div>
+        <div class="ew-actions">
           <button class="add-link" data-add-extra="1">+ Своя позиция</button>
         </div>
       </div>
@@ -16238,19 +16261,47 @@ function attachHandlers(){
       scheduleSave(); refreshCond(); updateDerived(proj);
     });
   });
-  const ewPick = document.getElementById('ewPick');
-  if(ewPick) ewPick.onchange = ()=>{
-    const w = realCatalog().find(x=>x.id===ewPick.value);
-    if(!w) return;
+  // Снимок: название, единица и цена берутся на момент добавления.
+  // Дальше строка живёт сама по себе — правка в ней прайс не трогает,
+  // и правка прайса эту смету не двигает. Так же устроены материалы.
+  // Номер задаём сразу, а не при сохранении, — см. граблю 47 ниже.
+  const ewPush = (name, unit, price)=>{
     proj.extraWorks = proj.extraWorks || [];
-    // Снимок: название, единица и цена берутся на момент добавления.
-    // Дальше строка живёт сама по себе — правка в ней прайс не трогает,
-    // и правка прайса эту смету не двигает. Так же устроены материалы.
-    // Номер задаём сразу, а не при сохранении, — см. граблю 47 ниже.
-    proj.extraWorks.push({ id: newUuid(), name: w.name, unit: w.unit || 'pcs',
-                           qty:'', price: (w.price === '' || w.price == null) ? '' : w.price });
+    proj.extraWorks.push({ id: newUuid(), name: name, unit: unit || 'pcs',
+                           qty:'', price: (price === '' || price == null) ? '' : price });
     scheduleSave(); render();
   };
+  main.querySelectorAll('[data-ewsearch-input]').forEach(el=>{
+    const pid = el.getAttribute('data-ewsearch-input');
+    const box = main.querySelector(`[data-ewsearch="${pid}"]`);
+    el.addEventListener('focus', ()=>{ if(box) box.classList.add('open'); });
+    el.addEventListener('input', ()=>{
+      uiExtraSearch[pid] = el.value;
+      const q = el.value.toLowerCase().trim();
+      box.querySelectorAll('.wd-item').forEach(it=>{
+        const nm = it.getAttribute('data-name') || '';
+        it.style.display = (!q || nm.includes(q)) ? '' : 'none';
+      });
+    });
+    // Закрываем с задержкой: иначе blur успевает раньше клика по строке
+    el.addEventListener('blur', ()=>{ setTimeout(()=>{ if(box) box.classList.remove('open'); }, 160); });
+  });
+  main.querySelectorAll('[data-ew-add]').forEach(el=>{
+    el.addEventListener('mousedown', e=> e.preventDefault());
+    el.addEventListener('click', ()=>{
+      const w = realCatalog().find(x=>x.id===el.getAttribute('data-ew-add'));
+      if(w) ewPush(w.name, w.unit, w.price);
+    });
+  });
+  main.querySelectorAll('[data-ew-ref-add]').forEach(el=>{
+    el.addEventListener('mousedown', e=> e.preventDefault());
+    el.addEventListener('click', ()=>{
+      const w = REF_TILING.works.find(x=>x.id===el.getAttribute('data-ew-ref-add'));
+      // Цена справочника считается от базовой ставки — берём её снимком,
+      // ровно как это делает refPushWork для работ в помещении.
+      if(w) ewPush(w.name, w.unit, refWorkPrice(w));
+    });
+  });
   main.querySelectorAll('[data-add-extra]').forEach(el=>{
     el.onclick = ()=>{
       proj.extraWorks = proj.extraWorks || [];
