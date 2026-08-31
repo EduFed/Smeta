@@ -766,7 +766,25 @@
       padding:16px 16px calc(16px + env(safe-area-inset-bottom));
       border-top:none;
       border-right:1px solid rgba(255,255,255,.10);
-      background:rgba(0,0,0,.72);
+      /* НЕПРОЗРАЧНАЯ, а не полупрозрачная (31 августа 2026).
+         Было rgba(0,0,0,.72): сквозь разговор просвечивала смета,
+         и владелец прислал снимок с iPad — «нечитабельные комментарии
+         из-за прозрачности». Разговор читают, а не любуются им поверх
+         фотографии; за прозрачность здесь платит разборчивость текста. */
+      background:#0d0d0d;
+    }
+    /* ПОКА РАЗГОВОР ЗАКРЫТ — СВЕДЕНИЯ ЛОЖАТСЯ ПОВЕРХ СНИМКА.
+       Прежде полоса забирала колонку даже закрытой, и снимок
+       центрировался по остатку экрана: стоячее фото висело заметно
+       правее середины. Владелец: «криво косо как-то».
+       Убираем её из потока — сцена получает всю ширину, снимок встаёт
+       по центру экрана. Открыли разговор — колонка возвращается. */
+    .photo-viewer:not(.komm-otkryt) .pv-bar{
+      position:absolute; top:0; left:0; z-index:5;
+      width:auto; max-width:min(460px, 45vw); height:auto;
+      overflow:visible; border-right:none;
+      padding:14px 20px 30px;
+      background:linear-gradient(to bottom, rgba(0,0,0,.78) 0%, rgba(0,0,0,.55) 55%, rgba(0,0,0,0) 100%);
     }
     /* Разговор занимает ВСЮ высоту колонки: сверху сведения о снимке,
        снизу поле ввода, а между ними — всё остальное место. */
@@ -3279,7 +3297,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-30-121';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-08-31-122';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -8576,6 +8594,11 @@ function kommPerekluchit(otkryt){
   if(!v) return;
   const stanet = (otkryt === undefined) ? !v.classList.contains('komm-otkryt') : !!otkryt;
   v.classList.toggle('komm-otkryt', stanet);
+  // Колонка разговора забирает ширину у снимка — значит сдвиг ленты
+  // (он равен ширине сцены) стал не тем. Пересчитываем ЗДЕСЬ, явно,
+  // а не надеемся на наблюдателя за размером: тот живёт в цикле
+  // отрисовки и на скрытой вкладке не приходит вовсе.
+  pvSdvig = 0; pvLentaPrimenit('none');
   const k = document.getElementById('pvKommKnopka');
   if(k) k.setAttribute('aria-expanded', stanet ? 'true' : 'false');
   if(stanet){
@@ -13051,7 +13074,50 @@ document.getElementById('previewClose') && document.getElementById('previewClose
   // Нажатие мимо снимка закрывает — привычно и не требует целиться
   // в крестик. Нажатие по самому снимку не закрывает: на объекте легко
   // задеть экран, и снимок захлопывался бы посреди разглядывания.
-  box.addEventListener('click', e=>{ if(e.target === box) photoViewerClose(); });
+  // Признак «жест мышью уже был»: после перехвата указателя браузер
+  // может отдать click самому просмотрщику, и «нажали мимо» сработает
+  // там, где человек ничего мимо не нажимал.
+  let pvBylZhest = false;
+  box.addEventListener('click', e=>{
+    if(pvBylZhest){ pvBylZhest = false; return; }
+    if(e.target === box) photoViewerClose();
+  });
+
+  // Поворот планшета и смена размера окна — та же беда, что и с колонкой
+  // разговора: ширина сцены другая, а сдвиг ленты прежний.
+  const lentuPoRazmeru = ()=>{
+    if(box.style.display !== 'flex') return;   // закрыт — незачем
+    pvSdvig = 0; pvLentaPrimenit('none');
+  };
+  window.addEventListener('resize', lentuPoRazmeru);
+  window.addEventListener('orientationchange', ()=> setTimeout(lentuPoRazmeru, 60));
+
+  // ШИРИНА СЦЕНЫ ИЗМЕНИЛАСЬ — СДВИГ ЛЕНТЫ НАДО ПОСТАВИТЬ ЗАНОВО.
+  // Лента стоит на translateX(минус ширина сцены), и эта ширина нигде
+  // не пересчитывалась: pvLentaPrimenit звали из одиннадцати мест, и ни
+  // одно не было про смену размера. Поворот планшета, открытие разговора,
+  // смена размера окна — прежний сдвиг оказывался не тем, средний кадр
+  // съезжал вбок, а из-за края выглядывал соседний снимок.
+  // Владелец 31 августа 2026 прислал снимок с iPad: слева из-под края
+  // видна полоска другой фотографии.
+  // Наблюдатель оставлен ПОДСТРАХОВКОЙ на случаи, которые я не перечислил
+  // (появление полосы прокрутки, смена масштаба страницы). Основную работу
+  // делают два явных вызова выше: наблюдатель приходит из цикла отрисовки
+  // и на скрытой вкладке молчит — проверено 31 августа 2026.
+  if(window.ResizeObserver){
+    const scena = document.querySelector('.pv-scene');
+    if(scena){
+      let bylo = 0;
+      new ResizeObserver(()=>{
+        const stalo = scena.clientWidth;
+        if(!stalo || stalo === bylo) return;
+        bylo = stalo;
+        if(box.style.display !== 'flex') return;   // закрыт — незачем
+        pvSdvig = 0;
+        pvLentaPrimenit('none');
+      }).observe(scena);
+    }
+  }
 
   // ЖЕСТЫ НА ЛЕНТЕ: тянем полосу, приближаем, закрываем.
   //
@@ -13068,8 +13134,21 @@ document.getElementById('previewClose') && document.getElementById('previewClose
   let tyanem = null;     // {x, y, panX, panY} — таскаем приближённый снимок
   let lenta = null;      // {x, y} — тянем саму полосу
 
+  // ПОЛОСА СВЕДЕНИЙ ЦЕЛИКОМ — НЕ ЗОНА ЖЕСТА (31 августа 2026).
+  // Прежде здесь стояли только '.pv-note, .pv-btn', а кнопка разговора
+  // это '.pv-komm-knopka' — под исключение она не попадала. На компьютере
+  // нажатие на неё считалось началом перетаскивания ленты, просмотрщик
+  // забирал себе указатель через setPointerCapture, и Chrome отдавал
+  // последующий click уже не кнопке, а самому просмотрщику — где стоит
+  // «нажали мимо снимка, значит закрыть». Владелец: «нажимаю на
+  // комментарии, окно фото закрывается».
+  // На телефоне этого не было вовсе: ветка мыши отсекает касания первой
+  // строкой, поэтому беда была только на компьютере.
+  // Исключаем всю полосу, а не одну кнопку: в ней ещё «Править»,
+  // «Удалить», прокрутка разговора и выделение текста — всё это тоже
+  // не листание снимков.
   const svoyo = e => !(e.target && e.target.closest &&
-                       e.target.closest('.pv-note, .pv-btn'));
+                       e.target.closest('.pv-note, .pv-btn, .pv-bar'));
 
   // отпустили полосу: доехать до соседа или вернуться
   const otpustili = async (dx)=>{
@@ -13193,6 +13272,7 @@ document.getElementById('previewClose') && document.getElementById('previewClose
       } else if(pvList.length > 1){
         lentaM = { x:e.clientX };
       } else return;
+      pvBylZhest = true;
       try{ box.setPointerCapture(e.pointerId); }catch(_){}
       e.preventDefault();
     });
