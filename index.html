@@ -2727,6 +2727,24 @@
      Сами работы, поручённые ему, в наряд попадают и в документе видны
      (см. buildEstimateData). */
   .naryad-mode .extra-block{display:none;}
+  /* Деньги заказчика мастеру не показываем. На сервере таблица и так
+     закрыта, но блок в наряде не рисуем: увиденное не развидеть. */
+  .naryad-mode .oplaty-block{display:none;}
+  .opl-row{display:grid;grid-template-columns:150px 120px 1fr 34px;gap:8px;align-items:center;margin-bottom:8px;}
+  .opl-row input{padding:8px 10px;border:1px solid var(--paper-line);border-radius:7px;
+    background:var(--white);color:var(--ink);font-size:14px;font-family:inherit;min-width:0;}
+  .opl-itogi{margin-top:16px;padding-top:12px;border-top:1px solid var(--paper-line);
+    display:flex;flex-direction:column;gap:6px;max-width:420px;}
+  .opl-itog{display:flex;justify-content:space-between;align-items:baseline;gap:14px;font-size:14px;color:var(--ink-soft);}
+  .opl-itog b{font-family:'JetBrains Mono',monospace;color:var(--ink);}
+  .opl-itog-main{font-weight:600;color:var(--ink);font-size:15px;}
+  .opl-itog-main b{color:var(--orange);font-size:17px;}
+  @media (max-width:760px){
+    /* На телефоне строка разворачивается: дата и сумма в ряд, пометка ниже.
+       Так же поступает строка материала - своего вида раскладки не заводим. */
+    .opl-row{grid-template-columns:1fr 1fr 34px;}
+    .opl-row input[data-opl$="|note"]{grid-column:1 / -1;}
+  }
   .naryad-mode .team-member-other{display:none;}
   /* Блок «Материалы» в проекте убираем целиком: это рабочее место
      прораба — он ведёт список, правит количества и цены. Мастеру там
@@ -3318,7 +3336,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-08-31-124';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-01-125';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -6298,6 +6316,10 @@ const DB = {
         'project_customers(*),' +
         'project_extra_works(*),' +
         'project_materials(*),' +
+        // Оплаты заказчика — тоже вложенным полем, по той же причине,
+        // что и снимки: новый запрос в общий массив выше однажды сместил
+        // разбор на позицию и обнулил смету владельцу.
+        'customer_payments(*),' +
         // Снимки едут ВЛОЖЕННЫМ полем проекта, а не отдельным запросом
         // в общий список выше. Причина — предупреждение из этого же файла:
         // 5 августа новый запрос вставили в середину массива, а в разбор
@@ -6493,6 +6515,20 @@ const DB = {
           qty: m.qty === null ? '' : m.qty, note: m.note||'',
           price: m.price === null || m.price === undefined ? '' : m.price
         })),
+        // ОПЛАТЫ ЗАКАЗЧИКА. В базе сумма лежит ЦЕЛЫМИ КОПЕЙКАМИ
+        // (amount_kop), в приложении показывается рублями. Перевод здесь,
+        // в одном месте: копейки нужны затем, чтобы деньги не жили
+        // в числе с плавающей точкой — на стороне Робокассы этот урок
+        // уже оплачен.
+        payments: (p.customer_payments || []).slice()
+          .sort((a,b)=> String(b.paid_on||'').localeCompare(String(a.paid_on||'')))
+          .map(o=>({
+            id: o.id,
+            amount: (o.amount_kop === null || o.amount_kop === undefined)
+                      ? '' : String(o.amount_kop / 100),
+            paidOn: o.paid_on || '',
+            note: o.note || ''
+          })),
         // ФОТОГРАФИИ ПРОЕКТА ОДНИМ СПИСКОМ — и это нарочно.
         // Снимок цепляется к помещению или к строке сметы (targetType +
         // targetId), но лежит здесь весь, целиком по проекту. Так сделано
@@ -6620,8 +6656,9 @@ const DB = {
     };
 
     const projRows = [], custRows = [], roomRows = [], openRows = [],
-          workRows = [], extraRows = [], pmatRows = [];
-    const delRooms = [], delWorks = [], delOpens = [], delExtra = [], delPmat = [];
+          workRows = [], extraRows = [], pmatRows = [], payRows = [];
+    const delRooms = [], delWorks = [], delOpens = [], delExtra = [], delPmat = [],
+          delPay = [];
 
     cur.projects.forEach((p, pi)=>{
       // роль «смотрит» — сервер правки не примет. Не отправляем их вовсе,
@@ -6752,6 +6789,26 @@ const DB = {
       });
       wasPm.forEach((_, id)=> delPmat.push(id));
 
+      // оплаты заказчика
+      const wasPay = new Map(((was && was.payments) || []).map(o=>[o.id, o]));
+      (p.payments||[]).forEach(o=>{
+        if(!o.id) return;                     // см. ensureIds
+        const po = wasPay.get(o.id);
+        if(!po || JSON.stringify(po) !== JSON.stringify(o)){
+          // Рубли в копейки — целым числом. Округляем ЗДЕСЬ, а не в базе:
+          // 3000.1 рубля это 300010 копеек, и делать это умножением
+          // без округления нельзя — получится 300009.99999999994.
+          payRows.push({
+            id: o.id, project_id: p.id,
+            amount_kop: Math.round(num(o.amount) * 100),
+            paid_on: o.paidOn || null,
+            note: txt(o.note)
+          });
+        }
+        wasPay.delete(o.id);
+      });
+      wasPay.forEach((_, id)=> delPay.push(id));
+
       prevProj.delete(p.id);
     });
     const delProjects = Array.from(prevProj.keys());
@@ -6826,6 +6883,7 @@ const DB = {
     await drop('room_openings', 'id', delOpens);
     await drop('project_extra_works', 'id', delExtra);
     await drop('project_materials', 'id', delPmat);
+    await drop('customer_payments', 'id', delPay);
     await drop('rooms', 'id', delRooms);
     await drop('projects', 'id', delProjects);
 
@@ -6837,6 +6895,7 @@ const DB = {
     await put('room_works', workRows, 'lid');
     await put('project_extra_works', extraRows, 'id');
     await put('project_materials', pmatRows, 'id');
+    await put('customer_payments', payRows, 'id');
 
     // ЦЕНЫ — ПОСЛЕДНИМИ. У таблицы цен внешний ключ на строку сметы:
     // пока строки нет, цену записать некуда. Порядок обязателен.
@@ -7129,6 +7188,7 @@ const DB = {
         (r.windows || []).forEach(o=>{ if(!o._id) o._id = newUuid(); });
       });
       (p.extraWorks || []).forEach(e=>{ if(!e.id) e.id = newUuid(); });
+      (p.payments   || []).forEach(o=>{ if(!o.id) o.id = newUuid(); });
       (p.materials  || []).forEach(m=>{ if(!m.id) m.id = uid('pm'); });
     });
   },
@@ -11688,6 +11748,7 @@ function normalizeProjects(){
   (state.projects||[]).forEach(p=>{
     if(!p.customer) p.customer = {};
     if(!Array.isArray(p.extraWorks)) p.extraWorks = [];
+    if(!Array.isArray(p.payments))   p.payments   = [];
     if(!p.conds || typeof p.conds !== 'object') p.conds = {};   // условия объекта
     if(!Array.isArray(p.materials)) p.materials = [];           // материалы объекта
     // Снимки. Поле появилось позже проектов, поэтому у проекта из старой
@@ -13750,6 +13811,7 @@ function matUnitLabel(u){ return UNIT_LABEL[u] || u || ''; }
 // какие блоки материалов раскрыты — по проекту, в пределах сессии
 let uiMatOpen = {};
 let uiPayoutOpen = {};   // раскрыт ли «Расклад по деньгам», по проекту
+let uiOplatyOpen = {};   // раскрыт ли «Оплаты заказчика», по проекту
 let uiExtraOpen = {};    // раскрыты ли «Дополнительные работы», по проекту
 let uiCondsOpen = {};    // раскрыты ли «Условия объекта», по проекту
 
@@ -14837,6 +14899,8 @@ function renderProjectView(proj){
 
     ${renderPayoutBlock(proj)}
 
+    ${renderOplatyBlock(proj)}
+
     <div class="smeta-wrap" id="smetaBlock" style="margin-top:32px;">${renderSmetaBlock(proj)}</div>
 
     <div class="docs-block no-print">
@@ -14961,6 +15025,101 @@ function renderExtraWorksBlock(proj){
         </div>
         <div class="ew-actions">
           <button class="add-link" data-add-extra="1">+ Своя позиция</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+// ---------- ОПЛАТЫ ЗАКАЗЧИКА (31 августа 2026) ----------
+// Приложение всегда знало, СКОЛЬКО ДОЛЖНО БЫТЬ, и ничего не знало
+// о том, сколько получено на самом деле. Мастер брал аванс на объекте,
+// и записать это было негде.
+//
+// Здесь лента фактов: одна строка - одно поступление. Остаток считается
+// как разница, а не хранится: хранимый остаток разошёлся бы со сметой
+// в первый же день, когда смета выросла.
+//
+// ПОКАЗЫВАЕМ ВСЕ ТРИ ЧИСЛА СРАЗУ. Один остаток показывать нельзя:
+// он растёт, когда растёт смета, и без соседних цифр это выглядит
+// как ошибка приложения.
+//
+// Мастеру этот блок не виден: на сервере таблица закрыта теми же
+// функциями, что и цены заказчика, а здесь блок ещё и прячется
+// через .naryad-mode - как доп. работы (грабля 19: вырезанная
+// из разметки кнопка уронила обработчики).
+function oplatySumma(proj){
+  return (proj.payments||[]).reduce((s,o)=> s + num(o.amount), 0);
+}
+
+// Пересчитать подпись в шапке, не перерисовывая блок целиком: иначе
+// поле теряет фокус на каждой набранной цифре.
+function oplatyShapku(proj){
+  const box = document.querySelector(`[data-opl-acc="${proj.id}"] .mat-head-sum`);
+  if(!box) return;
+  const spisok = (proj.payments||[]);
+  const zapolnennyh = spisok.filter(o=> num(o.amount) || (o.note||'').trim()).length;
+  const polucheno = oplatySumma(proj);
+  const ostatok = projectTotal(proj) - polucheno;
+  box.textContent = zapolnennyh
+    ? zapolnennyh + ' ' + plural(zapolnennyh,'оплата','оплаты','оплат') +
+      ' · получено ' + fmtMoney(polucheno) +
+      (ostatok > 0 ? ' · остаток ' + fmtMoney(ostatok)
+                   : (ostatok < 0 ? ' · переплата ' + fmtMoney(-ostatok) : ' · рассчитались'))
+    : '';
+  // и три итога внизу блока
+  const it = document.querySelectorAll(`[data-opl-acc="${proj.id}"] .opl-itog b`);
+  if(it.length === 3){
+    it[0].textContent = fmtMoney(projectTotal(proj));
+    it[1].textContent = fmtMoney(polucheno);
+    it[2].textContent = fmtMoney(Math.abs(ostatok));
+  }
+}
+
+function renderOplatyBlock(proj){
+  // НЕ РИСУЕМ ВОВСЕ тому, кто не должен видеть деньги заказчика.
+  // isNaryad - это не владелец и доля меньше 100, то есть в точности
+  // зеркало серверного правила can_see_real_price (master_share = 100).
+  // Стиль .naryad-mode ниже оставлен как второй рубеж: на сервере
+  // таблица закрыта, здесь блок не строится, а если и построится -
+  // будет спрятан. Увиденное не развидеть, и на один замок тут
+  // полагаться не стоит.
+  if(isNaryad(proj)) return '';
+  const spisok = (proj.payments||[]);
+  const poluchArr = spisok.filter(o=> num(o.amount) || (o.note||'').trim());
+  const polucheno = oplatySumma(proj);
+  const dolzhen = projectTotal(proj);
+  const ostatok = dolzhen - polucheno;
+  const open = !!uiOplatyOpen[proj.id];
+
+  const rows = spisok.map((o,i)=>`
+    <div class="opl-row">
+      <input type="date" value="${escapeAttr(o.paidOn||'')}" data-opl="${i}|paidOn" title="Когда получено">
+      <input type="text" inputmode="decimal" placeholder="сумма" value="${escapeAttr(o.amount)}" data-opl="${i}|amount">
+      <input type="text" placeholder="за что: аванс, за этап, наличными" value="${escapeAttr(o.note||'')}" data-opl="${i}|note">
+      <button class="btn-icon" data-opl-del="${i}" title="Удалить">✕</button>
+    </div>`).join('');
+
+  const shapka = poluchArr.length
+    ? poluchArr.length + ' ' + plural(poluchArr.length,'оплата','оплаты','оплат') +
+      ' · получено ' + fmtMoney(polucheno) +
+      (ostatok > 0 ? ' · остаток ' + fmtMoney(ostatok) : (ostatok < 0 ? ' · переплата ' + fmtMoney(-ostatok) : ' · рассчитались'))
+    : '';
+
+  return `
+    <div class="section oplaty-block cust-acc ${open?'open':''}" data-opl-acc="${proj.id}">
+      <button type="button" class="cust-head no-print" data-opl-toggle="${proj.id}" aria-expanded="${open}">
+        <span class="chev">▾</span>
+        <span>💵 Оплаты заказчика</span>
+        <span class="mat-head-sum">${shapka}</span>
+      </button>
+      <div class="cust-body">
+        <div class="mat-note">что заказчик уже заплатил. Видите только вы — мастеру эти деньги не показываются</div>
+        <div class="opl-list">${rows}</div>
+        <button class="add-link" data-opl-add="1">+ Оплата</button>
+        <div class="opl-itogi">
+          <div class="opl-itog"><span>Заказчик платит</span><b>${fmtMoney(dolzhen)}</b></div>
+          <div class="opl-itog"><span>Получено</span><b>${fmtMoney(polucheno)}</b></div>
+          <div class="opl-itog opl-itog-main"><span>${ostatok < 0 ? 'Переплата' : 'Остаток'}</span><b>${fmtMoney(Math.abs(ostatok))}</b></div>
         </div>
       </div>
     </div>`;
@@ -16462,6 +16621,40 @@ function attachHandlers(){
   };
   accToggle('data-extra-toggle', uiExtraOpen, 'data-extra-acc');
   accToggle('data-conds-toggle', uiCondsOpen, 'data-conds-acc');
+  accToggle('data-opl-toggle',   uiOplatyOpen, 'data-opl-acc');
+
+  // ---------- оплаты заказчика ----------
+  main.querySelectorAll('[data-opl-add]').forEach(el=>{
+    el.onclick = ()=>{
+      proj.payments = proj.payments || [];
+      // Номер задаём СРАЗУ, при создании, а не при сохранении (грабля 47):
+      // иначе строка успеет уехать на сервер с пустым id.
+      // Дату ставим сегодняшнюю: аванс записывают в день, когда взяли.
+      const d = new Date();
+      const dd = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') +
+                 '-' + String(d.getDate()).padStart(2,'0');
+      proj.payments.unshift({ id: newUuid(), amount:'', paidOn: dd, note:'' });
+      scheduleSave(); render();
+    };
+  });
+  main.querySelectorAll('[data-opl-del]').forEach(el=>{
+    el.onclick = ()=>{
+      const i = parseInt(el.getAttribute('data-opl-del'));
+      if(proj.payments){ proj.payments.splice(i,1); scheduleSave(); render(); }
+    };
+  });
+  main.querySelectorAll('[data-opl]').forEach(el=>{
+    const apply = ()=>{
+      const [idx, field] = el.getAttribute('data-opl').split('|');
+      const o = (proj.payments||[])[idx];
+      if(!o) return;
+      o[field] = el.value;
+      oplatyShapku(proj);
+      scheduleSave();
+    };
+    el.addEventListener('input', apply);
+    el.addEventListener('change', apply);
+  });
   main.querySelectorAll('[data-cond]').forEach(el=>{
     el.onclick = ()=>{
       const key = el.getAttribute('data-cond');
