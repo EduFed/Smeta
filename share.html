@@ -72,6 +72,20 @@
   .beda h1{font-size:20px;margin-bottom:8px;}
   .podval{margin-top:36px;padding-top:16px;border-top:1px solid var(--paper-line);
     color:var(--ink-soft);font-size:12px;line-height:1.6;}
+  .plitki{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;}
+  .plitka{position:relative;aspect-ratio:1;border:1px solid var(--paper-line);
+    border-radius:var(--radius);overflow:hidden;background:var(--white);cursor:zoom-in;}
+  .plitka img{width:100%;height:100%;object-fit:cover;display:block;}
+  .plitka .zhdyom{display:flex;align-items:center;justify-content:center;height:100%;
+    color:var(--ink-soft);font-size:11px;}
+  /* Просмотр на весь экран — как в приложении: тёмная подложка,
+     снимок вписан целиком, закрывается щелчком и Escape. */
+  .bolshoe{display:none;position:fixed;inset:0;z-index:50;background:rgba(0,0,0,.94);
+    align-items:center;justify-content:center;padding:16px;}
+  .bolshoe img{max-width:100%;max-height:100%;object-fit:contain;display:block;}
+  .bolshoe-zakryt{position:absolute;top:12px;right:12px;width:44px;height:44px;
+    border:none;border-radius:50%;background:rgba(0,0,0,.55);color:#fff;
+    font-size:20px;cursor:pointer;line-height:1;}
 </style>
 </head>
 <body>
@@ -220,15 +234,15 @@ function narisovat(d){
   }
 
   // ----- снимки -----
-  // Пока не показываем: обработчик подписи адресов отвергает посетителя
-  // без учётной записи, и картинки просто не загрузились бы. Молчать
-  // об этом хуже, чем сказать: заказчик, которому обещали снимки,
-  // иначе решит, что страница сломалась.
+  // Адреса подписываются обработчиком по токену ссылки: хранилище
+  // закрытое, прямых адресов у снимков нет. Просим их после отрисовки,
+  // пачками, чтобы страница показалась сразу, а не ждала картинок.
   const foto = d.photos || [];
   if(foto.length){
     ch.push('<h2>Фотографии</h2>');
-    ch.push('<div class="zametka">Снимков на объекте: ' + foto.length +
-      '. Показ по ссылке пока готовится — попросите прислать их сообщением.</div>');
+    ch.push('<div class="plitki">' + foto.map(f=>
+      '<div class="plitka" data-foto="' + ekran(f.id) + '"><div class="zhdyom">…</div></div>'
+    ).join('') + '</div>');
   }
 
   ch.push('<div class="podval">Смета составлена в приложении «СМЕТА | РАСЧЁТ». ' +
@@ -236,6 +250,64 @@ function narisovat(d){
 
   document.getElementById('koren').innerHTML = ch.join('');
   document.title = (p.name ? p.name + ' — ' : '') + 'Смета';
+  if(foto.length) podgruzitFoto(foto.map(f=>f.id));
+}
+
+// Адреса снимков просим пачками по 50: столько же берёт приложение,
+// и обработчик на большее не рассчитан.
+async function podgruzitFoto(ids){
+  const token = new URLSearchParams(location.search).get('s');
+  for(let i = 0; i < ids.length; i += 50){
+    const kusok = ids.slice(i, i + 50);
+    let links = {};
+    try{
+      const r = await fetch(ADRES + '/functions/v1/photo-url', {
+        method:'POST',
+        headers:{ 'apikey':KLYUCH, 'Authorization':'Bearer ' + KLYUCH,
+                  'Content-Type':'application/json' },
+        body: JSON.stringify({ action:'view', share_token:token, attachment_ids:kusok })
+      });
+      const d = await r.json();
+      links = (d && d.links) || {};
+    }catch(e){ console.error('Снимки не пришли', e); }
+
+    kusok.forEach(id=>{
+      const kl = document.querySelector('[data-foto="' + CSS.escape(id) + '"]');
+      if(!kl) return;
+      const u = links[id];
+      // Не пришёл адрес — не оставляем пустую плитку с многоточием
+      // навсегда: человек не должен гадать, грузится оно или сломалось.
+      if(!u){ kl.innerHTML = '<div class="zhdyom">нет снимка</div>'; return; }
+      const img = new Image();
+      img.loading = 'lazy';
+      img.alt = '';
+      img.onload = ()=>{ kl.innerHTML = ''; kl.appendChild(img); };
+      img.onerror = ()=>{ kl.innerHTML = '<div class="zhdyom">нет снимка</div>'; };
+      img.src = u;
+      kl.onclick = ()=> pokazatBolshoe(u);
+    });
+  }
+}
+
+function pokazatBolshoe(u){
+  let b = document.getElementById('bolshoe');
+  if(!b){
+    b = document.createElement('div');
+    b.id = 'bolshoe';
+    b.className = 'bolshoe';
+    b.innerHTML = '<button class="bolshoe-zakryt" aria-label="Закрыть">✕</button><img alt="">';
+    document.body.appendChild(b);
+    // Закрывается щелчком мимо, крестиком и Escape — все три одинаково,
+    // как во всех обычных окнах приложения.
+    b.addEventListener('click', e=>{ if(e.target === b || e.target.tagName === 'BUTTON') zakrytBolshoe(); });
+    document.addEventListener('keydown', e=>{ if(e.key === 'Escape') zakrytBolshoe(); });
+  }
+  b.querySelector('img').src = u;
+  b.style.display = 'flex';
+}
+function zakrytBolshoe(){
+  const b = document.getElementById('bolshoe');
+  if(b){ b.style.display = 'none'; b.querySelector('img').src = ''; }
 }
 
 otkryt();
