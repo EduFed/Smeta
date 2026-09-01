@@ -3405,7 +3405,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-01-141';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-01-142';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -6619,17 +6619,28 @@ async function podelitOtozvat(id){
 // он отдаёт снимок как есть, значит следим здесь.
 function snimokSmety(proj){
   const d = buildEstimateData(proj, { dlyaZakazchika:true });
+  // ДО КОПЕЙКИ, А НЕ КАК ВЫШЛО. Количество бывает дробным (8,12 м.п.),
+  // и сумма строки в двоичной арифметике получается вида
+  // 1900197.8800000001. На экране это округлится и покажется верно,
+  // но хранить такое нельзя: однажды два таких числа сравнят и не поймут,
+  // почему они не равны.
+  const kop = v => Math.round((Number(v)||0) * 100) / 100;
+  const gruppy = d.groups.map(g=>({
+    nazvanie: g.room,
+    stroki: g.items.map(i=>({
+      nazvanie: i.name, edinica: i.unit,
+      kolvo: i.qty, cena: i.price, summa: kop(i.sum)
+    }))
+  }));
+  // Итог складываем из ОКРУГЛЁННЫХ строк, а не округляем сумму сырых:
+  // иначе на экране строки не сойдутся с итогом. То же правило,
+  // что у condSum в приложении.
+  const itog = kop(gruppy.reduce((a,g)=> a + g.stroki.reduce((b,i)=> b + i.summa, 0), 0));
   return {
     v: 1,                                  // версия снимка, на вырост
     sozdan: new Date().toISOString(),
-    itog: d.total,
-    gruppy: d.groups.map(g=>({
-      nazvanie: g.room,
-      stroki: g.items.map(i=>({
-        nazvanie: i.name, edinica: i.unit,
-        kolvo: i.qty, cena: i.price, summa: i.sum
-      }))
-    })),
+    itog: itog,
+    gruppy: gruppy,
     // Материалы - отдельным списком и БЕЗ цен: это закупка заказчика,
     // цены в магазинах свои, и обещать их нельзя.
     materialy: (projMaterials(proj)||[]).filter(matFilled).map(m=>({
