@@ -843,6 +843,10 @@
      Прячем стилями, а не вырезанием из разметки. */
   .viewer-mode .ph-add,
   .viewer-mode .ph-del{display:none !important;}
+  /* Скачивание — только тем, кто вправе править. Класс viewer-mode
+     стоит на главной области, а просмотрщик снимка живёт отдельно,
+     поэтому у него своя пометка. */
+  .photo-viewer.tolko-smotrit .pv-skachat{display:none;}
 
   /* ВИДЫ РАБОТ — выбор через поиск */
   .sel-works{display:flex;flex-direction:column;gap:6px;margin-bottom:10px;}
@@ -3023,6 +3027,15 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 9.9 9.9 0 0 1-3.2-.5L3 21l1.7-4.6A8.2 8.2 0 0 1 3 11.5a8.4 8.4 0 0 1 9-8.4 8.4 8.4 0 0 1 9 8.4z"/></svg>
         <span id="pvKommSchyot">0</span>
       </button>
+      <!-- СКАЧАТЬ СНИМОК (1 сентября 2026). Только тем, кто вправе
+           править проект: смотрящему и мастеру на наряде снимок
+           показываем, но выгружать не даём — увиденное не развидеть,
+           а скачанное не отозвать. Кнопку прячем через .viewer-mode,
+           из разметки не вырезаем (грабля 19). -->
+      <button type="button" class="pv-komm-knopka pv-skachat" id="pvSkachat"
+              title="Скачать снимок">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0l-4.5-4.5M12 15l4.5-4.5M4 20h16"/></svg>
+      </button>
     </div>
     <!-- КОММЕНТАРИИ ВМЕСТО ПОДПИСИ (с 2026-08-23).
          Была одна подпись на снимок, общая: прораб написал, мастер
@@ -3392,7 +3405,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-01-137';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-01-138';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -8555,7 +8568,14 @@ async function photoViewerOpen(roomId, id){
   const box = document.getElementById('photoViewer');
   // Каждый снимок открывается разговором закрытым: человек пришёл
   // смотреть фотографию, а не читать. Захочет — нажмёт на счёт.
-  if(box){ box.classList.remove('komm-otkryt'); box.style.display = 'flex'; }
+  if(box){
+    box.classList.remove('komm-otkryt');
+    // Кому нельзя править — тому нельзя и выгружать. Признак тот же,
+    // что у главной области: просмотр, наряд или замороженный проект.
+    const tolko = !!(proj && proj.myRole === 'viewer') || isFrozenProject(proj) || isNaryad(proj);
+    box.classList.toggle('tolko-smotrit', tolko);
+    box.style.display = 'flex';
+  }
   const kn = document.getElementById('pvKommKnopka');
   if(kn) kn.setAttribute('aria-expanded', 'false');
   pvKommScheta = new Map(); pvKommZagruzhen = null;
@@ -8780,6 +8800,72 @@ async function photoViewerStep(d, uzheProehali){
     pvLentaPrimenit('none');
     await photoViewerShow();
   } finally { pvEdet = false; }
+}
+
+// СКАЧАТЬ СНИМОК НА УСТРОЙСТВО.
+//
+// Файл берём СНАЧАЛА со склада на устройстве: он там уже лежит, если
+// снимок открывали, — и тогда выгрузка работает даже без сети.
+// Нет на складе — просим подписанный адрес и качаем.
+//
+// Через blob, а не ссылкой на адрес хранилища: подписанный адрес ведёт
+// на чужой узел, и признак download браузер там просто не исполнит —
+// вместо сохранения откроется новая вкладка.
+async function fotoSkachat(a){
+  if(!a) return;
+  const knopka = document.getElementById('pvSkachat');
+  if(knopka) knopka.disabled = true;
+  try{
+    let adres = null;
+    try{ adres = await fotoSkladVzyat(a.id); }catch(_){}
+    if(!adres) adres = pvUrls.get(a.id);
+    if(!adres){
+      const urls = await photoViewUrls([a.id]);
+      adres = urls && urls[a.id];
+    }
+    if(!adres) throw new Error('адрес снимка не получен');
+
+    const blob = await (await fetch(adres)).blob();
+    if(!blob || !blob.size) throw new Error('файл пуст');
+
+    const u = URL.createObjectURL(blob);
+    const ssylka = document.createElement('a');
+    ssylka.href = u;
+    ssylka.download = fotoImyaFayla(a, blob);
+    document.body.appendChild(ssylka);
+    ssylka.click();
+    ssylka.remove();
+    // Отпускаем адрес не сразу: Safari успевает начать сохранение
+    // не мгновенно, и отозванный адрес обрывал бы выгрузку.
+    setTimeout(()=> URL.revokeObjectURL(u), 10000);
+  }catch(e){
+    console.error('Снимок не скачался', e);
+    alert('Не удалось скачать снимок. Проверьте связь и попробуйте ещё раз.');
+  }finally{
+    if(knopka) knopka.disabled = false;
+  }
+}
+
+// Имя файла: проект, помещение и дата съёмки. Не «IMG_1234»: снимков
+// с объекта набирается сотня, и в папке «Загрузки» они должны
+// различаться без открывания.
+function fotoImyaFayla(a, blob){
+  const proj = currentProject();
+  const chasti = [];
+  if(proj && proj.name) chasti.push(proj.name);
+  const r = proj && (proj.rooms||[]).find(x=> x.id === a.targetId);
+  if(r && r.name) chasti.push(r.name);
+  const d = a.takenAt || a.createdAt;
+  if(d){
+    const t = new Date(d);
+    if(!isNaN(t)) chasti.push(t.getFullYear() + '-' +
+      String(t.getMonth()+1).padStart(2,'0') + '-' + String(t.getDate()).padStart(2,'0'));
+  }
+  const tip = (blob && blob.type === 'image/png') ? '.png' : '.jpg';
+  // В имени файла косая черта и двоеточие недопустимы, а пробелы
+  // ломают пересылку — заменяем на дефис.
+  const imya = (chasti.join(' - ') || 'снимок').replace(/[\\/:*?"<>|]+/g, '-').slice(0, 100);
+  return imya + tip;
 }
 
 async function photoViewerClose(){
@@ -13785,6 +13871,11 @@ document.getElementById('previewClose') && document.getElementById('previewClose
   const knopka = document.getElementById('pvKommOtpr');
   if(knopka) knopka.addEventListener('click', e=>{ e.stopPropagation(); otpravit(); });
 
+  const skachatBtn = document.getElementById('pvSkachat');
+  if(skachatBtn) skachatBtn.addEventListener('click', e=>{
+    e.stopPropagation();          // иначе просмотрщик примет это за листание
+    fotoSkachat(pvList[pvIdx]);
+  });
   const kKnopka = document.getElementById('pvKommKnopka');
   if(kKnopka) kKnopka.addEventListener('click', e=>{
     e.stopPropagation();          // иначе просмотрщик примет это за листание
