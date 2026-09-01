@@ -857,12 +857,20 @@
      расхождение замечали, но чинили только там, где оно резало глаз.
      Здесь доведено до конца: карточка везде, перенос сам, жёстких
      колонок нет. */
-  .sel-work, .pm-row, .mat-row, .opl-row{
+  .sel-work, .pm-row, .mat-row, .opl-row,
+  .opening-row, .floor-row, .wall-row{
     display:flex; align-items:center; gap:10px; flex-wrap:wrap;
     padding:8px 10px; margin-bottom:6px;
     border:1px solid var(--paper-line); border-radius:var(--radius);
     background:var(--paper); font-size:13px;
   }
+  /* Подпись строки: «окно 1», «участок 2», «стена 3». Ширина одна,
+     чтобы поля под ней стояли в столбец. */
+  .row-label, .wall-label{ flex:0 0 96px; color:var(--ink-soft); }
+  .opening-row input, .floor-row input, .wall-row input{ flex:0 0 100px; text-align:right; }
+  /* Итог строки прижат вправо — как сумма у работ и материалов. */
+  .floor-area, .wall-area{ margin-left:auto; font-family:'JetBrains Mono',monospace;
+    font-size:12px; color:var(--ink); white-space:nowrap; }
   /* Поля — тоже одного вида. Было два: в материалах и оплатах отступ
      8×10 и радиус 7, у видов работ 5×7 и общий радиус. */
   .sel-work input, .sel-work select,
@@ -1103,10 +1111,7 @@
   .assign-empty span{font-size:13px;color:var(--ink-soft);line-height:1.55;}
   .wd-unit{color:var(--ink-soft);font-family:'JetBrains Mono',monospace;font-size:11px;white-space:nowrap;}
   .wd-empty{padding:10px 12px;color:var(--ink-soft);font-size:12px;}
-  .opening-row{
-    display:grid;grid-template-columns:1fr 105px 105px 90px 24px;gap:8px;align-items:center;
-    margin-bottom:6px;font-size:12px;
-  }
+  /* .opening-row — вид из общего правила строки позиции. */
   .opening-row span{color:var(--ink-soft);font-family:'JetBrains Mono',monospace;font-size:11px;}
   .opening-row input{
     font-family:'JetBrains Mono',monospace;font-size:13px;border:1px solid var(--paper-line);
@@ -1451,11 +1456,10 @@
 
   /* СТЕНЫ */
   .wall-list{display:flex;flex-direction:column;gap:6px;margin-bottom:10px;}
-  .wall-row{
-    display:grid;grid-template-columns:1fr auto 24px;gap:10px;align-items:center;
-    padding:7px 10px;border:1px solid var(--paper-line);border-radius:var(--radius);
-    background:var(--paper);font-size:12px;
-  }
+  /* .wall-row — вид из общего правила строки позиции. Своя сетка здесь
+     стояла ещё до того, как вид свели: карточка уже была, а раскладка
+     жёсткой. Это и есть тот случай, когда «почти как у всех» хуже,
+     чем «не как у всех»: расхождение незаметно, пока не сравнишь. */
   .wall-row .wall-label{color:var(--ink);}
   .wall-row .wall-area{font-family:'JetBrains Mono',monospace;font-weight:600;color:var(--ink);}
   .wall-empty{font-size:12px;color:var(--ink-soft);margin-bottom:10px;font-style:italic;}
@@ -1474,10 +1478,7 @@
   .wall-error{color:var(--red);font-size:12px;margin-top:6px;min-height:14px;}
 
   /* УЧАСТКИ ПОЛА */
-  .floor-row{
-    display:grid;grid-template-columns:1fr 90px 90px auto 24px;gap:8px;align-items:center;
-    margin-bottom:6px;font-size:12px;
-  }
+  /* .floor-row — вид из общего правила строки позиции. */
   .floor-row input{
     font-family:'Inter',sans-serif;font-size:13px;border:1px solid var(--paper-line);
     border-radius:var(--radius);padding:6px 8px;background:var(--white);color:var(--ink);
@@ -3391,7 +3392,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-01-134';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-01-135';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -16275,7 +16276,7 @@ function renderFloorSections(room){
   const secs = room.floorSections||[];
   const rows = secs.map((f,i)=>`
     <div class="floor-row">
-      <span>участок ${i+1}</span>
+      <span class="row-label">участок ${i+1}</span>
       <input type="text" inputmode="decimal" placeholder="длина" value="${escapeAttr(f.l)}" data-floor="${room.id}|${i}|l">
       <input type="text" inputmode="decimal" placeholder="ширина" value="${escapeAttr(f.w)}" data-floor="${room.id}|${i}|w">
       <span class="floor-area" data-floor-area="${room.id}|${i}">${fmt(num(f.l)*num(f.w))} м²</span>
@@ -16433,7 +16434,7 @@ function wallShapeSVG(shape){
 function renderOpeningRow(roomId, kind, idx, o){
   return `
     <div class="opening-row">
-      <span>${kind==='windows'?'окно':'дверь'} ${idx+1}</span>
+      <span class="row-label">${kind==='windows'?'окно':'дверь'} ${idx+1}</span>
       <input type="text" inputmode="decimal" placeholder="ширина" value="${escapeAttr(o.w)}" data-opening="${roomId}|${kind}|${idx}|w">
       <input type="text" inputmode="decimal" placeholder="высота" value="${escapeAttr(o.h)}" data-opening="${roomId}|${kind}|${idx}|h">
       <input type="text" inputmode="numeric" placeholder="кол-во" value="${escapeAttr(o.qty)}" data-opening="${roomId}|${kind}|${idx}|qty">
