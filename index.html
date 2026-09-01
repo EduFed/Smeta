@@ -1879,17 +1879,8 @@
     font-family:'JetBrains Mono',monospace;font-size:9px;
     color:var(--ink-soft);letter-spacing:0.06em;margin-bottom:6px;
   }
-  .conflict-overlay{
-    position:fixed;inset:0;z-index:2800;
-    background:rgba(15,20,24,.75);
-    display:flex;align-items:center;justify-content:center;
-    padding:20px 20px calc(20px + env(safe-area-inset-bottom, 0px));
-    overflow-y:auto;
-  }
-  .conflict-modal{
-    background:var(--white);border:1px solid var(--ink);border-radius:var(--radius);
-    max-width:460px;width:100%;padding:26px;
-  }
+  /* Подложка и слой — из общего правила окон. Здесь только своё. */
+  .conflict-modal{ max-width:460px; padding:26px; }
   .conflict-title{
     font-family:'Space Grotesk','Inter',sans-serif;font-weight:700;font-size:19px;
     color:var(--ink);margin-bottom:10px;
@@ -1920,17 +1911,8 @@
   .update-bar .btn:disabled{ opacity:.5; cursor:default; }
 
   /* Окно обращения в поддержку — устроено так же, как окно расхождения данных */
-  .support-overlay{
-    position:fixed;inset:0;z-index:2900;
-    background:rgba(15,20,24,.75);
-    display:flex;align-items:center;justify-content:center;
-    padding:20px 20px calc(20px + env(safe-area-inset-bottom, 0px));
-    overflow-y:auto;
-  }
-  .support-modal{
-    background:var(--white);border:1px solid var(--ink);border-radius:var(--radius);
-    max-width:460px;width:100%;padding:26px;
-  }
+  /* Подложка и слой — из общего правила окон. Здесь только своё. */
+  .support-modal{ max-width:460px; padding:26px; }
   .support-title{
     font-family:'Space Grotesk','Inter',sans-serif;font-weight:700;font-size:19px;
     color:var(--ink);margin-bottom:8px;
@@ -2048,16 +2030,9 @@
   .plan-period-gift{font-size:11px;font-weight:500;opacity:.85;}
 
   /* ---------- ТАРИФ: окно выбора ---------- */
-  .plan-overlay{
-    position:fixed;inset:0;z-index:2500;
-    background:rgba(15,20,24,.72);
-    display:flex;align-items:center;justify-content:center;
-    padding:20px 20px calc(20px + env(safe-area-inset-bottom, 0px));
-    overflow-y:auto;-webkit-overflow-scrolling:touch;
-  }
+  /* Подложка и слой — из общего правила окон. Здесь только своё. */
   .plan-modal{
-    background:var(--white);border:1px solid var(--ink);border-radius:var(--radius);
-    max-width:760px;width:100%;padding:28px;
+    max-width:760px;padding:28px;
     max-height:90vh;overflow-y:auto;
   }
   .plan-modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:6px;}
@@ -2327,8 +2302,39 @@
 
   .wd-ref-mark{color:var(--orange);margin-right:6px;font-size:12px;}
 
-  .refcfg-overlay{display:none;position:fixed;inset:0;z-index:120;background:rgba(0,0,0,.45);align-items:center;justify-content:center;padding:16px;}
-  .refcfg-modal{width:100%;max-width:560px;max-height:92vh;display:flex;flex-direction:column;background:var(--white);border-radius:16px;overflow:hidden;box-shadow:0 18px 50px rgba(0,0,0,.3);}
+  /* ===== ОДНО УСТРОЙСТВО ОКОН НА ВСЁ ПРИЛОЖЕНИЕ (1 сентября 2026) =====
+     Было восемь окон и в них: три разные подложки (.45 чёрная, .72 и .75
+     синеватая), два вида рамки, пять значений отступа, отступ под
+     домашнюю полосу iPhone у трёх из восьми, а слои шли без системы —
+     от 120 до 2900.
+     Держится это одним правилом; своего вида окну заводить не нужно.
+     Отдельно живут ЭКРАНЫ, а не окна: вход (.auth-overlay), просмотр
+     снимка и предпросмотр документа — у них своя задача и свой вид. */
+  .refcfg-overlay, .plan-overlay, .conflict-overlay,
+  .support-overlay, .pd-overlay{
+    display:none; position:fixed; inset:0;
+    align-items:center; justify-content:center;
+    background:rgba(15,20,24,.72);
+    padding:20px 20px calc(20px + env(safe-area-inset-bottom, 0px));
+    overflow-y:auto; -webkit-overflow-scrolling:touch;
+    /* ОБЫЧНОЕ ОКНО. Выше него только окна решения (2800) и просмотр
+       снимка. Прежде конфигуратор стоял на 120 — ниже всего остального,
+       и открылся бы под любым другим окном. Не всплывало только потому,
+       что вместе они пока не встречались. */
+    z-index:2500;
+  }
+  /* ОКНА РЕШЕНИЯ — выше обычных и закрываются ТОЛЬКО своими кнопками.
+     Правило владельца 1 сентября 2026: «где необходимо принять решение,
+     окно не должно закрываться по щелчку на пустом поле». Ни щелчком
+     мимо, ни Escape: «случайно закрыл» здесь означает потерянную правку,
+     непринятые документы или несделанный выбор. */
+  .conflict-overlay, .consent-overlay, #pickerOverlay, #polyDrawOverlay{ z-index:2800; }
+  .refcfg-modal, .plan-modal, .conflict-modal, .support-modal, .pd-modal{
+    width:100%; background:var(--white);
+    border:1px solid var(--paper-line); border-radius:16px;
+    box-shadow:0 18px 50px rgba(0,0,0,.3);
+  }
+  .refcfg-modal{max-width:560px;max-height:92vh;display:flex;flex-direction:column;overflow:hidden;}
   .refcfg-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:18px 20px 14px;border-bottom:1px solid var(--paper-line);}
   .refcfg-title{font-family:'Space Grotesk','Inter',sans-serif;font-size:19px;font-weight:700;color:var(--ink);}
   .refcfg-sub{margin-top:3px;font-size:12px;color:var(--ink-soft);}
@@ -2432,7 +2438,7 @@
      Пока окно было узким, оно до меню просто не доставало; когда
      выросло до размера экрана — уехало под него, и половина полей
      оказалась закрыта. Окно поверх меню, как и положено модальному. */
-  .pd-overlay{display:none;position:fixed;inset:0;z-index:1200;background:rgba(0,0,0,.45);align-items:center;justify-content:center;padding:12px;}
+  /* .pd-overlay — вид из общего правила окон выше. */
   /* два быстрых нажатия по кнопке планшет принимает за жест увеличения —
      manipulation отключает его, прокрутку не трогает */
   .pd-modal button, .pd-step, .pd-btns .btn{ touch-action:manipulation; }
@@ -3385,7 +3391,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-01-133';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-01-134';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -3863,7 +3869,7 @@ function ownWorkOpen(roomId, lid, prefill){
     ov.className = 'refcfg-overlay no-print';
     // клик мимо окна закрывает; вешаем один раз при создании — иначе
     // обработчики копятся на одном элементе (как в refCfgOpen)
-    ov.addEventListener('pointerdown', e=>{ if(e.target === ov) ownWorkClose(); });
+    // Щелчок мимо обрабатывается общим правилом закрытия окон.
     document.body.appendChild(ov);
   }
   ov.innerHTML = ownWorkHtml();
@@ -4176,13 +4182,67 @@ function refCfgOpen(roomId, lid, cfg){
     ov.className = 'refcfg-overlay no-print';
     // клик мимо окна закрывает. Вешаем один раз при создании: если вешать
     // при каждом открытии, обработчики копятся на одном и том же элементе
-    ov.addEventListener('pointerdown', e=>{ if(e.target === ov) refCfgClose(); });
+    // Щелчок мимо обрабатывается общим правилом закрытия окон.
     document.body.appendChild(ov);
   }
   ov.innerHTML = refCfgHtml();
   ov.style.display = 'flex';
   refCfgAttach();
 }
+// ===== ЗАКРЫТИЕ ОКОН — ОДНО ПРАВИЛО НА ВСЕ (1 сентября 2026) =====
+//
+// Было вразнобой: щелчок мимо закрывал пять окон из восьми, Escape —
+// два из восьми. Человек учится жесту на одном окне и переносит
+// на другие; здесь он не переносился.
+//
+// ОКНА РЕШЕНИЯ В СПИСОК НЕ ВХОДЯТ и закрываются ТОЛЬКО своими кнопками.
+// Правило владельца: «где необходимо принять решение, окно не должно
+// закрываться по щелчку на пустом поле». Escape для них тоже не работает —
+// беда от него та же. Это:
+//   · расхождение данных  — «случайно закрыл» = потерянная правка;
+//   · согласие с документами — их надо принять, а не отмахнуться;
+//   · выбор рабочего проекта — без него бесплатный тариф не работает;
+//   · черчение контура — закроешь, и обводка пропала.
+const OKNA_ZAKRYVAEMYE = [
+  ['refCfgOverlay',    ()=> refCfgClose()],
+  ['ownWorkOverlay',   ()=> ownWorkClose()],
+  ['dopPodpisOverlay', ()=> dopPodpisClose()],
+  ['planOverlay',      ()=> closePlans()],
+  ['supportOverlay',   ()=> closeSupport()]
+];
+
+function oknoOtkryto(id){
+  const el = document.getElementById(id);
+  return el && el.style.display && el.style.display !== 'none' ? el : null;
+}
+
+// Самое верхнее открытое окно из закрываемых. Открыты они по одному,
+// но полагаться на это не будем: порядок в списке задаёт старшинство.
+function oknoZakryt(){
+  for(let i = OKNA_ZAKRYVAEMYE.length - 1; i >= 0; i--){
+    const [id, zakryt] = OKNA_ZAKRYVAEMYE[i];
+    if(oknoOtkryto(id)){ zakryt(); return true; }
+  }
+  return false;
+}
+
+document.addEventListener('keydown', e=>{
+  if(e.key !== 'Escape') return;
+  // Просмотр снимка и черчение закрываются своими обработчиками —
+  // у них свои правила, и перехватывать за них не надо.
+  if(oknoOtkryto('photoViewer') || oknoOtkryto('polyDrawOverlay')) return;
+  oknoZakryt();
+});
+
+// Щелчок мимо окна. Слушаем на самом окне: попал в подложку —
+// значит мимо содержимого.
+document.addEventListener('pointerdown', e=>{
+  const t = e.target;
+  if(!t || !t.id) return;
+  const naydeno = OKNA_ZAKRYVAEMYE.find(([id])=> id === t.id);
+  if(naydeno) naydeno[1]();
+});
+
 function refCfgClose(){
   const ov = document.getElementById('refCfgOverlay');
   if(ov){ ov.style.display = 'none'; ov.innerHTML = ''; }
@@ -9763,8 +9823,7 @@ async function bootstrapLocal(){
   on('planForeCta', startForeCheckout);
   on('leadSend', sendLead);
   const pOv = document.getElementById('planOverlay');
-  if(pOv) pOv.onclick = (e)=>{ if(e.target.id === 'planOverlay') closePlans(); };
-  document.addEventListener('keydown', e=>{ if(e.key === 'Escape') closePlans(); });
+  // Щелчок мимо и Escape — общим правилом закрытия окон.
   document.querySelectorAll('[data-theme-mode]').forEach(b=>{
     b.onclick = ()=> setThemeMode(b.getAttribute('data-theme-mode'));
   });
@@ -9878,12 +9937,9 @@ async function bootstrap(){
   const foreCtaBtn = document.getElementById('planForeCta');
   if(foreCtaBtn) foreCtaBtn.onclick = startForeCheckout;
   document.getElementById('leadSend').onclick   = sendLead;
-  document.getElementById('planOverlay').onclick = e=>{
-    if(e.target.id === 'planOverlay') closePlans();   // клик по фону закрывает
-  };
-  document.addEventListener('keydown', e=>{
-    if(e.key === 'Escape') closePlans();
-  });
+  // Щелчок мимо и Escape — общим правилом закрытия окон (см. OKNA_ZAKRYVAEMYE).
+  // Здесь стояло своё, и Escape закрывал тарифы даже когда поверх них
+  // было открыто другое окно.
   document.querySelectorAll('[data-theme-mode]').forEach(b=>{
     b.onclick = ()=> setThemeMode(b.getAttribute('data-theme-mode'));
   });
@@ -10061,6 +10117,19 @@ let uiWorkSearchRefocus = null; // вернуть фокус после render
 const uiCustomerOpen = {};
 const uiPanel = { smeta:false, zakupka:false, dogovor:false };
 let uiContractType = 'dogovor';
+// Названия документов одним списком: раньше они жили только внутри
+// разметки выпадающего списка, и показать выбранный где-то ещё было
+// нечем. Порядок здесь и есть порядок в списке.
+const DOC_NAZVANIYA = {
+  dogovor:      'Договор',
+  raspiska:     'Расписка в получении денежных средств',
+  akt_etapa:    'Акт этапа',
+  akt_priem:    'Акт приёма-сдачи выполненных работ',
+  akt_defects:  'Акт о выявленных недостатках (по п. 6.5)',
+  dopsogl:      'Дополнительное соглашение на дополнительные работы',
+  dopsrok:      'Дополнительное соглашение о сроках',
+  rastorzhenie: 'Соглашение о расторжении'
+};
 let uiContractDays = '';
 let uiContractDate = '';
 let uiSettlementAmount = '';
@@ -15226,7 +15295,7 @@ function dopPodpisOpen(projectId){
     ov = document.createElement('div');
     ov.id = 'dopPodpisOverlay';
     ov.className = 'refcfg-overlay no-print';
-    ov.addEventListener('pointerdown', e=>{ if(e.target === ov) dopPodpisClose(); });
+    // Щелчок мимо обрабатывается общим правилом закрытия окон.
     document.body.appendChild(ov);
   }
   const gotovy = dopKPodpisi(p);
@@ -15645,7 +15714,6 @@ function renderSmetaDocPanel(proj){
 function renderDogovorDocPanel(proj){
   const open = uiPanel.dogovor;
   const t = uiContractType;
-  const opt = (v,l)=>`<option value="${v}" ${v===t?'selected':''}>${l}</option>`;
   const fields = [];
   if(t !== 'dogovor') fields.push(`<div class="cust-field"><label>Дата составления</label><input type="date" value="${escapeAttr(uiContractDate)}" data-contract-date></div>`);
   if(t === 'akt_etapa') fields.push(`<div class="cust-field"><label>Номер этапа</label><input type="text" placeholder="напр. 1" value="${escapeAttr(uiStageNo)}" data-stageno></div>`);
@@ -15677,16 +15745,24 @@ function renderDogovorDocPanel(proj){
       <div class="doc-panel-body">
         <div class="cust-field" style="max-width:480px;">
           <label>Тип документа</label>
-          <select data-contract-type>
-            ${opt('dogovor','Договор')}
-            ${opt('raspiska','Расписка в получении денежных средств')}
-            ${opt('akt_etapa','Акт этапа')}
-            ${opt('akt_priem','Акт приёма-сдачи выполненных работ')}
-            ${opt('akt_defects','Акт о выявленных недостатках (по п. 6.5)')}
-            ${opt('dopsogl','Дополнительное соглашение на дополнительные работы')}
-            ${opt('dopsrok','Дополнительное соглашение о сроках')}
-            ${opt('rastorzhenie','Соглашение о расторжении')}
-          </select>
+          <!-- СПИСОК С ПРОКРУТКОЙ, А НЕ РОДНОЙ <select> (1 сентября 2026).
+               Третья жалоба владельца об одном и том же: родные списки
+               у него не прокручиваются — сперва в доп. работах, потом
+               в материалах, теперь здесь. Восемь документов с длинными
+               названиями, на телефоне прокрутка нужна.
+               Управление то же, что в двух других местах. -->
+          <div class="ew-search doc-vybor" data-doctype-box>
+            <input type="text" class="work-search-input" readonly
+                   value="${escapeAttr(DOC_NAZVANIYA[t] || '')}"
+                   data-doctype-input title="Выбрать документ">
+            <div class="ew-dropdown" data-doctype-list>
+              ${Object.keys(DOC_NAZVANIYA).map(k=>`
+                <div class="wd-item${k===t?' wd-used':''}" data-doctype="${k}">
+                  <span>${escapeHtml(DOC_NAZVANIYA[k])}</span>
+                  ${k===t?'<span class="wd-used-mark">выбран</span>':''}
+                </div>`).join('')}
+            </div>
+          </div>
         </div>
         ${extra}
         <div style="margin-top:14px;">${docBtns(t,'docx','Word')}</div>
@@ -17035,8 +17111,18 @@ function attachHandlers(){
       }
     };
   });
-  const ct = main.querySelector('[data-contract-type]');
-  if(ct) ct.addEventListener('change', ()=>{ uiContractType = ct.value; render(); });
+  // Выбор документа — тем же списком, что справочники материалов и работ.
+  const dtIn = main.querySelector('[data-doctype-input]');
+  if(dtIn){
+    const box = main.querySelector('[data-doctype-box]');
+    dtIn.addEventListener('focus', ()=>{ if(box) box.classList.add('open'); });
+    dtIn.addEventListener('click', ()=>{ if(box) box.classList.add('open'); });
+    dtIn.addEventListener('blur', ()=>{ setTimeout(()=>{ if(box) box.classList.remove('open'); }, 160); });
+  }
+  main.querySelectorAll('[data-doctype]').forEach(el=>{
+    el.addEventListener('mousedown', e=> e.preventDefault());
+    el.addEventListener('click', ()=>{ uiContractType = el.getAttribute('data-doctype'); render(); });
+  });
   const cd = main.querySelector('[data-contract-days]');
   if(cd) cd.addEventListener('input', ()=>{ uiContractDays = cd.value; });
   const cdt = main.querySelector('[data-contract-date]');
