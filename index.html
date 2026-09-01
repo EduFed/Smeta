@@ -3405,7 +3405,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-01-142';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-02-143';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -8396,6 +8396,20 @@ async function loadFromCloud(){
 // Это не дыра (её выдают только тому, кому база разрешила, и на минуты),
 // но переслав ссылку, человек передаёт доступ.
 
+// УМЕНЬШЕННАЯ КОПИЯ ДЛЯ ПЛИТОК (2 сентября 2026).
+// Владелец: «фото оооооочень долго загружаются». Плитка галереи —
+// 140 точек, а тянула полноразмерный файл: в среднем 440 КБ, до 745.
+// Двадцать семь снимков это 12 МБ на каждое открытие у того, у кого
+// нет склада на устройстве, — то есть у заказчика по ссылке, всегда.
+// 400 точек хватает плитке с запасом на плотный экран; выходит около
+// 25 КБ вместо 440.
+const PHOTO_MINI_SIDE = 400;
+const PHOTO_MINI_QUALITY = 0.62;
+// Ключ уменьшенной копии на складе. Отдельный от полного: в галерее
+// нужна маленькая, в просмотре — большая, и подменять одну другой
+// нельзя ни в ту, ни в другую сторону.
+function fotoMiniKluch(id){ return id + '#m'; }
+
 const PHOTO_MAX_SIDE = 1600;          // длинная сторона после сжатия
 const PHOTO_QUALITY  = 0.7;           // снимок 4 МБ становится ~300 КБ
 const PHOTO_VIEW_TTL = 8 * 60 * 1000; // подпись живёт 10 минут — обновляем раньше
@@ -8703,6 +8717,21 @@ function roomPhotos(proj, roomId){
 // ЕДИНСТВЕННОЕ ТОНКОЕ МЕСТО — ПОВОРОТ. Телефон не поворачивает снимок,
 // а пишет в EXIF «повёрнуто на 90°». Раз EXIF выбрасывается, поворот надо
 // применить ЗАРАНЕЕ, иначе портретные снимки лягут набок.
+// Уменьшить уже готовый снимок (не файл с телефона, а наш же blob).
+// Отдельной функцией, а не через compressPhoto: та читает файл и снимает
+// геометки, здесь ни то, ни другое не нужно — исходник уже наш.
+async function fotoMini(blobOrFile){
+  const bmp = await createImageBitmap(blobOrFile);
+  const k = Math.min(1, PHOTO_MINI_SIDE / Math.max(bmp.width, bmp.height));
+  const w = Math.max(1, Math.round(bmp.width * k));
+  const h = Math.max(1, Math.round(bmp.height * k));
+  const cv = document.createElement('canvas');
+  cv.width = w; cv.height = h;
+  cv.getContext('2d').drawImage(bmp, 0, 0, w, h);
+  try{ bmp.close && bmp.close(); }catch(_){}
+  return await new Promise(res => cv.toBlob(res, 'image/jpeg', PHOTO_MINI_QUALITY));
+}
+
 async function compressPhoto(file){
   let bmp;
   try{
@@ -8781,14 +8810,23 @@ async function photoAsk(body){
 // Подписи просим пачкой (обработчик берёт до 50 за раз) и только
 // на те, чего на устройстве нет: каждая просьба — это запрос к базе
 // от имени человека.
-async function photoViewUrls(ids, gotov){
+// razmer === 'm' — просим уменьшенную копию. Её может не быть: снимки
+// до 2 сентября 2026 загружались без копий, и создавать их задним числом
+// никто не будет. Тогда для такого снимка НИЧЕГО не возвращаем — пусть
+// зовущий возьмёт полный. Молча подсунуть полный вместо копии нельзя:
+// он лёг бы на склад под ключом копии, и плитка навсегда осталась бы
+// тяжёлой, а понять это было бы уже не по чему.
+async function photoViewUrls(ids, gotov, razmer){
   const out = {};
   const otdat = (id, u)=>{ out[id] = u; if(gotov){ try{ gotov(id, u); }catch(_){} } };
   const uniq = Array.from(new Set((ids || []).filter(Boolean)));
   if(!uniq.length) return out;
 
+  const mini = (razmer === 'm');
+  const kluch = id => mini ? fotoMiniKluch(id) : id;
+
   // 1. Что уже на устройстве — отдаём сразу, не трогая сеть вовсе.
-  const svoi = await Promise.all(uniq.map(id => fotoSkladVzyat(id).catch(()=>null)));
+  const svoi = await Promise.all(uniq.map(id => fotoSkladVzyat(kluch(id)).catch(()=>null)));
   const ostalos = [];
   uniq.forEach((id, i)=>{
     if(svoi[i]) otdat(id, svoi[i]);
@@ -8796,27 +8834,54 @@ async function photoViewUrls(ids, gotov){
   });
   if(!ostalos.length) return out;
 
-  // 2. Остальным нужна подпись.
+  // 2. Остальным нужна подпись. Подписи полного и уменьшенного —
+  //    разные, поэтому и запоминаются под разными ключами.
   const now = Date.now();
   const need = ostalos.filter(id=>{
-    const c = photoUrlCache.get(id);
+    const c = photoUrlCache.get(kluch(id));
     return !c || (now - c.at) > PHOTO_VIEW_TTL;
   });
   if(need.length){
-    const data = await photoAsk({ action:'view', attachment_ids: need.slice(0,50) });
+    const telo = { action:'view', attachment_ids: need.slice(0,50) };
+    if(mini) telo.size = 'm';
+    const data = await photoAsk(telo);
     const links = (data && data.links) || {};
-    Object.keys(links).forEach(id => photoUrlCache.set(id, { url: links[id], at: now }));
+    Object.keys(links).forEach(id => photoUrlCache.set(kluch(id), { url: links[id], at: now }));
   }
 
-  // 3. Скачать один раз и оставить у себя. Не вышло — показываем
-  //    по подписи, как до этой правки: хуже прежнего быть не должно.
+  // 3. Скачать один раз и оставить у себя.
   await Promise.all(ostalos.map(async id=>{
-    const c = photoUrlCache.get(id);
+    const c = photoUrlCache.get(kluch(id));
     if(!c) return;
     let u = null;
-    try{ u = await fotoSkladPolozhit(id, c.url); }catch(_){ u = null; }
-    otdat(id, u || c.url);
+    try{ u = await fotoSkladPolozhit(kluch(id), c.url); }catch(_){ u = null; }
+    if(u){ otdat(id, u); return; }
+    // НЕ СКАЧАЛОСЬ.
+    // Для уменьшенной копии это обычное дело: её нет у снимков старше
+    // 2 сентября 2026, хранилище отвечает 404. Ничего не отдаём —
+    // зовущий возьмёт полный. Показать по подписи нельзя: адрес ведёт
+    // в пустоту, и вышла бы битая картинка вместо снимка.
+    if(mini){ photoUrlCache.delete(kluch(id)); return; }
+    // Для полного — показываем по подписи, как до складов: хуже
+    // прежнего быть не должно.
+    otdat(id, c.url);
   }));
+  return out;
+}
+
+// ДЛЯ ПЛИТОК: сначала уменьшенные, для остальных — полные.
+// Отдельной функцией, чтобы место показа не разбиралось, у кого копия
+// есть, а у кого нет: снимки до 2 сентября 2026 копий не имеют,
+// и так будет ещё долго.
+async function fotoDlyaPlitok(ids, gotov){
+  const spisok = Array.from(new Set((ids || []).filter(Boolean)));
+  if(!spisok.length) return {};
+  const out = await photoViewUrls(spisok, gotov, 'm');
+  const bezKopii = spisok.filter(id => !out[id]);
+  if(bezKopii.length){
+    const polnye = await photoViewUrls(bezKopii, gotov);
+    Object.assign(out, polnye);
+  }
   return out;
 }
 
@@ -8930,6 +8995,34 @@ async function photoUpload(proj, roomId, file, kind){
   // уже в руках — те самые, что ушли в хранилище. Не положить значит
   // скачать их обратно через секунду, когда мастер посмотрит, что снял.
   try{ await fotoSkladPolozhitBlob(id, blob); }catch(_){}
+
+  // УМЕНЬШЕННАЯ КОПИЯ — ПОСЛЕ, И МОЛЧА (2 сентября 2026).
+  //
+  // После, а не до: снимок к этому моменту уже в хранилище и в списке,
+  // и если копия не выйдет, потерять её не жалко — плитка возьмёт
+  // полный файл. Наоборот было бы хуже: отказ на копии отменил бы
+  // отправку самого снимка, а он важнее.
+  //
+  // Молча по той же причине: мастер стоит на объекте и снимает дальше,
+  // сообщение про копию ему сказать нечего.
+  try{
+    const mini = await fotoMini(blob);
+    if(mini && mini.size){
+      const znak = await photoAsk({ action:'upload', attachment_id: id, size:'m' });
+      const adres = znak && znak.links && znak.links[id];
+      if(adres){
+        // ТИП ОБЯЗАТЕЛЕН — подпись его не покрывает, а хранилище
+        // запоминает тип таким, каким прислали. Без заголовка копия
+        // приедет как форма, и браузер предложит её скачать вместо
+        // показа. Та же ловушка, что с полным файлом 1 августа 2026.
+        const r = await fetch(adres, { method:'PUT',
+          headers:{ 'Content-Type':'image/jpeg' }, body: mini });
+        if(r.ok) try{ await fotoSkladPolozhitBlob(fotoMiniKluch(id), mini); }catch(_){}
+        else console.error('Уменьшенная копия не легла:', r.status);
+      }
+    }
+  }catch(e){ console.error('Уменьшенная копия не вышла', e); }
+
   return id;
 }
 
@@ -16666,8 +16759,12 @@ function renderRoomPhotos(room){
               // а картинку подставляли заново — отсюда два моргания разом.
               // Адрес снимка уже лежит в fotoAdresa, взять его можно
               // без ожидания, прямо здесь.
-              fotoAdresa.has(a.id)
-                ? `<img alt="Фотография помещения" loading="lazy" src="${escapeAttr(fotoAdresa.get(a.id))}">`
+              // Копия лежит под своим ключом, а не под номером снимка.
+              // Смотреть надо оба: иначе плитка с уже готовой копией
+              // сбросилась бы в многоточие и подставилась заново —
+              // то самое моргание, что чинили 27 августа 2026.
+              (fotoAdresa.has(fotoMiniKluch(a.id)) || fotoAdresa.has(a.id))
+                ? `<img alt="Фотография помещения" loading="lazy" src="${escapeAttr(fotoAdresa.get(fotoMiniKluch(a.id)) || fotoAdresa.get(a.id))}">`
                 : '<span class="ph-wait">…</span>'
             }</div>
             <span class="ph-komm-mesto" data-ph-komm="${a.id}"></span>
@@ -16719,7 +16816,8 @@ async function photoFillThumbs(roomId){
     cell.innerHTML = `<img alt="Фотография помещения" loading="lazy" src="${escapeAttr(url)}">`;
   };
   try{
-    const urls = await photoViewUrls(list.map(a=>a.id), postavit);
+    // Плитке хватает уменьшенной копии — см. fotoDlyaPlitok.
+    const urls = await fotoDlyaPlitok(list.map(a=>a.id), postavit);
     list.forEach(a=>{
       const cell = box.querySelector(`[data-ph-thumb="${a.id}"]`);
       if(!cell || cell.querySelector('img')) return;

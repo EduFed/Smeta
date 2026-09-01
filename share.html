@@ -263,17 +263,28 @@ async function podgruzitFoto(ids){
   const token = new URLSearchParams(location.search).get('s');
   for(let i = 0; i < ids.length; i += 50){
     const kusok = ids.slice(i, i + 50);
-    let links = {};
-    try{
-      const r = await fetch(ADRES + '/functions/v1/photo-url', {
-        method:'POST',
-        headers:{ 'apikey':KLYUCH, 'Authorization':'Bearer ' + KLYUCH,
-                  'Content-Type':'application/json' },
-        body: JSON.stringify({ action:'view', share_token:token, attachment_ids:kusok })
-      });
-      const d = await r.json();
-      links = (d && d.links) || {};
-    }catch(e){ console.error('Снимки не пришли', e); }
+    // Просим ДВА набора адресов: уменьшенные копии и полные.
+    // Копии есть не у всех — снимки старше 2 сентября 2026 их не имеют,
+    // и хранилище отвечает на них 404. Полный держим наготове, чтобы
+    // подставить его картинке по ошибке загрузки, а не ходить за ним
+    // потом и заставлять человека ждать второй раз.
+    // Оба запроса — только подписи, файлы не качаются.
+    const sprosit = async (razmer)=>{
+      try{
+        const telo = { action:'view', share_token:token, attachment_ids:kusok };
+        if(razmer) telo.size = razmer;
+        const r = await fetch(ADRES + '/functions/v1/photo-url', {
+          method:'POST',
+          headers:{ 'apikey':KLYUCH, 'Authorization':'Bearer ' + KLYUCH,
+                    'Content-Type':'application/json' },
+          body: JSON.stringify(telo)
+        });
+        const d = await r.json();
+        return (d && d.links) || {};
+      }catch(e){ console.error('Снимки не пришли', e); return {}; }
+    };
+    const [mini, polnye] = await Promise.all([ sprosit('m'), sprosit(null) ]);
+    const links = polnye;
 
     kusok.forEach(id=>{
       const kl = document.querySelector('[data-foto="' + CSS.escape(id) + '"]');
@@ -301,10 +312,17 @@ async function podgruzitFoto(ids){
       img.loading = 'lazy';
       img.decoding = 'async';
       img.alt = '';
-      img.onerror = ()=>{ kl.innerHTML = '<div class="zhdyom">нет снимка</div>'; };
+      // Плитке хватает копии. Её нет — хранилище ответит 404, и мы один
+      // раз подставим полный. Второй отказ значит, что дело не в размере.
+      let vzyaliPolnyy = !mini[id];
+      img.onerror = ()=>{
+        if(!vzyaliPolnyy){ vzyaliPolnyy = true; img.src = u; return; }
+        kl.innerHTML = '<div class="zhdyom">нет снимка</div>';
+      };
       kl.innerHTML = '';
       kl.appendChild(img);
-      img.src = u;
+      img.src = mini[id] || u;
+      // На весь экран — всегда полный: там его и смотрят.
       kl.onclick = ()=> pokazatBolshoe(u);
     });
   }
