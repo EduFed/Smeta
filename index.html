@@ -3392,7 +3392,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-01-135';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-01-136';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -18517,6 +18517,9 @@ const tc = {
   directional:'plain',
   orient:'h', pattern:'straight', offset:'half', offsetCustom:'',
   startX:'edgeL', startY:'edgeB',
+  // Свой размер плитки у края — под дизайн-проект, где он задан
+  // числом. В сантиметрах, как и размеры плитки.
+  startXCustom:'', startYCustom:'',
   tab:'data',
   inited:false,
 };
@@ -18617,14 +18620,31 @@ function tcCompute(){
   const hole = tcHole();
 
   // левый/нижний край опорной колонки/ряда по режиму старта
-  const refEdge=(mode, span, cell)=>{
+  const refEdge=(mode, span, cell, svoyo)=>{
     if(mode==='centerTile') return span/2 - cell/2;   // целая плитка по центру
     if(mode==='centerSeam') return span/2 + seam/2;   // шов по центру
     if(mode==='edgeR' || mode==='edgeT') return span - cell; // целая плитка от дальнего края (правый/верхний)
+    // СВОЙ РАЗМЕР У КРАЯ (1 сентября 2026). Владелец: «столкнулся
+    // с дизайнерским проектом, где нужен определённый размер плитки
+    // с краю согласно дизайн-проекту, а мы не можем реализовать».
+    //
+    // Опорную плитку заводим ЗА край ровно настолько, чтобы у самого
+    // края остался кусок нужного размера: плитка тянется от d-cell
+    // до d, а всё левее нуля обрезается контуром.
+    //
+    // Ноль, пусто и размер больше самой плитки — это не свой размер,
+    // а «целая плитка от края»: так и считаем, молча и предсказуемо.
+    // Отрицательное не пропускаем: раскладка уехала бы за контур
+    // и подрезка посчиталась бы неверно.
+    if(mode==='custom'){
+      const d = num(svoyo)/100;
+      if(d > 0 && d < cell) return d - cell;
+      return 0;
+    }
     return 0;                                          // целая плитка от ближнего края (левый/нижний)
   };
-  const x0ref = refEdge(tc.startX, W, cw);
-  const y0ref = refEdge(tc.startY, H, ch);
+  const x0ref = refEdge(tc.startX, W, cw, tc.startXCustom);
+  const y0ref = refEdge(tc.startY, H, ch, tc.startYCustom);
 
   // смещение рядов для «вразбежку»
   let rowShift = 0;
@@ -18837,9 +18857,17 @@ function tcControlsLayoutHTML(){
     }
   }
   h += `<div class="tc-label">Старт по горизонтали</div>`;
-  h += tcSeg('startX', [['edgeL','Левый край'],['edgeR','Правый край'],['centerSeam','Центр (шов)'],['centerTile','Центр (плитка)']], tc.startX);
+  h += tcSeg('startX', [['edgeL','Левый край'],['edgeR','Правый край'],['centerSeam','Центр (шов)'],['centerTile','Центр (плитка)'],['custom','Свой размер']], tc.startX);
+  // Поле показываем только когда выбран свой размер — иначе оно стоит
+  // пустым и человек гадает, к чему оно.
+  if(tc.startX === 'custom'){
+    h += `<div class="tc-fields">` + tcFieldInput('startXCustom','Плитка у левого края, см') + `<div></div></div>`;
+  }
   h += `<div class="tc-label">Старт по вертикали</div>`;
-  h += tcSeg('startY', [['edgeB','Нижний край'],['edgeT','Верхний край'],['centerSeam','Центр (шов)'],['centerTile','Центр (плитка)']], tc.startY);
+  h += tcSeg('startY', [['edgeB','Нижний край'],['edgeT','Верхний край'],['centerSeam','Центр (шов)'],['centerTile','Центр (плитка)'],['custom','Свой размер']], tc.startY);
+  if(tc.startY === 'custom'){
+    h += `<div class="tc-fields">` + tcFieldInput('startYCustom','Плитка у нижнего края, см') + `<div></div></div>`;
+  }
   return h;
 }
 
