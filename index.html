@@ -3405,7 +3405,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-01-139';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-01-141';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -4222,7 +4222,8 @@ const OKNA_ZAKRYVAEMYE = [
   ['ownWorkOverlay',   ()=> ownWorkClose()],
   ['dopPodpisOverlay', ()=> dopPodpisClose()],
   ['planOverlay',      ()=> closePlans()],
-  ['supportOverlay',   ()=> closeSupport()]
+  ['supportOverlay',   ()=> closeSupport()],
+  ['podelitOverlay',   ()=> podelitClose()]
 ];
 
 function oknoOtkryto(id){
@@ -6424,6 +6425,220 @@ function num(v){
 }
 function txt(v){ return (v === undefined || v === null) ? null : String(v); }
 
+// ---------- ОКНО «ПОДЕЛИТЬСЯ С ЗАКАЗЧИКОМ» (1 сентября 2026) ----------
+//
+// Ссылка открывает отдельную страницу share.html, а не приложение:
+// человеку без учётной записи index.html отдавать нельзя.
+let uiPodelit = null;   // {projectId, oblast, srok, lichnye, spisok}
+
+const SROKI_SSYLKI = [
+  [30,  'Месяц'],
+  [90,  'Три месяца'],
+  [0,   'Без срока']
+];
+const OBLASTI_SSYLKI = [
+  ['both',     'Смета и снимки'],
+  ['estimate', 'Только смета'],
+  ['photos',   'Только снимки']
+];
+
+function ssylkaAdres(token){
+  const b = location.origin + location.pathname.replace(/[^/]*$/, '');
+  return b + 'share.html?s=' + encodeURIComponent(token);
+}
+
+async function podelitsyaOpen(projectId){
+  const p = (state.projects||[]).find(x=>x.id===projectId);
+  if(!p) return;
+  uiPodelit = { projectId, oblast:'both', srok:90, lichnye:false, spisok:null, zanyat:false };
+  let ov = document.getElementById('podelitOverlay');
+  if(!ov){
+    ov = document.createElement('div');
+    ov.id = 'podelitOverlay';
+    ov.className = 'refcfg-overlay no-print';
+    document.body.appendChild(ov);
+  }
+  podelitNarisovat();
+  ov.style.display = 'flex';
+  // Список выданных грузим отдельно: он не должен задерживать окно.
+  try{
+    uiPodelit.spisok = LOCAL_TEST ? [] : await DB.spisokSsylok(projectId);
+  }catch(e){ console.error('Список ссылок не пришёл', e); uiPodelit.spisok = []; }
+  podelitNarisovat();
+}
+
+function podelitClose(){
+  const ov = document.getElementById('podelitOverlay');
+  if(ov){ ov.style.display = 'none'; ov.innerHTML = ''; }
+  uiPodelit = null;
+}
+
+function podelitNarisovat(){
+  const ov = document.getElementById('podelitOverlay');
+  if(!ov || !uiPodelit) return;
+  const u = uiPodelit;
+  const seg = (key, opts, cur)=> `<div class="tc-seg tc-seg-wrap">` + opts.map(([v,l])=>
+      `<button type="button" class="tc-seg-btn${v===cur?' active':''}" data-pod-set="${key}|${v}">${l}</button>`
+    ).join('') + `</div>`;
+
+  const spisok = (u.spisok === null)
+    ? '<div class="mat-note">Загружаем выданные ссылки…</div>'
+    : (!u.spisok.length
+        ? '<div class="mat-note">Пока не выдано ни одной.</div>'
+        : u.spisok.map(sh=>{
+            const otozvana = !!sh.revoked_at;
+            const proshla  = sh.expires_at && new Date(sh.expires_at) < new Date();
+            const sost = otozvana ? 'отозвана' : (proshla ? 'срок вышел' : 'действует');
+            const oblast = (OBLASTI_SSYLKI.find(o=>o[0]===sh.scope)||[])[1] || sh.scope;
+            return `<div class="sel-work">
+              <span class="sel-work-name">${escapeHtml(oblast)}${sh.show_personal?' · с личными данными':''}
+                <span class="sel-work-sub">${sost}${sh.expires_at ? ' · до ' + fmtDate(sh.expires_at) : ''}</span></span>
+              ${(otozvana||proshla) ? '' : `<button class="btn-icon" data-pod-kopir="${escapeAttr(sh.token)}" title="Скопировать ссылку">⧉</button>`}
+              ${otozvana ? '' : `<button class="btn-icon" data-pod-otozvat="${escapeAttr(sh.id)}" title="Отозвать">✕</button>`}
+            </div>`;
+          }).join(''));
+
+  ov.innerHTML = `
+    <div class="refcfg-modal">
+      <div class="refcfg-head">
+        <div>
+          <div class="refcfg-title">Поделиться с заказчиком</div>
+          <div class="refcfg-sub">ссылка открывается без входа — заказчику не нужна учётная запись</div>
+        </div>
+        <button class="plan-close" id="podelitX" aria-label="Закрыть">✕</button>
+      </div>
+      <div class="refcfg-body">
+        <div class="tc-label">Что показать</div>
+        ${seg('oblast', OBLASTI_SSYLKI, u.oblast)}
+        <div class="tc-label">Сколько ссылка живёт</div>
+        ${seg('srok', SROKI_SSYLKI.map(x=>[String(x[0]), x[1]]), String(u.srok))}
+        <label class="conds-spread" style="margin-top:12px;">
+          <input type="checkbox" data-pod-lichnye ${u.lichnye?'checked':''}>
+          <span>Показать данные заказчика
+            <i>телефон, почта, адрес. Паспорт не показывается никогда — свой паспорт заказчик знает, а ссылка может уйти в чужой чат</i></span>
+        </label>
+        <div class="ownw-note" style="margin-top:12px;">
+          Смета уйдёт снимком — такой, какая она сейчас. Поправите её потом — поделитесь заново.
+          Оплаты и снимки заказчик будет видеть свежими.
+        </div>
+        <div class="plan-lead-msg" id="podelitMsg"></div>
+        <div class="tc-label" style="margin-top:18px;">Выданные ссылки</div>
+        ${spisok}
+      </div>
+      <div class="refcfg-foot">
+        <button class="btn btn-primary refcfg-add" id="podelitOk"${u.zanyat?' disabled':''}>
+          ${u.zanyat ? 'Готовим…' : 'Создать ссылку'}</button>
+      </div>
+    </div>`;
+
+  const x = document.getElementById('podelitX');
+  if(x) x.onclick = podelitClose;
+  const ok = document.getElementById('podelitOk');
+  if(ok) ok.onclick = podelitSozdat;
+  ov.querySelectorAll('[data-pod-set]').forEach(b=>{
+    b.onclick = ()=>{ const [k,v] = b.getAttribute('data-pod-set').split('|');
+      uiPodelit[k] = (k==='srok') ? parseInt(v,10) : v; podelitNarisovat(); };
+  });
+  const l = ov.querySelector('[data-pod-lichnye]');
+  if(l) l.onchange = ()=>{ uiPodelit.lichnye = l.checked; };
+  ov.querySelectorAll('[data-pod-kopir]').forEach(b=>{
+    b.onclick = ()=> podelitKopir(b.getAttribute('data-pod-kopir'));
+  });
+  ov.querySelectorAll('[data-pod-otozvat]').forEach(b=>{
+    b.onclick = ()=> podelitOtozvat(b.getAttribute('data-pod-otozvat'));
+  });
+}
+
+function podelitSkazat(t, klass){
+  const m = document.getElementById('podelitMsg');
+  if(m){ m.textContent = t; m.className = 'plan-lead-msg' + (klass ? ' ' + klass : ''); }
+}
+
+async function podelitKopir(token){
+  const a = ssylkaAdres(token);
+  try{
+    await navigator.clipboard.writeText(a);
+    podelitSkazat('Ссылка скопирована — можно вставить в сообщение.', 'ok');
+  }catch(_){
+    // Не дали доступ к буферу — показываем адрес, чтобы скопировали руками.
+    podelitSkazat(a);
+  }
+}
+
+async function podelitSozdat(){
+  const u = uiPodelit;
+  if(!u || u.zanyat) return;
+  const p = (state.projects||[]).find(x=>x.id===u.projectId);
+  if(!p) return;
+  u.zanyat = true; podelitNarisovat();
+  try{
+    if(LOCAL_TEST){ podelitSkazat('Локальный режим: ссылка не создаётся.'); return; }
+    // Дошлём несохранённое: снимок считается из того, что на экране,
+    // а заказчик увидит его вместе со снимками и оплатами с сервера.
+    // Разойдись они — заказчик увидел бы смету одной поры, а оплаты другой.
+    await persist();
+    const sh = await DB.vydatSsylku(p, u.oblast, u.srok, u.lichnye);
+    u.spisok = await DB.spisokSsylok(u.projectId);
+    u.zanyat = false; podelitNarisovat();
+    await podelitKopir(sh.token);
+  }catch(e){
+    console.error('Ссылка не создалась', e);
+    u.zanyat = false; podelitNarisovat();
+    podelitSkazat('Не удалось создать ссылку: ' + ((e && e.message) || 'проверьте связь'), 'err');
+  }
+}
+
+async function podelitOtozvat(id){
+  if(!confirm('Отозвать ссылку?\n\nЗаказчик по ней больше ничего не увидит. Отменить отзыв нельзя — придётся выдать новую.')) return;
+  try{
+    await DB.otozvatSsylku(id);
+    uiPodelit.spisok = await DB.spisokSsylok(uiPodelit.projectId);
+    podelitNarisovat();
+    podelitSkazat('Ссылка отозвана.', 'ok');
+  }catch(e){
+    console.error('Отзыв не прошёл', e);
+    podelitSkazat('Не удалось отозвать: ' + ((e && e.message) || 'проверьте связь'), 'err');
+  }
+}
+
+// ---------- СНИМОК СМЕТЫ ДЛЯ ССЫЛКИ ЗАКАЗЧИКУ (1 сентября 2026) ----------
+//
+// Смету заказчику отдаём СНИМКОМ, а не живой лентой. Причина найдена
+// 1 сентября: количество работ по стенам и полу в базе не хранится
+// вовсе - его считает браузер из геометрии помещения, - а ссылке
+// не отдавались ни окна, ни двери, ни стены. То есть посчитать не мог
+// никто: ни сервер, ни страница. Площадь стен вышла бы завышенной
+// на площадь каждого проёма.
+//
+// Считаем ТОЙ ЖЕ функцией, которой печатается PDF. Третьего способа
+// считать деньги в приложении не заводим - рядом с итогом об этом
+// написано прямо: «два разных способа счёта рано или поздно разойдутся».
+//
+// В снимок кладём ТОЛЬКО то, что видит заказчик. Ничего про мастеров:
+// ни исполнителей, ни долей, ни выплат. Сервер за этим больше не следит -
+// он отдаёт снимок как есть, значит следим здесь.
+function snimokSmety(proj){
+  const d = buildEstimateData(proj, { dlyaZakazchika:true });
+  return {
+    v: 1,                                  // версия снимка, на вырост
+    sozdan: new Date().toISOString(),
+    itog: d.total,
+    gruppy: d.groups.map(g=>({
+      nazvanie: g.room,
+      stroki: g.items.map(i=>({
+        nazvanie: i.name, edinica: i.unit,
+        kolvo: i.qty, cena: i.price, summa: i.sum
+      }))
+    })),
+    // Материалы - отдельным списком и БЕЗ цен: это закупка заказчика,
+    // цены в магазинах свои, и обещать их нельзя.
+    materialy: (projMaterials(proj)||[]).filter(matFilled).map(m=>({
+      nazvanie: m.name||'—', edinica: matUnitLabel(m.unit)||'',
+      kolvo: m.qty, pometka: m.note||''
+    }))
+  };
+}
+
 // ---------- КАЛЬКУЛЯТОР В ПОЛЯХ ВВОДА (1 сентября 2026) ----------
 //
 // Владелец: «в полях, где нужно вводить значение, нужно добавить
@@ -7445,6 +7660,57 @@ const DB = {
       .select('id, dop_no, dop_date');
     if(error) throw error;
     return data || [];
+  },
+
+  // ---------- ССЫЛКИ ЗАКАЗЧИКУ (1 сентября 2026) ----------
+  //
+  // Смета уходит СНИМКОМ: приложение считает её той же арифметикой,
+  // которой печатает PDF, и кладёт готовые числа. Сервер отдаёт снимок
+  // как есть и ничего не пересчитывает.
+  //
+  // Значит следить, чтобы в снимок не попало лишнее, - наша работа,
+  // а не сервера. В `snimokSmety` кладётся только то, что видит
+  // заказчик: ни исполнителей, ни долей, ни выплат.
+  async vydatSsylku(proj, oblast, srokDney, lichnye){
+    const token = newUuid() + newUuid().replace(/-/g,'');   //
+    const do_ = srokDney
+      ? new Date(Date.now() + srokDney*24*3600*1000).toISOString()
+      : null;
+    const { data, error } = await sb.from('project_shares').insert({
+      project_id: proj.id,
+      token: token,
+      scope: oblast,
+      show_personal: !!lichnye,
+      expires_at: do_,
+      created_by: currentUser.id,
+      estimate_snapshot: snimokSmety(proj)
+    }).select('id, token, scope, show_personal, expires_at, created_at').single();
+    if(error) throw error;
+    return data;
+  },
+
+  async spisokSsylok(projectId){
+    const { data, error } = await sb.from('project_shares')
+      .select('id, token, scope, show_personal, expires_at, revoked_at, created_at')
+      .eq('project_id', projectId)
+      .order('created_at', { ascending:false });
+    if(error) throw error;
+    return data || [];
+  },
+
+  // Отзыв - не удаление: отозванная ссылка остаётся видна в списке,
+  // и понятно, что она была и когда её закрыли. Удалённая исчезла бы
+  // молча, и через месяц никто не вспомнил бы, выдавали её или нет.
+  async otozvatSsylku(id){
+    const { data, error } = await sb.from('project_shares')
+      .update({ revoked_at: new Date().toISOString() })
+      .eq('id', id)
+      .select('id, revoked_at');
+    if(error) throw error;
+    if(!data || !data.length){
+      throw new Error('Ссылка не найдена или отзывать её вы не вправе.');
+    }
+    return data[0];
   },
 
   // СНЯТЬ ПОДПИСАНИЕ (с 1 сентября 2026).
@@ -12465,9 +12731,14 @@ function condBase(proj){
   return roomsTotal(proj) + extra;
 }
 
-// готовые строки для сметы — по одной на включённое условие
-function condLines(proj){
-  const base = condBase(proj);
+// готовые строки для сметы — по одной на включённое условие.
+//
+// svoyoBase задаётся, когда надбавку считают НЕ от всей сметы: в снимке
+// для заказчика черновики доп. работ не показываются, и начислять
+// надбавку на то, чего он не видит, нельзя — вышло бы 15 % вместо 10 %,
+// и объяснить это было бы нечем. Поймано проверкой 1 сентября 2026.
+function condLines(proj, svoyoBase){
+  const base = (svoyoBase === undefined || svoyoBase === null) ? condBase(proj) : svoyoBase;
   const out = [];
   PROJECT_CONDS.forEach(c=>{
     const p = condPctOf(proj, c);
@@ -12748,9 +13019,32 @@ function buildEstimateData(proj, opts){
       const price = Math.round(num(e.price) * k);
       return { name:e.name||'—', unit:UNIT_LABEL[e.unit]||'', qty:num(e.qty), price:price, sum:num(e.qty)*price };
     });
-  if(extra.length && !bezDop) groups.push({ room:'Дополнительные работы', items:extra });
-  // надбавки отдельной строкой — только если они не размазаны по ценам
-  const cLines = (naryad || condSpread(proj)) ? [] : condLines(proj);
+  // ДЛЯ ЗАКАЗЧИКА — ТОЛЬКО ПОДПИСАННЫЕ ДОП. РАБОТЫ, ГРУППАМИ
+  // ПО СОГЛАШЕНИЯМ (1 сентября 2026). Черновик заказчику не показываем:
+  // он его не подписывал, а увидев в перечне, сочтёт согласованным.
+  // Решение владельца.
+  if(opts && opts.dlyaZakazchika){
+    dopNomera(proj).forEach(nom=>{
+      const svoi = (proj.extraWorks||[])
+        .filter(e=> (e.dopNo||'').trim() === nom)
+        .filter(e=>(e.name||'').trim() || num(e.qty) || num(e.price))
+        .map(e=>{
+          const price = Math.round(num(e.price) * k);
+          return { name:e.name||'—', unit:UNIT_LABEL[e.unit]||'', qty:num(e.qty), price:price, sum:num(e.qty)*price };
+        });
+      if(!svoi.length) return;
+      const d = dopDataSoglasheniya(proj, nom);
+      groups.push({ room:'Доп. соглашение № ' + nom + (d ? ' от ' + fmtDate(d) : ''), items:svoi });
+    });
+  }
+  else if(extra.length && !bezDop) groups.push({ room:'Дополнительные работы', items:extra });
+  // надбавки отдельной строкой — только если они не размазаны по ценам.
+  // Для заказчика основание берём по ПОКАЗАННЫМ строкам: черновиков
+  // доп. работ он не видит, и надбавка на них не начисляется.
+  const osnovanie = (opts && opts.dlyaZakazchika)
+    ? groups.reduce((s,g)=> s + g.items.reduce((a,i)=> a + i.sum, 0), 0)
+    : undefined;
+  const cLines = (naryad || condSpread(proj)) ? [] : condLines(proj, osnovanie);
   if(cLines.length){
     groups.push({ room:'Условия объекта',
       items: cLines.map(l=>({ name:l.name, unit:'', qty:1, price:l.sum, sum:l.sum })) });
@@ -15386,6 +15680,14 @@ function renderProjectView(proj){
       ${renderSmetaDocPanel(proj)}
       ${renderZakupkaDocPanel(proj)}
       ${renderDogovorDocPanel(proj)}
+      <!-- ССЫЛКА ЗАКАЗЧИКУ. Стоит в «Документах», а не отдельным блоком:
+           по смыслу это ещё один способ отдать смету — как PDF, только
+           ссылкой. Мастеру на наряде и смотрящему не показываем: делятся
+           сметой с заказчиком те же, кто вправе её править. -->
+      ${isNaryad(proj) || proj.myRole === 'viewer' ? '' : `
+      <button class="doc-main-btn" data-podelitsya="${proj.id}">
+        <span class="chev" style="transform:none;">→</span> Поделиться с заказчиком
+      </button>`}
     </div>
   `;
 }
@@ -17478,6 +17780,9 @@ function attachHandlers(){
       // ровно как это делает refPushWork для работ в помещении.
       if(w) ewPush(w.name, w.unit, refWorkPrice(w));
     });
+  });
+  main.querySelectorAll('[data-podelitsya]').forEach(el=>{
+    el.onclick = ()=> podelitsyaOpen(el.getAttribute('data-podelitsya'));
   });
   main.querySelectorAll('[data-dop-podpisat]').forEach(el=>{
     el.onclick = ()=> dopPodpisOpen(el.getAttribute('data-dop-podpisat'));
