@@ -1363,19 +1363,49 @@
   .extra-works{margin-top:16px;border-top:1px solid var(--paper-line);padding-top:14px;}
   .extra-title{font-family:'JetBrains Mono',monospace;font-size:11px;text-transform:uppercase;letter-spacing:0.08em;color:var(--ink-soft);margin-bottom:10px;}
   .extra-list{display:flex;flex-direction:column;gap:6px;margin-bottom:8px;}
-  .extra-row{display:grid;grid-template-columns:1fr 70px 74px 84px auto 24px;gap:8px;align-items:center;}
-  /* Кнопка исполнителя у доп. работы — колонка появляется только
-     у прораба на «Прорабе», у остальных сетка прежняя. */
-  .extra-row:has(> .sel-work-assign){grid-template-columns:1fr 70px 74px 84px auto auto 24px;}
+  /* ДОП. РАБОТА — ГИБКОЙ СТРОКОЙ, КАК ВИДЫ РАБОТ В ПОМЕЩЕНИИ
+     (переделано 1 сентября 2026).
+     Была сетка с жёсткими колонками. Метка исполнителя занимает
+     до двух строк, в свою колонку не влезала и наезжала на сумму —
+     владелец прислал снимок: «поле где назначение работ всё друг
+     на друге, сделай как в видах работам, там всё красиво и чётко».
+     У видов работ (.sel-work) сетки нет: гибкая строка с переносом,
+     и раскладка держится сама, сколько бы ни было имени у мастера.
+     Своего третьего устройства не заводим — берём то, что уже работает. */
+  .extra-row{
+    display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+    padding:8px 10px; margin-bottom:6px;
+    border:1px solid var(--paper-line); border-radius:var(--radius);
+    background:var(--paper); font-size:13px;
+  }
+  /* Название тянется, числа держат свою ширину — тогда столбцы
+     подписанных и неподписанных строк стоят друг под другом. */
+  .extra-row > input:first-child, .extra-froz-name{ flex:1 1 180px; min-width:0; }
+  .extra-row > select{ flex:0 0 76px; width:76px; }
+  .extra-row > input[inputmode="decimal"]{ flex:0 0 84px; width:84px; }
+  .extra-froz-unit{ flex:0 0 76px; }
+  .extra-froz-qty, .extra-froz-price{ flex:0 0 84px; text-align:right; }
+  /* Сумма прижата вправо: её сравнивают взглядом сверху вниз. */
+  .extra-sum{ margin-left:auto; }
+  /* МЕТКА ИСПОЛНИТЕЛЯ — ФИКСИРОВАННОЙ ШИРИНЫ, и это не украшение.
+     Пока она росла по имени, столбцы с числами у строки с длинной
+     меткой стояли левее, чем у строки без неё, — и весь блок читался
+     рваным. Теперь ширина одна на все строки, и числа встают в линию.
+     Длинное имя обрезается двумя строками, целиком видно в подсказке. */
+  .extra-row > .sel-work-assign{ flex:0 0 110px; width:110px; max-width:110px; }
   .extra-row input, .extra-row select{font-family:'Inter',sans-serif;font-size:13px;border:1px solid var(--paper-line);border-radius:var(--radius);padding:6px 8px;background:var(--paper);color:var(--ink);min-width:0;}
   .extra-row input:focus, .extra-row select:focus{outline:none;border-color:var(--blue);}
-  .extra-sum{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--ink);text-align:right;white-space:nowrap;}
+  .extra-sum{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--ink);text-align:right;white-space:nowrap;min-width:80px;}
   @media (max-width:640px){
-    .extra-row{display:flex;flex-wrap:wrap;gap:6px;padding:8px;border:1px solid var(--paper-line);border-radius:var(--radius);}
-    .extra-row input:nth-child(1){flex:1 1 100%;}
-    .extra-row select{flex:0 0 74px;}
-    .extra-row input:nth-child(3), .extra-row input:nth-child(4){flex:1 1 70px;min-width:60px;}
-    .extra-sum{flex:1 1 auto;text-align:left;}
+    /* На телефоне: название во всю ширину, числа под ним в ряд.
+       Считаем по СМЫСЛУ полей, а не по их номеру в строке: у подписанной
+       строки вместо полей стоят надписи, и счёт по номеру ломался. */
+    .extra-row{gap:6px;padding:8px;}
+    .extra-row > input:first-child, .extra-froz-name{flex:1 1 100%;}
+    .extra-row > select, .extra-froz-unit{flex:0 0 74px;width:74px;}
+    .extra-row > input[inputmode="decimal"], .extra-froz-qty, .extra-froz-price{
+      flex:1 1 70px;width:auto;min-width:60px;}
+    .extra-sum{flex:1 1 auto;text-align:left;margin-left:0;}
   }
 
   /* СХЕМА ФИГУРЫ СТЕНЫ */
@@ -2738,8 +2768,9 @@
     font-size:12px;font-weight:600;color:var(--ink-soft);}
   .extra-group-sum{font-family:'JetBrains Mono',monospace;font-weight:500;white-space:nowrap;}
   .extra-row-frozen{opacity:.72;}
-  .extra-froz-name{font-size:14px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;}
-  .extra-froz-cell{font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--ink-soft);}
+  .extra-froz-name{font-size:13px;color:var(--ink);}
+  .extra-froz-unit,.extra-froz-qty,.extra-froz-price{
+    font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--ink-soft);}
   .extra-zamok{display:flex;align-items:center;justify-content:center;width:28px;font-size:13px;opacity:.55;cursor:default;}
   .ew-podpisat{font-size:13px;padding:8px 16px;}
   .extra-zamok{opacity:.55;font-size:13px;}
@@ -3354,7 +3385,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-01-128';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-01-130';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -6888,11 +6919,44 @@ const DB = {
     // Пустые значения в список на удаление попадать не должны: старые
     // проёмы жили без номеров, и в слепке у них ключ undefined. База на такое
     // отвечает «invalid input syntax for type uuid» и отбивает всю запись.
+    // УДАЛЕНИЕ ПРОВЕРЯЕМ, А НЕ ВЕРИМ ЕМУ НА СЛОВО (с 1 сентября 2026).
+    //
+    // Политика доступа может молча не тронуть ни одной строки: ошибки
+    // при этом НЕТ, ответ обычный и пустой. Приложение считало это
+    // успехом, писало «сохранено» - а строка оставалась на сервере
+    // и возвращалась при следующем чтении облака.
+    //
+    // Со стороны это выглядит так: «удалял позиции, они снова появились,
+    // удалились только со второго раза» - владелец, 1 сентября 2026.
+    // Причину того случая доказать не удалось, но эта дыра настоящая
+    // и объясняет ровно такую картину.
+    //
+    // Приём не новый: `select` после запроса, чтобы отличить «сделано»
+    // от «молча отказано», уже применён в setMemberShare и
+    // setWorkAssignee. Странно, что удаление им не пользовалось.
     const drop = async (table, col, ids)=>{
       const clean = (ids || []).filter(v=> v !== undefined && v !== null && v !== '');
       if(!clean.length) return;
-      const { error } = await sb.from(table).delete().in(col, clean);
+      const { data, error } = await sb.from(table).delete().in(col, clean).select(col);
       if(error) throw error;
+
+      const ubrali = new Set((data || []).map(r=> r[col]));
+      const netPodtverzhdeniya = clean.filter(v=> !ubrali.has(v));
+      if(!netPodtverzhdeniya.length) return;
+
+      // Строка не вернулась - это ЕЩЁ НЕ ОТКАЗ. Её мог удалить напарник
+      // с другого устройства, и тогда удалять было уже нечего. Отличаем
+      // одно от другого прямым вопросом: а она вообще там есть?
+      // Без этой проверки была бы ложная тревога на обычной совместной
+      // работе - а тревога, которая врёт, перестаёт работать вовсе.
+      const { data: ostalis, error: e2 } = await sb.from(table)
+        .select(col).in(col, netPodtverzhdeniya);
+      if(e2) throw e2;
+      if(ostalis && ostalis.length){
+        throw new Error('DELETE_OTKAZ: сервер не удалил ' + ostalis.length +
+          ' ' + plural(ostalis.length,'строку','строки','строк') +
+          ' (' + table + '). Удаление НЕ сохранено.');
+      }
     };
 
     // ПОРЯДОК ВАЖЕН. Строка сметы ссылается на позицию прайса, материал
@@ -7530,6 +7594,12 @@ async function persist(){
     // а такого номера в HINTS нет — человек увидел бы невнятицу
     // вместо объяснения, что делать.
     const msg = (e && e.message) || '';
+    // Сервер молча не удалил строку. Это надо назвать словами: раньше
+    // такое выглядело как «сохранено», а удалённое возвращалось.
+    if(/DELETE_OTKAZ/.test(msg)){
+      setSync('error', 'удаление не сохранилось — строка вернётся, попробуйте ещё раз');
+      return;
+    }
     if(/FREE_ONE_PROJECT/.test(msg)){
       setSync('error', 'не сохранено: нужен выбор рабочего проекта');
       const notChosen = /FREE_ONE_PROJECT_NOT_CHOSEN/.test(msg);
@@ -15259,9 +15329,9 @@ function renderExtraWorksBlock(proj){
     <div class="extra-row${zamorozhena?' extra-row-frozen':''}">
       ${zamorozhena
         ? `<span class="extra-froz-name">${escapeHtml(e.name||'—')}</span>
-           <span class="extra-froz-cell">${UNIT_LABEL[e.unit]||''}</span>
-           <span class="extra-froz-cell">${escapeHtml(String(e.qty||''))}</span>
-           <span class="extra-froz-cell">${fmtMoney(num(e.price))}</span>`
+           <span class="extra-froz-unit">${UNIT_LABEL[e.unit]||''}</span>
+           <span class="extra-froz-qty">${escapeHtml(String(e.qty||''))}</span>
+           <span class="extra-froz-price">${fmtMoney(num(e.price))}</span>`
         : `<input type="text" placeholder="наименование" value="${escapeAttr(e.name)}" data-extra="${i}|name">
            <select data-extra="${i}|unit">
              <option value="m2" ${e.unit==='m2'?'selected':''}>м²</option>
