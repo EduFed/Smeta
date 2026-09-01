@@ -76,6 +76,10 @@
   .plitka{position:relative;aspect-ratio:1;border:1px solid var(--paper-line);
     border-radius:var(--radius);overflow:hidden;background:var(--white);cursor:zoom-in;}
   .plitka img{width:100%;height:100%;object-fit:cover;display:block;}
+  /* Подложка под ещё не пришедшей картинкой: плитка не мигает пустотой
+     и видно, что здесь что-то будет. */
+  .plitka img:not([src]), .plitka img[src=""]{background:var(--paper-line);}
+  .plitka{background:color-mix(in srgb, var(--paper-line) 45%, transparent);}
   .plitka .zhdyom{display:flex;align-items:center;justify-content:center;height:100%;
     color:var(--ink-soft);font-size:11px;}
   /* Просмотр на весь экран — как в приложении: тёмная подложка,
@@ -278,11 +282,28 @@ async function podgruzitFoto(ids){
       // Не пришёл адрес — не оставляем пустую плитку с многоточием
       // навсегда: человек не должен гадать, грузится оно или сломалось.
       if(!u){ kl.innerHTML = '<div class="zhdyom">нет снимка</div>'; return; }
-      const img = new Image();
+
+      // КАРТИНКУ ВСТАВЛЯЕМ В СТРАНИЦУ СРАЗУ, А НЕ ПОСЛЕ ЗАГРУЗКИ.
+      //
+      // Сперва было наоборот: адрес ставился картинке, которой ещё нет
+      // на странице, и она попадала в неё только по onload. Признак
+      // «грузить лениво» при этом не работает вовсе — он смотрит,
+      // где элемент на экране, а элемента на экране нет. Браузер брался
+      // качать все снимки разом: двадцать семь штук по 440 КБ забивали
+      // связь друг другу, и первый появлялся через минуту.
+      // Владелец 1 сентября 2026: «фото оооооочень долго загружаются».
+      //
+      // Теперь картинка стоит в странице с самого начала, и браузер сам
+      // качает только то, что близко к видимой части. Уменьшенных копий
+      // у снимков нет — хранится один размер, — поэтому лень это
+      // единственное, чем можно помочь.
+      const img = document.createElement('img');
       img.loading = 'lazy';
+      img.decoding = 'async';
       img.alt = '';
-      img.onload = ()=>{ kl.innerHTML = ''; kl.appendChild(img); };
       img.onerror = ()=>{ kl.innerHTML = '<div class="zhdyom">нет снимка</div>'; };
+      kl.innerHTML = '';
+      kl.appendChild(img);
       img.src = u;
       kl.onclick = ()=> pokazatBolshoe(u);
     });
