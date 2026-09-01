@@ -3405,7 +3405,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-01-138';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-01-139';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -6423,6 +6423,119 @@ function num(v){
   return isFinite(n) ? n : null;
 }
 function txt(v){ return (v === undefined || v === null) ? null : String(v); }
+
+// ---------- КАЛЬКУЛЯТОР В ПОЛЯХ ВВОДА (1 сентября 2026) ----------
+//
+// Владелец: «в полях, где нужно вводить значение, нужно добавить
+// калькулятор». На объекте меряют кусками: 1,2 + 0,8 + 2,4 — и держать
+// сумму в голове или тянуться за телефоном посреди замера неудобно.
+//
+// Теперь в любое числовое поле можно написать выражение, и по уходу
+// из поля или по Enter оно превратится в число.
+//
+// СЧИТАЕМ СВОИМ РАЗБОРОМ, А НЕ eval. Приложение публичное, и пускать
+// произвольный текст в вычисление нельзя ни при каких удобствах.
+// Разбор понимает только числа, + - * / и скобки; всё остальное —
+// не выражение, и поле остаётся как было.
+function schitat(vvod){
+  const t = String(vvod == null ? '' : vvod).replace(/,/g, '.').replace(/\s+/g, '');
+  if(!t) return null;
+  // Ничего, кроме цифр, точки, четырёх действий и скобок.
+  if(!/^[0-9.+\-*/()]+$/.test(t)) return null;
+
+  let i = 0;
+  const tek = ()=> t[i];
+
+  function vyrazhenie(){
+    let v = slagaemoe();
+    for(;;){
+      const c = tek();
+      if(c === '+'){ i++; v += slagaemoe(); }
+      else if(c === '-'){ i++; v -= slagaemoe(); }
+      else return v;
+      if(!isFinite(v)) return NaN;
+    }
+  }
+  function slagaemoe(){
+    let v = mnozhitel();
+    for(;;){
+      const c = tek();
+      if(c === '*'){ i++; v *= mnozhitel(); }
+      else if(c === '/'){
+        i++;
+        const d = mnozhitel();
+        // Делить на ноль не даём: NaN означает «не выражение»,
+        // и поле останется таким, каким его набрали.
+        if(!d) return NaN;
+        v /= d;
+      }
+      else return v;
+      if(!isFinite(v)) return NaN;
+    }
+  }
+  function mnozhitel(){
+    if(tek() === '-'){ i++; return -mnozhitel(); }
+    if(tek() === '+'){ i++; return  mnozhitel(); }
+    if(tek() === '('){
+      i++;
+      const v = vyrazhenie();
+      if(tek() !== ')') return NaN;
+      i++;
+      return v;
+    }
+    const j = i;
+    while(i < t.length && /[0-9.]/.test(t[i])) i++;
+    if(i === j) return NaN;
+    const ch = parseFloat(t.slice(j, i));
+    return isFinite(ch) ? ch : NaN;
+  }
+
+  const v = vyrazhenie();
+  // Разобрали не всё до конца — значит это не выражение, а мусор.
+  if(i !== t.length || !isFinite(v)) return null;
+  // Округляем: 1,2 + 2,4 в двоичной арифметике даёт 3,5999999999999996,
+  // и такое число в смете выглядит поломкой. Четыре знака хватает
+  // и метрам, и рублям.
+  return Math.round(v * 10000) / 10000;
+}
+
+// Похоже ли набранное на выражение, а не на обычное число.
+// Минус в начале не считается: «-5» это число, а не действие.
+function estDeystvie(v){
+  return /[+*/]/.test(String(v)) || /[0-9)]\s*-/.test(String(v));
+}
+
+// Посчитать поле на месте. Возвращает true, если что-то изменилось.
+function poleSchitat(el){
+  if(!el || el.disabled || el.readOnly) return false;
+  const bylo = el.value;
+  if(!estDeystvie(bylo)) return false;
+  const stalo = schitat(bylo);
+  if(stalo === null) return false;
+  el.value = String(stalo);
+  // Событие обязательно: приложение слушает input, и без него
+  // посчитанное осталось бы только на экране, а в смету не попало.
+  el.dispatchEvent(new Event('input', { bubbles:true }));
+  el.dispatchEvent(new Event('change', { bubbles:true }));
+  return true;
+}
+
+// Вешаем ОДИН раз на весь документ: полей с числами больше тридцати,
+// и они перерисовываются вместе со сметой. Слушать каждое отдельно
+// значило бы вешать обработчики заново при каждой отрисовке.
+// blur не всплывает, поэтому слушаем на этапе перехвата.
+document.addEventListener('blur', e=>{
+  const el = e.target;
+  if(el && el.matches && el.matches('input[inputmode="decimal"]')) poleSchitat(el);
+}, true);
+document.addEventListener('keydown', e=>{
+  if(e.key !== 'Enter') return;
+  const el = e.target;
+  if(el && el.matches && el.matches('input[inputmode="decimal"]')){
+    if(poleSchitat(el)) e.preventDefault();
+  }
+});
+
 
 const DB = {
 
