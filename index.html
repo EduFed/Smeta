@@ -3348,7 +3348,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-01-126';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-01-127';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -7168,15 +7168,23 @@ const DB = {
   // Условие `dop_no is null` - не украшение: без него запрос попытался бы
   // переписать уже подписанные строки, и сторож zz_dop_frozen отбил бы
   // всю пачку целиком.
-  async podpisatDopSoglashenie(projectId, nomer, data_){
+  async podpisatDopSoglashenie(projectId, nomer, data_, ids){
     const nom = String(nomer || '').trim();
     // Пустая строка заморозила бы работу навсегда: сторож считает
     // подпись по «не пусто», а пустая строка - это уже не null.
     if(!nom) throw new Error('Номер соглашения не может быть пустым.');
+    // ПОДПИСЫВАЕМ ПОИМЁННО, а не «всё неподписанное в проекте».
+    // 1 сентября 2026 первый вариад брал всё подряд - и в соглашение № 3
+    // уехали пять недозаполненных строк с нулевым количеством, взятых
+    // из справочника и ещё не наполненных. Заморозились навсегда:
+    // у подписанной строки в приложении нет даже крестика.
+    const spisok = (ids || []).filter(Boolean);
+    if(!spisok.length) throw new Error('Нечего подписывать: заполните хотя бы одну позицию.');
     const { data, error } = await sb.from('project_extra_works')
       .update({ dop_no: nom, dop_date: data_ || null })
       .eq('project_id', projectId)
-      .is('dop_no', null)
+      .in('id', spisok)
+      .is('dop_no', null)          // страховка от повторного подписания
       .select('id, dop_no, dop_date');
     if(error) throw error;
     return data || [];
@@ -15047,6 +15055,17 @@ function dopSleduyuschiyNomer(proj){
   });
   return String(max + 1);
 }
+// Готова к подписанию - строка с названием И количеством. Без количества
+// в документе выйдет «— 0 шт. × 1 000 ₽ = 0 ₽»: такое не подписывают,
+// это ещё черновик. Тот же признак заполненности, что и в шапке блока,
+// плюс количество: в соглашение идёт цифра, по которой платят.
+function dopGotova(e){
+  return !!(e.name||'').trim() && num(e.qty) > 0;
+}
+function dopKPodpisi(proj){
+  return (proj.extraWorks||[]).filter(e=> !(e.dopNo||'').trim() && dopGotova(e));
+}
+
 function dopDataSoglasheniya(proj, nomer){
   const e = (proj.extraWorks||[]).find(x=> (x.dopNo||'').trim() === String(nomer));
   return e ? (e.dopDate || '') : '';
@@ -15075,9 +15094,12 @@ function dopPodpisOpen(projectId){
     ov.addEventListener('pointerdown', e=>{ if(e.target === ov) dopPodpisClose(); });
     document.body.appendChild(ov);
   }
-  const skolko = (p.extraWorks||[]).filter(e=> !(e.dopNo||'').trim()).length;
-  const summa = (p.extraWorks||[]).filter(e=> !(e.dopNo||'').trim())
-                  .reduce((a,e)=> a + num(e.qty)*num(e.price), 0);
+  const gotovy = dopKPodpisi(p);
+  const skolko = gotovy.length;
+  const summa = gotovy.reduce((a,e)=> a + num(e.qty)*num(e.price), 0);
+  // Недозаполненные НЕ подписываем и говорим об этом прямо: иначе они
+  // молча уехали бы в соглашение и заморозились навсегда.
+  const nedodelanyh = (p.extraWorks||[]).filter(e=> !(e.dopNo||'').trim() && !dopGotova(e)).length;
   ov.innerHTML = `
     <div class="refcfg-modal">
       <div class="refcfg-head">
@@ -15096,6 +15118,7 @@ function dopPodpisOpen(projectId){
           <label>Дата подписания</label>
           <input type="date" id="dopPodpisData" class="ownw-inp" value="${escapeAttr(dopPodpis.data)}">
         </div>
+        ${nedodelanyh ? `<div class="ownw-note" style="color:var(--amber);">${nedodelanyh} ${plural(nedodelanyh,'позиция','позиции','позиций')} без количества ${plural(nedodelanyh,'не войдёт','не войдут','не войдут')} в соглашение и ${plural(nedodelanyh,'останется','останутся','останутся')} в черновике. Заполните количество, если ${plural(nedodelanyh,'она нужна','они нужны','они нужны')} здесь.</div>` : ''}
         <div class="ownw-note">После подписания эти работы перестанут меняться: бумага у заказчика на руках, и правка в приложении сделала бы документ ложью. Ошиблись — исправляется новым соглашением, в том числе минусовой позицией.</div>
         <div class="plan-lead-msg" id="dopPodpisMsg"></div>
       </div>
@@ -15139,13 +15162,14 @@ async function dopPodpisApply(){
   if(btn){ btn.disabled = true; btn.textContent = 'Подписываем…'; }
   try{
     if(LOCAL_TEST){
-      (p.extraWorks||[]).forEach(e=>{ if(!(e.dopNo||'').trim()){ e.dopNo = nom; e.dopDate = o.data; } });
+      dopKPodpisi(p).forEach(e=>{ e.dopNo = nom; e.dopDate = o.data; });
     } else {
       // ПЕРЕД подписанием дошлём несохранённое: если строка ещё не уехала
       // на сервер, узкий запрос её не найдёт и она останется неподписанной,
       // а на экране выглядела бы подписанной.
       await persist();
-      const tronuty = await DB.podpisatDopSoglashenie(o.projectId, nom, o.data);
+      const tronuty = await DB.podpisatDopSoglashenie(o.projectId, nom, o.data,
+                              dopKPodpisi(p).map(e=>e.id));
       const po_id = new Map((tronuty||[]).map(r=>[r.id, r]));
       (p.extraWorks||[]).forEach(e=>{
         const r = po_id.get(e.id);
@@ -15269,7 +15293,7 @@ function renderExtraWorksBlock(proj){
         </div>
         <div class="ew-actions">
           <button class="add-link" data-add-extra="1">+ Своя позиция</button>
-          ${svobodnye.length ? `<button class="btn btn-outline ew-podpisat" data-dop-podpisat="${proj.id}">Подписать соглашение № ${escapeHtml(dopSleduyuschiyNomer(proj))}</button>` : ''}
+          ${dopKPodpisi(proj).length ? `<button class="btn btn-outline ew-podpisat" data-dop-podpisat="${proj.id}">Подписать соглашение № ${escapeHtml(dopSleduyuschiyNomer(proj))}</button>` : ''}
         </div>
       </div>
     </div>`;
