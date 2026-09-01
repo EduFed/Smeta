@@ -2742,6 +2742,12 @@
   .extra-froz-cell{font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--ink-soft);}
   .extra-zamok{display:flex;align-items:center;justify-content:center;width:28px;font-size:13px;opacity:.55;cursor:default;}
   .ew-podpisat{font-size:13px;padding:8px 16px;}
+  .extra-zamok{opacity:.55;font-size:13px;}
+  .extra-zamok:hover{opacity:1;}
+  .extra-rassp{background:none;border:none;padding:0 0 0 12px;margin:0;
+    font-family:inherit;font-size:11px;font-weight:500;color:var(--ink-soft);
+    text-decoration:underline;text-underline-offset:2px;cursor:pointer;}
+  .extra-rassp:hover{color:var(--orange);}
   .opl-row{display:grid;grid-template-columns:150px 120px 1fr 34px;gap:8px;align-items:center;margin-bottom:8px;}
   .opl-row input{padding:8px 10px;border:1px solid var(--paper-line);border-radius:7px;
     background:var(--white);color:var(--ink);font-size:14px;font-family:inherit;min-width:0;}
@@ -3348,7 +3354,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-01-127';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-01-128';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -7188,6 +7194,35 @@ const DB = {
       .select('id, dop_no, dop_date');
     if(error) throw error;
     return data || [];
+  },
+
+  // СНЯТЬ ПОДПИСАНИЕ (с 1 сентября 2026).
+  //
+  // Владелец: «замочек это хорошо, но нужна возможность снятия замочка...
+  // или снятия подписания». Поправка верная: в тот же день подписание
+  // забрало пять недозаполненных строк, и починить их стало нечем.
+  //
+  // Замок при этом остаётся настоящим. Сторож в базе разрешает снять
+  // подпись, но ЗАПРЕЩАЕТ снять и поправить одним запросом: иначе вся
+  // заморозка обходилась бы за раз - `set dop_no=null, qty=999`.
+  // Поэтому здесь шлём ТОЛЬКО обнуление номера и даты, ничего больше.
+  // Править человек будет следующим действием, когда строка уже
+  // в черновике.
+  //
+  // ids не задан - снимаем всё соглашение целиком, одним запросом:
+  // отобьётся одна строка - не применится ни одна, и соглашение
+  // не останется расподписанным наполовину.
+  async snyatPodpisanie(projectId, nomer, ids){
+    let q = sb.from('project_extra_works')
+      .update({ dop_no: null, dop_date: null })
+      .eq('project_id', projectId);
+    q = (ids && ids.length) ? q.in('id', ids) : q.eq('dop_no', String(nomer));
+    const { data, error } = await q.select('id, dop_no, dop_date');
+    if(error) throw error;
+    if(!data || !data.length){
+      throw new Error('Ничего не снято: строки не найдены или снимать их вы не вправе.');
+    }
+    return data;
   },
 
   // То же для всех работ помещения разом. Прораб раздаёт объект
@@ -15187,6 +15222,35 @@ async function dopPodpisApply(){
   }
 }
 
+// Снять подписание. ids задан - одна строка, нет - всё соглашение.
+async function dopSnyat(proj, nomer, ids, vopros){
+  if(!confirm(vopros)) return;
+  try{
+    if(LOCAL_TEST){
+      (proj.extraWorks||[]).forEach(e=>{
+        const svoya = ids ? ids.indexOf(e.id) !== -1 : (e.dopNo||'').trim() === String(nomer);
+        if(svoya){ e.dopNo = ''; e.dopDate = ''; }
+      });
+    } else {
+      // Дошлём несохранённое до снятия: узкий запрос ищет строки
+      // на сервере, и не доехавшую он не найдёт.
+      await persist();
+      const tronuty = await DB.snyatPodpisanie(proj.id, nomer, ids);
+      const snyato = new Set((tronuty||[]).map(r=>r.id));
+      (proj.extraWorks||[]).forEach(e=>{
+        if(snyato.has(e.id)){ e.dopNo = ''; e.dopDate = ''; }
+      });
+      markLocalClean();
+    }
+    // Печатать это соглашение больше нельзя, если в нём никого не осталось.
+    if(uiDopNo === String(nomer) && dopNomera(proj).indexOf(String(nomer)) === -1) uiDopNo = '';
+    render();
+  }catch(e){
+    console.error('Снятие подписания не прошло', e);
+    alert('Не удалось снять подписание: ' + ((e && e.message) || 'проверьте связь'));
+  }
+}
+
 function renderExtraWorksBlock(proj){
   const vse = (proj.extraWorks||[]);
   // Строка рисуется по её МЕСТУ В ОБЩЕМ СПИСКЕ (i), а не по месту
@@ -15218,7 +15282,7 @@ function renderExtraWorksBlock(proj){
         // триггер на DELETE сработал бы и при удалении проекта. Значит
         // защита здесь единственная. Случайная правка - это опечатка
         // в поле, случайное удаление - осознанное нажатие.
-        ? `<span class="extra-zamok" title="Входит в подписанное соглашение — не меняется">🔒</span>`
+        ? `<button class="btn-icon extra-zamok" data-dop-snyat="${escapeAttr(e.id)}" title="Снять подписание с этой строки — она вернётся в черновик">🔒</button>`
         : `<button class="btn-icon" data-del-extra="${i}" title="Удалить">✕</button>`}
     </div>`;
 
@@ -15229,7 +15293,8 @@ function renderExtraWorksBlock(proj){
     return `<div class="extra-group">
       <div class="extra-group-head">
         <span>Соглашение № ${escapeHtml(nom)}${dat ? ' от ' + fmtDate(dat) : ''} · подписано</span>
-        <span class="extra-group-sum">${svoi.length} ${plural(svoi.length,'позиция','позиции','позиций')} · ${fmtMoney(sum)}</span>
+        <span class="extra-group-sum">${svoi.length} ${plural(svoi.length,'позиция','позиции','позиций')} · ${fmtMoney(sum)}
+          <button class="extra-rassp" data-dop-rassp="${escapeAttr(nom)}" title="Вернуть все работы соглашения в черновик">снять подписание</button></span>
       </div>
       ${svoi.map(x=> stroka(x.e, x.i, true)).join('')}
     </div>`;
@@ -17009,6 +17074,32 @@ function attachHandlers(){
   });
   main.querySelectorAll('[data-dop-podpisat]').forEach(el=>{
     el.onclick = ()=> dopPodpisOpen(el.getAttribute('data-dop-podpisat'));
+  });
+  // Снять подписание: с одной строки (замок) или со всего соглашения.
+  // Спрашиваем подтверждение оба раза - и не запугиваем, а называем
+  // вещи своими именами: бумага могла уйти к заказчику.
+  main.querySelectorAll('[data-dop-snyat]').forEach(el=>{
+    el.onclick = ()=>{
+      const id = el.getAttribute('data-dop-snyat');
+      const e = (proj.extraWorks||[]).find(x=>x.id===id);
+      if(!e) return;
+      dopSnyat(proj, (e.dopNo||''), [id],
+        'Снять подписание с одной работы?\n\n«' + (e.name||'—') + '» вернётся в черновик ' +
+        'и её снова можно будет править.\n\nСоглашение № ' + (e.dopNo||'—') +
+        ' уже подписано. Если бумага у заказчика, ей это изменение не передастся: ' +
+        'поправленное придётся оформить новым соглашением.');
+    };
+  });
+  main.querySelectorAll('[data-dop-rassp]').forEach(el=>{
+    el.onclick = ()=>{
+      const nom = el.getAttribute('data-dop-rassp');
+      const skolko = (proj.extraWorks||[]).filter(x=> (x.dopNo||'').trim() === nom).length;
+      dopSnyat(proj, nom, null,
+        'Снять подписание с соглашения № ' + nom + ' целиком?\n\n' +
+        skolko + ' ' + plural(skolko,'работа вернётся','работы вернутся','работ вернётся') +
+        ' в черновик, номер освободится.\n\nЕсли бумага уже у заказчика, ' +
+        'ей это изменение не передастся.');
+    };
   });
   main.querySelectorAll('[data-add-extra]').forEach(el=>{
     el.onclick = ()=>{
