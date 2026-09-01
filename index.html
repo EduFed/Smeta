@@ -846,7 +846,51 @@
 
   /* ВИДЫ РАБОТ — выбор через поиск */
   .sel-works{display:flex;flex-direction:column;gap:6px;margin-bottom:10px;}
-  .sel-work{display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--paper-line);border-radius:var(--radius);background:var(--paper);font-size:13px;flex-wrap:wrap;}
+  /* ===== ОДНА СТРОКА ПОЗИЦИИ НА ВСЁ ПРИЛОЖЕНИЕ (1 сентября 2026) =====
+     Правило владельца: «нужно все вкладки привести в один вид, чтобы
+     не было разных полей, которые по логике должны быть одинаковы».
+     Строка вида работ, доп. работы, материала объекта, материала
+     в справочнике и оплаты — это одно и то же: набор полей позиции
+     и действие в конце. Раньше первая была гибкой карточкой,
+     а остальные тремя разными жёсткими сетками.
+     Показательно, что на узком экране материалы УЖЕ делали карточками —
+     расхождение замечали, но чинили только там, где оно резало глаз.
+     Здесь доведено до конца: карточка везде, перенос сам, жёстких
+     колонок нет. */
+  .sel-work, .pm-row, .mat-row, .opl-row{
+    display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+    padding:8px 10px; margin-bottom:6px;
+    border:1px solid var(--paper-line); border-radius:var(--radius);
+    background:var(--paper); font-size:13px;
+  }
+  /* Поля — тоже одного вида. Было два: в материалах и оплатах отступ
+     8×10 и радиус 7, у видов работ 5×7 и общий радиус. */
+  .sel-work input, .sel-work select,
+  .pm-row input, .pm-row select,
+  .mat-row input, .mat-row select,
+  .opl-row input, .opl-row select{
+    font-family:inherit; font-size:12px; min-width:0;
+    border:1px solid var(--paper-line); border-radius:var(--radius);
+    padding:5px 7px; background:var(--white); color:var(--ink);
+  }
+  .sel-work input:focus, .sel-work select:focus,
+  .pm-row input:focus, .pm-row select:focus,
+  .mat-row input:focus, .mat-row select:focus,
+  .opl-row input:focus, .opl-row select:focus{ outline:none; border-color:var(--blue); }
+  /* Название тянется, числа держат ширину, примечание тянется следом.
+     Ширины заданы по СМЫСЛУ поля, а не по его месту в строке. */
+  .pm-name, .mat-name{ flex:1 1 180px; }
+  .pm-note{ flex:1 1 160px; }
+  .mat-cat{ flex:0 0 150px; }
+  .pm-qty, .pm-price, .mat-price{ flex:0 0 90px; text-align:right; }
+  .pm-unit, .mat-unit{ flex:0 0 84px; }
+  .opl-data{ flex:0 0 150px; }
+  .opl-summa{ flex:0 0 110px; text-align:right; }
+  .opl-note{ flex:1 1 180px; }
+  /* Шапка столбцов у материалов больше не нужна: колонок нет, а поля
+     подписаны подсказками внутри. Раньше она пряталась только
+     на телефоне — там, где сетка и так разъезжалась. */
+  .pm-head{ display:none; }
   .sel-work-name{flex:1;color:var(--ink);}
   .sel-work .manual-qty{width:90px;font-size:12px;border:1px solid var(--paper-line);border-radius:var(--radius);padding:5px 7px;background:var(--white);color:var(--ink);}
   .sel-work .manual-unit{width:72px;font-size:12px;border:1px solid var(--paper-line);border-radius:var(--radius);padding:5px 6px;background:var(--white);color:var(--ink);font-family:'JetBrains Mono',monospace;}
@@ -2612,9 +2656,10 @@
   .mat-sec{margin-bottom:20px;max-width:900px;}
   .mat-sec-title{font-family:'Space Grotesk','Inter',sans-serif;font-size:15px;font-weight:700;
     color:var(--ink);margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--paper-line);}
-  .mat-row{display:grid;grid-template-columns:1fr 96px 90px 176px 34px;gap:8px;align-items:center;margin-bottom:6px;}
-  .mat-row input,.mat-row select{padding:8px 10px;border:1px solid var(--paper-line);border-radius:7px;
-    background:var(--white);color:var(--ink);font-size:14px;width:100%;}
+  /* .mat-row — вид берётся из общего правила строки позиции выше. */
+  /* Вид полей задан в общем правиле строки позиции. Здесь стояла своя
+     копия — отступ 8×10, радиус 7 — и перебивала общее просто потому,
+     что лежит ниже. Ровно так «одинаковое по смыслу» и расходится. */
   .mat-note{font-size:12px;color:var(--ink-soft);line-height:1.5;}
 
   .mat-block{margin-top:28px;}
@@ -2636,9 +2681,8 @@
   .pay-head-sum{color:var(--ink);font-weight:600;}
   .pm-head{display:grid;grid-template-columns:1fr 90px 90px 90px 200px 34px;gap:8px;
     font-size:11px;color:var(--ink-soft);margin-bottom:5px;padding:0 2px;}
-  .pm-row{display:grid;grid-template-columns:1fr 90px 90px 90px 200px 34px;gap:8px;align-items:center;margin-bottom:6px;}
-  .pm-row input,.pm-row select{padding:8px 10px;border:1px solid var(--paper-line);border-radius:7px;
-    background:var(--white);color:var(--ink);font-size:14px;width:100%;}
+  /* .pm-row — вид берётся из общего правила строки позиции выше. */
+  /* Вид полей — из общего правила строки позиции, см. выше. */
   .pm-row .pm-qty{text-align:right;}
   .pm-actions{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-top:12px;}
   .pm-actions select{padding:8px 10px;border:1px solid var(--paper-line);border-radius:7px;
@@ -2653,28 +2697,12 @@
        работам, и по той же причине: «строка человека и его настройки
        были соседями на одном уровне, при двух-трёх мастерах всё
        сливалось». Здесь просто доделано до конца. */
-    .mat-row, .pm-row{
-      padding:10px;
-      border:1px solid var(--paper-line);
-      border-radius:var(--radius);
-      background:var(--paper);
-      margin-bottom:10px;
-      row-gap:8px;
-    }
-    .mat-row{grid-template-columns:1fr 90px 34px;
-             grid-template-areas:"name name del" "unit cat cat" "price price price";}
-    .mat-row .mat-price{grid-area:price;}
-    .mat-row .mat-name{grid-area:name;} .mat-row .mat-unit{grid-area:unit;} .mat-row .mat-cat{grid-area:cat;}
-    /* Поля внутри карточки — на белом, иначе они сливаются с её подложкой
-       и перестают читаться как места для ввода. */
-    .mat-row input, .mat-row select,
-    .pm-row input, .pm-row select{background:var(--white);}
-    .pm-head{display:none;}
-    .pm-row{grid-template-columns:1fr 84px 34px;
-            grid-template-areas:"name name del" "qty unit unit" "price price price" "note note note";}
-    .pm-row .pm-price{grid-area:price;}
-    .pm-row .pm-name{grid-area:name;} .pm-row .pm-qty{grid-area:qty;}
-    .pm-row .pm-unit{grid-area:unit;} .pm-row .pm-note{grid-area:note;}
+    /* Своих правил для узкого экрана у этих строк больше нет: карточка
+       и перенос заданы в общем правиле и работают на любой ширине.
+       Здесь стояли раскладки через grid-template-areas — они и были
+       тем самым «своим видом», который приходилось чинить отдельно. */
+    .mat-row .mat-name, .pm-row .pm-name{ flex:1 1 100%; }
+    .mat-row .mat-cat, .pm-row .pm-note{ flex:1 1 100%; }
   }
 
   /* ПОЛЯ ВВОДА НА ТЕЛЕФОНЕ — НЕ МЕЛЬЧЕ 16px (сборка 2026-08-10-02).
@@ -2754,9 +2782,7 @@
     font-family:inherit;font-size:11px;font-weight:500;color:var(--ink-soft);
     text-decoration:underline;text-underline-offset:2px;cursor:pointer;}
   .extra-rassp:hover{color:var(--orange);}
-  .opl-row{display:grid;grid-template-columns:150px 120px 1fr 34px;gap:8px;align-items:center;margin-bottom:8px;}
-  .opl-row input{padding:8px 10px;border:1px solid var(--paper-line);border-radius:7px;
-    background:var(--white);color:var(--ink);font-size:14px;font-family:inherit;min-width:0;}
+  /* .opl-row — вид берётся из общего правила строки позиции выше. */
   .opl-itogi{margin-top:16px;padding-top:12px;border-top:1px solid var(--paper-line);
     display:flex;flex-direction:column;gap:6px;max-width:420px;}
   .opl-itog{display:flex;justify-content:space-between;align-items:baseline;gap:14px;font-size:14px;color:var(--ink-soft);}
@@ -2764,10 +2790,9 @@
   .opl-itog-main{font-weight:600;color:var(--ink);font-size:15px;}
   .opl-itog-main b{color:var(--orange);font-size:17px;}
   @media (max-width:760px){
-    /* На телефоне строка разворачивается: дата и сумма в ряд, пометка ниже.
-       Так же поступает строка материала - своего вида раскладки не заводим. */
-    .opl-row{grid-template-columns:1fr 1fr 34px;}
-    .opl-row input[data-opl$="|note"]{grid-column:1 / -1;}
+    /* Дата и сумма в ряд, пометка ниже — тем же приёмом, что у материалов. */
+    .opl-data, .opl-summa{ flex:1 1 40%; }
+    .opl-note{ flex:1 1 100%; }
   }
   .naryad-mode .team-member-other{display:none;}
   /* Блок «Материалы» в проекте убираем целиком: это рабочее место
@@ -3360,7 +3385,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-01-131';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-01-133';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -14122,19 +14147,31 @@ function renderProjMaterials(proj){
       ${items.length ? `<div class="pm-head"><span>наименование</span><span>кол-во</span><span>ед.</span><span>цена</span><span>примечание</span><span></span></div>${rows}` : ''}
       ${withPrice ? `<div class="pm-total">Материалы: <b>${fmtMoney(matSum)}</b>
         <i>отдельно от сметы — это закупка заказчика</i></div>` : ''}
-      <div class="pm-actions">
-        ${ref.length
-          ? `<select id="pmPick">
-               <option value="">— выбрать из справочника —</option>
-               ${Object.keys(MAT_CATS).map(c=>{
-                  const inCat = ref.filter(m=>(MAT_CATS[m.cat]?m.cat:'other')===c && (m.name||'').trim());
-                  if(!inCat.length) return '';
-                  return `<optgroup label="${escapeAttr(MAT_CATS[c])}">
-                    ${inCat.map(m=>`<option value="${m.id}">${escapeHtml(m.name)}</option>`).join('')}
-                  </optgroup>`;
-               }).join('')}
-             </select>`
-          : `<span class="mat-note">Справочник пуст — заполните его в «Настройки → Материалы».</span>`}
+      <!-- СПИСОК С ПОИСКОМ, А НЕ РОДНОЙ <select> (1 сентября 2026).
+           Владелец: «при открытии справочника в материалах он не
+           скроллится». Ровно ту же жалобу он приносил про доп. работы —
+           там я её тогда не воспроизвёл и сменил управление по другой
+           причине. Второй раз о том же говорить не приходится: родной
+           список у него не прокручивается, и точка.
+           Берём то же устройство, что в доп. работах и в поиске работ
+           помещения: поле поиска и список со своей прокруткой.
+           В потоке, а не всплывающий: блок живёт внутри .cust-acc
+           с overflow:hidden, всплывающий обрезало бы. -->
+      ${ref.length ? `
+      <div class="ew-search" data-msearch="${proj.id}">
+        <input type="text" class="work-search-input" placeholder="Поиск и добавление из справочника…" data-msearch-input="${proj.id}">
+        <div class="ew-dropdown" data-msearch-list="${proj.id}">
+          ${Object.keys(MAT_CATS).map(c=>{
+             const inCat = ref.filter(m=>(MAT_CATS[m.cat]?m.cat:'other')===c && (m.name||'').trim());
+             if(!inCat.length) return '';
+             return inCat.map(m=>`<div class="wd-item" data-mpick="${escapeAttr(m.id)}" data-name="${escapeAttr(((m.name||'') + ' ' + (MAT_CATS[c]||'')).toLowerCase())}">
+                 <span>${escapeHtml(m.name)}</span>
+                 <span class="wd-unit">${escapeHtml(MAT_CATS[c]||'')}${(m.price === '' || m.price == null) ? '' : ' · ' + fmtMoney(m.price)}</span>
+               </div>`).join('');
+          }).join('')}
+        </div>
+      </div>` : `<div class="mat-note">Справочник пуст — заполните его в «Настройки → Материалы».</div>`}
+      <div class="ew-actions">
         <button class="add-link" data-pm-add="1">+ Своя позиция</button>
       </div>
       </div>
@@ -14177,9 +14214,27 @@ function matProjHandlers(main, proj){
     });
   });
 
-  const pick = document.getElementById('pmPick');
-  if(pick) pick.onchange = ()=>{
-    const m = (state.materials||[]).find(x=>x.id===pick.value);
+  // Поиск по справочнику материалов — тем же способом, что в доп. работах.
+  main.querySelectorAll('[data-msearch-input]').forEach(el=>{
+    const pid = el.getAttribute('data-msearch-input');
+    const box = main.querySelector(`[data-msearch="${pid}"]`);
+    el.addEventListener('focus', ()=>{ if(box) box.classList.add('open'); });
+    el.addEventListener('input', ()=>{
+      const q = el.value.toLowerCase().trim();
+      box.querySelectorAll('.wd-item').forEach(it=>{
+        const nm = it.getAttribute('data-name') || '';
+        it.style.display = (!q || nm.includes(q)) ? '' : 'none';
+      });
+    });
+    // Закрываем с задержкой: иначе blur успевает раньше клика по строке.
+    el.addEventListener('blur', ()=>{ setTimeout(()=>{ if(box) box.classList.remove('open'); }, 160); });
+  });
+  main.querySelectorAll('[data-mpick]').forEach(el=>{
+    el.addEventListener('mousedown', e=> e.preventDefault());
+    el.addEventListener('click', ()=> vzyatMaterial(el.getAttribute('data-mpick')));
+  });
+  const vzyatMaterial = (id)=>{
+    const m = (state.materials||[]).find(x=>x.id===id);
     if(!m) return;
     // снимок: название и единица запоминаются на момент добавления
     // цену тоже берём из справочника — как привычную. В закупке её можно
@@ -15488,9 +15543,9 @@ function renderOplatyBlock(proj){
 
   const rows = spisok.map((o,i)=>`
     <div class="opl-row">
-      <input type="date" value="${escapeAttr(o.paidOn||'')}" data-opl="${i}|paidOn" title="Когда получено">
-      <input type="text" inputmode="decimal" placeholder="сумма" value="${escapeAttr(o.amount)}" data-opl="${i}|amount">
-      <input type="text" placeholder="за что: аванс, за этап, наличными" value="${escapeAttr(o.note||'')}" data-opl="${i}|note">
+      <input type="date" class="opl-data" value="${escapeAttr(o.paidOn||'')}" data-opl="${i}|paidOn" title="Когда получено">
+      <input type="text" class="opl-summa" inputmode="decimal" placeholder="сумма" value="${escapeAttr(o.amount)}" data-opl="${i}|amount">
+      <input type="text" class="opl-note" placeholder="за что: аванс, за этап, наличными" value="${escapeAttr(o.note||'')}" data-opl="${i}|note">
       <button class="btn-icon" data-opl-del="${i}" title="Удалить">✕</button>
     </div>`).join('');
 
