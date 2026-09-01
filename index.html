@@ -2730,6 +2730,18 @@
   /* Деньги заказчика мастеру не показываем. На сервере таблица и так
      закрыта, но блок в наряде не рисуем: увиденное не развидеть. */
   .naryad-mode .oplaty-block{display:none;}
+  /* Группы доп. работ по соглашениям. Подписанная группа отделена
+     и приглушена: она уже на бумаге у заказчика и не правится. */
+  .extra-group{margin-bottom:14px;}
+  .extra-group-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;
+    flex-wrap:wrap;margin:0 0 8px;padding-bottom:5px;border-bottom:1px solid var(--paper-line);
+    font-size:12px;font-weight:600;color:var(--ink-soft);}
+  .extra-group-sum{font-family:'JetBrains Mono',monospace;font-weight:500;white-space:nowrap;}
+  .extra-row-frozen{opacity:.72;}
+  .extra-froz-name{font-size:14px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;}
+  .extra-froz-cell{font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--ink-soft);}
+  .extra-zamok{display:flex;align-items:center;justify-content:center;width:28px;font-size:13px;opacity:.55;cursor:default;}
+  .ew-podpisat{font-size:13px;padding:8px 16px;}
   .opl-row{display:grid;grid-template-columns:150px 120px 1fr 34px;gap:8px;align-items:center;margin-bottom:8px;}
   .opl-row input{padding:8px 10px;border:1px solid var(--paper-line);border-radius:7px;
     background:var(--white);color:var(--ink);font-size:14px;font-family:inherit;min-width:0;}
@@ -3336,7 +3348,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-01-125';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-01-126';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -6507,6 +6519,12 @@ const DB = {
           // сметы, в общем сохранении это поле НЕ участвует — уходит
           // отдельным узким запросом, иначе стёрлось бы у всех разом.
           assignedTo: e.assigned_to || null,
+          // Номер и дата подписанного доп. соглашения. Как и assignedTo,
+          // в общем сохранении НЕ участвуют: уходят отдельным узким
+          // запросом при подписании. Впиши их в общую пачку - и первое же
+          // сохранение соседней строки расподписало бы соглашение молча.
+          dopNo:   e.dop_no || '',
+          dopDate: e.dop_date || '',
           // цена приходит функцией, а не из колонки — см. workFromRow
           price: (function(v){ return (v === undefined || v === null) ? '' : v; })(extraPrice.get(e.id))
         })),
@@ -7133,6 +7151,35 @@ const DB = {
       throw new Error('Работа не найдена или назначать её вы не вправе.');
     }
     return data[0];
+  },
+
+  // ПОДПИСАНИЕ ДОП. СОГЛАШЕНИЯ (с 2026-09-01).
+  //
+  // Ставит номер и дату сразу всем неподписанным работам проекта.
+  // Отдельным узким запросом - по той же причине, что assigned_to:
+  // в общем сохранении номера НЕТ, и класть его туда нельзя. У строк,
+  // которые человек не подписывал, он ушёл бы пустым и расподписал бы
+  // всё разом. Молча: ошибки нет, документ просто напечатается другим.
+  //
+  // Один запрос = одна транзакция: отобьётся хоть одна строка -
+  // не применится ни одна, и соглашение не выйдет наполовину
+  // подписанным.
+  //
+  // Условие `dop_no is null` - не украшение: без него запрос попытался бы
+  // переписать уже подписанные строки, и сторож zz_dop_frozen отбил бы
+  // всю пачку целиком.
+  async podpisatDopSoglashenie(projectId, nomer, data_){
+    const nom = String(nomer || '').trim();
+    // Пустая строка заморозила бы работу навсегда: сторож считает
+    // подпись по «не пусто», а пустая строка - это уже не null.
+    if(!nom) throw new Error('Номер соглашения не может быть пустым.');
+    const { data, error } = await sb.from('project_extra_works')
+      .update({ dop_no: nom, dop_date: data_ || null })
+      .eq('project_id', projectId)
+      .is('dop_no', null)
+      .select('id, dop_no, dop_date');
+    if(error) throw error;
+    return data || [];
   },
 
   // То же для всех работ помещения разом. Прораб раздаёт объект
@@ -12080,9 +12127,18 @@ function smetaTotal(proj){
 // ДОПОЛНИТЕЛЬНЫЕ РАБОТЫ отдельным списком и суммой — для своего
 // соглашения. Цены считаем той же надбавкой condK, что и в смете,
 // иначе одна и та же работа стоила бы по-разному в двух документах.
-function dopRaboty(proj){
+// nomer не задан - отдаём ВСЕ доп. работы: так считает акт приёма-сдачи,
+// которому нужна общая сумма по всем соглашениям.
+// nomer задан - только работы этого соглашения. Пустая строка означает
+// «ещё не подписанные»: их печатают черновиком, до подписания.
+function dopRaboty(proj, nomer){
   const k = condK(proj);
+  const beryom = e => {
+    if(nomer === undefined || nomer === null) return true;
+    return (e.dopNo||'').trim() === String(nomer).trim();
+  };
   const items = (proj.extraWorks||[])
+    .filter(beryom)
     .filter(e=>(e.name||'').trim() || num(e.qty) || num(e.price))
     .map(e=>{
       const price = Math.round(num(e.price) * k);
@@ -12849,13 +12905,18 @@ function dopSoglRabotyBlocks(proj){
   const date = _or(formatDate(c.date), '«___» __________ 20___ г.');
   const cn = contractNumber(proj);
   const compDate = _or(formatDate(uiContractDate), '«___» __________ 20___ г.');
-  const nomer = _or(uiDopNo, '____');
-  const { items, total } = dopRaboty(proj);
+  // Номер и дата берутся у ВЫБРАННОГО соглашения, а не «сегодняшние»:
+  // напечатанное сегодня соглашение № 1 обязано выйти таким же и через
+  // год. Пустой uiDopNo - это черновик, ещё не подписанные работы.
+  const vybrano = (uiDopNo||'').trim();
+  const nomer = _or(vybrano, '____');
+  const dataSogl = vybrano ? dopDataSoglasheniya(proj, vybrano) : '';
+  const { items, total } = dopRaboty(proj, vybrano);
   const B = [];
   const P=(t,o)=>B.push(Object.assign({text:t,style:'normal'},o||{}));
   P(`Дополнительное соглашение № ${nomer}`, {style:'h1', align:'center', gap:2});
   P(`к Договору оказания услуг № ${cn} от ${date}`, {align:'center', gap:6, style:'small'});
-  P(`г. ${_or(c.city,'____________________')},          ${compDate}`, {align:'right', gap:12, style:'small'});
+  P(`г. ${_or(c.city,'____________________')},          ${_or(formatDate(dataSogl), compDate)}`, {align:'right', gap:12, style:'small'});
   P(`${execFioD()}, именуемый в дальнейшем «Подрядчик», с одной стороны, и ${_or(c.fio)}, именуемый(-ая) в дальнейшем «Заказчик», с другой стороны, заключили настоящее Дополнительное соглашение о нижеследующем:`, {gap:8});
   P(`1. В ходе выполнения работ по Договору № ${cn} от ${date} выявлена необходимость выполнения дополнительных работ, не вошедших в Смету (Приложение № 1 к Договору).`);
   P('2. Стороны согласовали выполнение следующих дополнительных работ:', {gap:4});
@@ -14955,26 +15016,209 @@ function docBtns(type, fmt2, fmt2label){
 // Устройство блока — как у материалов: всегда на месте, свёрнут,
 // в шапке число позиций и сумма. Своего вида раскрывающихся блоков
 // не заводим.
+// ---------- ДОП. СОГЛАШЕНИЯ (с 2026-09-01) ----------
+// Доп. работа помнит, в каком соглашении она подписана. Пустой номер -
+// значит ещё не подписана и войдёт в следующее.
+//
+// ЗАЧЕМ. Раньше список был один и плоский, а печать соглашения брала
+// из него ВСЁ. Подписали № 1 на две работы, добавили третью, напечатали
+// снова - и под тем же номером вышла другая бумага, не та, что у
+// заказчика на руках.
+//
+// ПОДПИСАННОЕ НЕ МЕНЯЕТСЯ. Держится это не видом кнопок, а сторожем
+// в базе (zz_dop_frozen): его не обходит даже служебный ключ сервера.
+// Здесь мы лишь не показываем полей, которые всё равно отобьются.
+function dopNomera(proj){
+  const vidno = [];
+  (proj.extraWorks||[]).forEach(e=>{
+    const nom = (e.dopNo||'').trim();
+    if(nom && vidno.indexOf(nom) === -1) vidno.push(nom);
+  });
+  return vidno;
+}
+function dopSleduyuschiyNomer(proj){
+  // Наибольшее ЧИСЛО среди номеров плюс единица. Номер может быть
+  // и не числом - своя нумерация владельца или соглашение, подписанное
+  // на бумаге до приложения; такие в подсчёте просто не участвуют.
+  let max = 0;
+  dopNomera(proj).forEach(nom=>{
+    const k = parseInt(nom, 10);
+    if(isFinite(k) && k > max) max = k;
+  });
+  return String(max + 1);
+}
+function dopDataSoglasheniya(proj, nomer){
+  const e = (proj.extraWorks||[]).find(x=> (x.dopNo||'').trim() === String(nomer));
+  return e ? (e.dopDate || '') : '';
+}
+
+// Окно подписания. Номер подставляется следующим по порядку, но остаётся
+// открытым: у владельца может быть своя нумерация или соглашение,
+// подписанное на бумаге до приложения.
+let dopPodpis = null;   // {projectId, nomer, data}
+
+function dopPodpisOpen(projectId){
+  const p = (state.projects||[]).find(x=>x.id===projectId);
+  if(!p) return;
+  const d = new Date();
+  dopPodpis = {
+    projectId: projectId,
+    nomer: dopSleduyuschiyNomer(p),
+    data: d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') +
+          '-' + String(d.getDate()).padStart(2,'0')
+  };
+  let ov = document.getElementById('dopPodpisOverlay');
+  if(!ov){
+    ov = document.createElement('div');
+    ov.id = 'dopPodpisOverlay';
+    ov.className = 'refcfg-overlay no-print';
+    ov.addEventListener('pointerdown', e=>{ if(e.target === ov) dopPodpisClose(); });
+    document.body.appendChild(ov);
+  }
+  const skolko = (p.extraWorks||[]).filter(e=> !(e.dopNo||'').trim()).length;
+  const summa = (p.extraWorks||[]).filter(e=> !(e.dopNo||'').trim())
+                  .reduce((a,e)=> a + num(e.qty)*num(e.price), 0);
+  ov.innerHTML = `
+    <div class="refcfg-modal">
+      <div class="refcfg-head">
+        <div>
+          <div class="refcfg-title">Подписать доп. соглашение</div>
+          <div class="refcfg-sub">${skolko} ${plural(skolko,'позиция','позиции','позиций')} на ${fmtMoney(summa)}</div>
+        </div>
+        <button class="plan-close" id="dopPodpisX" aria-label="Закрыть">✕</button>
+      </div>
+      <div class="refcfg-body">
+        <div class="refcfg-row">
+          <label>Номер соглашения</label>
+          <input type="text" id="dopPodpisNomer" class="ownw-inp" value="${escapeAttr(dopPodpis.nomer)}">
+        </div>
+        <div class="refcfg-row">
+          <label>Дата подписания</label>
+          <input type="date" id="dopPodpisData" class="ownw-inp" value="${escapeAttr(dopPodpis.data)}">
+        </div>
+        <div class="ownw-note">После подписания эти работы перестанут меняться: бумага у заказчика на руках, и правка в приложении сделала бы документ ложью. Ошиблись — исправляется новым соглашением, в том числе минусовой позицией.</div>
+        <div class="plan-lead-msg" id="dopPodpisMsg"></div>
+      </div>
+      <div class="refcfg-foot">
+        <button class="btn btn-primary refcfg-add" id="dopPodpisOk">Подписать</button>
+      </div>
+    </div>`;
+  ov.style.display = 'flex';
+  const nm = document.getElementById('dopPodpisNomer');
+  const dt = document.getElementById('dopPodpisData');
+  if(nm) nm.addEventListener('input', ()=>{ dopPodpis.nomer = nm.value; });
+  if(dt) dt.addEventListener('change',()=>{ dopPodpis.data  = dt.value; });
+  const x = document.getElementById('dopPodpisX');
+  if(x) x.onclick = dopPodpisClose;
+  const ok = document.getElementById('dopPodpisOk');
+  if(ok) ok.onclick = dopPodpisApply;
+}
+
+function dopPodpisClose(){
+  const ov = document.getElementById('dopPodpisOverlay');
+  if(ov){ ov.style.display = 'none'; ov.innerHTML = ''; }
+  dopPodpis = null;
+}
+
+async function dopPodpisApply(){
+  const o = dopPodpis;
+  if(!o) return;
+  const nom = String(o.nomer||'').trim();
+  const msg = document.getElementById('dopPodpisMsg');
+  const skazat = (t, klass)=>{ if(msg){ msg.textContent = t; msg.className = 'plan-lead-msg' + (klass?' '+klass:''); } };
+  if(!nom){ skazat('Номер не может быть пустым.', 'err'); return; }
+
+  const p = (state.projects||[]).find(x=>x.id===o.projectId);
+  if(!p){ dopPodpisClose(); return; }
+  if(dopNomera(p).indexOf(nom) !== -1){
+    skazat('Соглашение № ' + nom + ' уже подписано. Возьмите другой номер.', 'err');
+    return;
+  }
+
+  const btn = document.getElementById('dopPodpisOk');
+  if(btn){ btn.disabled = true; btn.textContent = 'Подписываем…'; }
+  try{
+    if(LOCAL_TEST){
+      (p.extraWorks||[]).forEach(e=>{ if(!(e.dopNo||'').trim()){ e.dopNo = nom; e.dopDate = o.data; } });
+    } else {
+      // ПЕРЕД подписанием дошлём несохранённое: если строка ещё не уехала
+      // на сервер, узкий запрос её не найдёт и она останется неподписанной,
+      // а на экране выглядела бы подписанной.
+      await persist();
+      const tronuty = await DB.podpisatDopSoglashenie(o.projectId, nom, o.data);
+      const po_id = new Map((tronuty||[]).map(r=>[r.id, r]));
+      (p.extraWorks||[]).forEach(e=>{
+        const r = po_id.get(e.id);
+        if(r){ e.dopNo = r.dop_no || ''; e.dopDate = r.dop_date || ''; }
+      });
+      markLocalClean();
+    }
+    uiDopNo = nom;          // печатать теперь предлагаем именно его
+    dopPodpisClose();
+    render();
+  }catch(e){
+    console.error('Подписание не прошло', e);
+    if(btn){ btn.disabled = false; btn.textContent = 'Подписать'; }
+    skazat('Не удалось подписать: ' + ((e && e.message) || 'проверьте связь') , 'err');
+  }
+}
+
 function renderExtraWorksBlock(proj){
-  const rows = (proj.extraWorks||[]).map((e,i)=>`
-    <div class="extra-row">
-      <input type="text" placeholder="наименование" value="${escapeAttr(e.name)}" data-extra="${i}|name">
-      <select data-extra="${i}|unit">
-        <option value="m2" ${e.unit==='m2'?'selected':''}>м²</option>
-        <option value="ml" ${e.unit==='ml'?'selected':''}>м.п.</option>
-        <option value="m3" ${e.unit==='m3'?'selected':''}>м³</option>
-        <option value="pcs" ${(e.unit==='pcs'||!e.unit)?'selected':''}>шт.</option>
-        <option value="days" ${e.unit==='days'?'selected':''}>дн.</option>
-      </select>
-      <input type="text" inputmode="decimal" placeholder="кол-во" value="${escapeAttr(e.qty)}" data-extra="${i}|qty">
-      <input type="text" inputmode="decimal" placeholder="цена" value="${escapeAttr(e.price)}" data-extra="${i}|price">
+  const vse = (proj.extraWorks||[]);
+  // Строка рисуется по её МЕСТУ В ОБЩЕМ СПИСКЕ (i), а не по месту
+  // в группе: обработчики правки и удаления считают именно по нему.
+  const stroka = (e, i, zamorozhena)=>`
+    <div class="extra-row${zamorozhena?' extra-row-frozen':''}">
+      ${zamorozhena
+        ? `<span class="extra-froz-name">${escapeHtml(e.name||'—')}</span>
+           <span class="extra-froz-cell">${UNIT_LABEL[e.unit]||''}</span>
+           <span class="extra-froz-cell">${escapeHtml(String(e.qty||''))}</span>
+           <span class="extra-froz-cell">${fmtMoney(num(e.price))}</span>`
+        : `<input type="text" placeholder="наименование" value="${escapeAttr(e.name)}" data-extra="${i}|name">
+           <select data-extra="${i}|unit">
+             <option value="m2" ${e.unit==='m2'?'selected':''}>м²</option>
+             <option value="ml" ${e.unit==='ml'?'selected':''}>м.п.</option>
+             <option value="m3" ${e.unit==='m3'?'selected':''}>м³</option>
+             <option value="pcs" ${(e.unit==='pcs'||!e.unit)?'selected':''}>шт.</option>
+             <option value="days" ${e.unit==='days'?'selected':''}>дн.</option>
+           </select>
+           <input type="text" inputmode="decimal" placeholder="кол-во" value="${escapeAttr(e.qty)}" data-extra="${i}|qty">
+           <input type="text" inputmode="decimal" placeholder="цена" value="${escapeAttr(e.price)}" data-extra="${i}|price">`}
       <span class="extra-sum" data-extra-sum="${i}">${fmtMoney(num(e.qty)*num(e.price))}</span>
       ${canAssign(proj) ? `<button class="sel-work-assign${e.assignedTo?' on':''}" data-assign-extra="${escapeAttr(e.id||'')}"
         ${e.assignedTo ? `style="--who:${whoColor(proj, e.assignedTo)}"` : ''}
         title="${e.assignedTo ? 'Назначено: ' + escapeAttr(assigneeLabel(proj, e.assignedTo)) : 'Назначить исполнителя'}"
         >${e.assignedTo ? escapeHtml(shortWho(assigneeLabel(proj, e.assignedTo))) : 'назначить'}</button>` : ''}
-      <button class="btn-icon" data-del-extra="${i}" title="Удалить">✕</button>
-    </div>`).join('');
+      ${zamorozhena
+        // Крестика у подписанной строки нет. Удаление сторожем НЕ закрыто:
+        // триггер на DELETE сработал бы и при удалении проекта. Значит
+        // защита здесь единственная. Случайная правка - это опечатка
+        // в поле, случайное удаление - осознанное нажатие.
+        ? `<span class="extra-zamok" title="Входит в подписанное соглашение — не меняется">🔒</span>`
+        : `<button class="btn-icon" data-del-extra="${i}" title="Удалить">✕</button>`}
+    </div>`;
+
+  const gruppy = dopNomera(proj).map(nom=>{
+    const svoi = vse.map((e,i)=>({e,i})).filter(x=> (x.e.dopNo||'').trim() === nom);
+    const sum = svoi.reduce((a,x)=> a + num(x.e.qty)*num(x.e.price), 0);
+    const dat = dopDataSoglasheniya(proj, nom);
+    return `<div class="extra-group">
+      <div class="extra-group-head">
+        <span>Соглашение № ${escapeHtml(nom)}${dat ? ' от ' + fmtDate(dat) : ''} · подписано</span>
+        <span class="extra-group-sum">${svoi.length} ${plural(svoi.length,'позиция','позиции','позиций')} · ${fmtMoney(sum)}</span>
+      </div>
+      ${svoi.map(x=> stroka(x.e, x.i, true)).join('')}
+    </div>`;
+  }).join('');
+
+  const svobodnye = vse.map((e,i)=>({e,i})).filter(x=> !(x.e.dopNo||'').trim());
+  const podpis = svobodnye.reduce((a,x)=> a + num(x.e.qty)*num(x.e.price), 0);
+  const rows = gruppy + `<div class="extra-group extra-group-open">
+      ${(gruppy && svobodnye.length) ? `<div class="extra-group-head">
+        <span>Ещё не подписано · войдёт в соглашение № ${escapeHtml(dopSleduyuschiyNomer(proj))}</span>
+        <span class="extra-group-sum">${podpis ? fmtMoney(podpis) : ''}</span></div>` : ''}
+      ${svobodnye.map(x=> stroka(x.e, x.i, false)).join('')}
+    </div>`;
 
   const filled = (proj.extraWorks||[]).filter(e=>(e.name||'').trim() || num(e.qty) || num(e.price));
   const sum = filled.reduce((s,e)=> s + num(e.qty) * num(e.price), 0);
@@ -15025,6 +15269,7 @@ function renderExtraWorksBlock(proj){
         </div>
         <div class="ew-actions">
           <button class="add-link" data-add-extra="1">+ Своя позиция</button>
+          ${svobodnye.length ? `<button class="btn btn-outline ew-podpisat" data-dop-podpisat="${proj.id}">Подписать соглашение № ${escapeHtml(dopSleduyuschiyNomer(proj))}</button>` : ''}
         </div>
       </div>
     </div>`;
@@ -15199,7 +15444,21 @@ function renderDogovorDocPanel(proj){
   const fields = [];
   if(t !== 'dogovor') fields.push(`<div class="cust-field"><label>Дата составления</label><input type="date" value="${escapeAttr(uiContractDate)}" data-contract-date></div>`);
   if(t === 'akt_etapa') fields.push(`<div class="cust-field"><label>Номер этапа</label><input type="text" placeholder="напр. 1" value="${escapeAttr(uiStageNo)}" data-stageno></div>`);
-  if(t === 'dopsogl') fields.push(`<div class="cust-field"><label>Номер доп. соглашения</label><input type="text" placeholder="напр. 1" value="${escapeAttr(uiDopNo)}" data-dopno></div>`);
+  if(t === 'dopsogl'){
+    // ВЫБОР соглашения, а не ввод номера. Раньше номер печатали руками,
+    // и он нигде не хранился: документ всегда собирался из ВСЕХ доп.
+    // работ проекта. Значит второй раз то же соглашение выходило другим.
+    const spisok = dopNomera(proj);
+    const svobodnyh = (proj.extraWorks||[]).filter(e=> !(e.dopNo||'').trim()).length;
+    fields.push(`<div class="cust-field"><label>Какое соглашение печатать</label>
+      <select data-dopno>
+        ${spisok.map(nom=>{
+          const d = dopDataSoglasheniya(proj, nom);
+          return `<option value="${escapeAttr(nom)}" ${uiDopNo===nom?'selected':''}>№ ${escapeHtml(nom)}${d ? ' от ' + fmtDate(d) : ''} · подписано</option>`;
+        }).join('')}
+        <option value="" ${!uiDopNo?'selected':''}>Черновик — ещё не подписанные${svobodnyh ? ' (' + svobodnyh + ')' : ''}</option>
+      </select></div>`);
+  }
   if(t === 'dopsrok') fields.push(`<div class="cust-field"><label>Количество рабочих дней</label><input type="text" inputmode="numeric" placeholder="если пусто — прочерк" value="${escapeAttr(uiContractDays)}" data-contract-days></div>`);
   if(t === 'raspiska' || t === 'akt_etapa' || t === 'rastorzhenie'){
     const lbl = t === 'akt_etapa' ? 'Сумма этапа, ₽' : t === 'raspiska' ? 'Полученная сумма, ₽' : 'Сумма взаиморасчёта, ₽';
@@ -16582,7 +16841,12 @@ function attachHandlers(){
   const stg = main.querySelector('[data-stageno]');
   if(stg) stg.addEventListener('input', ()=>{ uiStageNo = stg.value; });
   const dpn = document.querySelector('[data-dopno]');
-  if(dpn) dpn.addEventListener('input', ()=>{ uiDopNo = dpn.value; });
+  // Теперь это <select>, а не поле ввода: слушаем и change тоже.
+  if(dpn){
+    const vybor = ()=>{ uiDopNo = dpn.value; };
+    dpn.addEventListener('input', vybor);
+    dpn.addEventListener('change', vybor);
+  }
 
   // суммы надбавок лежат вне блока сметы — обновляем их отдельно.
   // Заодно правим сумму в шапке свёрнутого блока: человек чаще всего
@@ -16718,6 +16982,9 @@ function attachHandlers(){
       // ровно как это делает refPushWork для работ в помещении.
       if(w) ewPush(w.name, w.unit, refWorkPrice(w));
     });
+  });
+  main.querySelectorAll('[data-dop-podpisat]').forEach(el=>{
+    el.onclick = ()=> dopPodpisOpen(el.getAttribute('data-dop-podpisat'));
   });
   main.querySelectorAll('[data-add-extra]').forEach(el=>{
     el.onclick = ()=>{
