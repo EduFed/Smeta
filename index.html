@@ -2800,7 +2800,27 @@
     font-family:inherit;font-size:11px;font-weight:500;color:var(--ink-soft);
     text-decoration:underline;text-underline-offset:2px;cursor:pointer;}
   .extra-rassp:hover{color:var(--orange);}
-  /* .opl-row — вид берётся из общего правила строки позиции выше. */
+  /* .opl-row — вид берётся из общего правила строки позиции выше.
+     Строка выплаты мастеру — та же самая строка, плюс поле «кому». */
+  .opl-kto{min-width:0;}
+  /* Таблица «начислено / выплачено / остаток». Числа моноширинные
+     и прижаты вправо — так столбик читается, а не рассыпается. */
+  .vyp-head, .vyp-itog{display:grid;grid-template-columns:1fr auto auto auto;
+    gap:12px;align-items:center;padding:6px 0;}
+  .vyp-head{font-size:11px;color:var(--ink-soft);border-bottom:1px solid var(--paper-line);
+    margin-top:14px;}
+  .vyp-head span:not(:first-child){text-align:right;min-width:86px;}
+  .vyp-itog b{font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:500;
+    text-align:right;min-width:86px;}
+  .vyp-itog:not(.vyp-vsego) b:last-child{color:var(--orange);}
+  /* Переплата — не долг, и цветом долга её красить нельзя.
+     Селектор такой же длинный, как у правила выше НАРОЧНО: короткий
+     проигрывал ему по весу, и класс стоял, а цвет оставался
+     оранжевым. Тот же промах уже был 1 сентября 2026 на строках
+     позиций — правило перебивалось соседним, более длинным. */
+  .vyp-itog:not(.vyp-vsego) b.vyp-pereplata{color:var(--green);}
+  .vyp-vsego{border-top:1px solid var(--paper-line);margin-top:4px;font-weight:600;}
+  .vyp-vsego b{font-weight:600;}
   .opl-itogi{margin-top:16px;padding-top:12px;border-top:1px solid var(--paper-line);
     display:flex;flex-direction:column;gap:6px;max-width:420px;}
   .opl-itog{display:flex;justify-content:space-between;align-items:baseline;gap:14px;font-size:14px;color:var(--ink-soft);}
@@ -3414,7 +3434,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-02-145';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-02-146';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -6812,6 +6832,8 @@ const DB = {
         // что и снимки: новый запрос в общий массив выше однажды сместил
         // разбор на позицию и обнулил смету владельцу.
         'customer_payments(*),' +
+        // Выплаты мастерам — тем же вложенным полем и по той же причине.
+        'master_payouts(*),' +
         // Снимки едут ВЛОЖЕННЫМ полем проекта, а не отдельным запросом
         // в общий список выше. Причина — предупреждение из этого же файла:
         // 5 августа новый запрос вставили в середину массива, а в разбор
@@ -7018,6 +7040,19 @@ const DB = {
         // в одном месте: копейки нужны затем, чтобы деньги не жили
         // в числе с плавающей точкой — на стороне Робокассы этот урок
         // уже оплачен.
+        // ВЫПЛАТЫ МАСТЕРАМ. Зеркало оплат заказчика: те же копейки
+        // целым числом в базе, те же рубли в приложении, тот же перевод
+        // в одном месте. Отличие одно — у строки есть тот, КОМУ платили.
+        payouts: (p.master_payouts || []).slice()
+          .sort((a,b)=> String(b.paid_on||'').localeCompare(String(a.paid_on||'')))
+          .map(o=>({
+            id: o.id,
+            userId: o.user_id || '',
+            amount: (o.amount_kop === null || o.amount_kop === undefined)
+                      ? '' : String(o.amount_kop / 100),
+            paidOn: o.paid_on || '',
+            note: o.note || ''
+          })),
         payments: (p.customer_payments || []).slice()
           .sort((a,b)=> String(b.paid_on||'').localeCompare(String(a.paid_on||'')))
           .map(o=>({
@@ -7154,9 +7189,9 @@ const DB = {
     };
 
     const projRows = [], custRows = [], roomRows = [], openRows = [],
-          workRows = [], extraRows = [], pmatRows = [], payRows = [];
+          workRows = [], extraRows = [], pmatRows = [], payRows = [], vypRows = [];
     const delRooms = [], delWorks = [], delOpens = [], delExtra = [], delPmat = [],
-          delPay = [];
+          delPay = [], delVyp = [];
 
     cur.projects.forEach((p, pi)=>{
       // роль «смотрит» — сервер правки не примет. Не отправляем их вовсе,
@@ -7307,6 +7342,29 @@ const DB = {
       });
       wasPay.forEach((_, id)=> delPay.push(id));
 
+      // выплаты мастерам — тот же разбор, что и у оплат заказчика
+      const wasVyp = new Map(((was && was.payouts) || []).map(o=>[o.id, o]));
+      (p.payouts||[]).forEach(o=>{
+        if(!o.id) return;
+        // БЕЗ МАСТЕРА СТРОКУ НЕ ШЛЁМ. В базе user_id обязателен, и пустая
+        // строка ушла бы отказом, роняя сохранение всей сметы. Человек
+        // добавил выплату и ещё не выбрал, кому, — это нормальное
+        // состояние черновика, а не ошибка.
+        if(!o.userId) return;
+        const po = wasVyp.get(o.id);
+        if(!po || JSON.stringify(po) !== JSON.stringify(o)){
+          vypRows.push({
+            id: o.id, project_id: p.id,
+            user_id: o.userId,
+            amount_kop: Math.round(num(o.amount) * 100),
+            paid_on: o.paidOn || null,
+            note: txt(o.note)
+          });
+        }
+        wasVyp.delete(o.id);
+      });
+      wasVyp.forEach((_, id)=> delVyp.push(id));
+
       prevProj.delete(p.id);
     });
     const delProjects = Array.from(prevProj.keys());
@@ -7415,6 +7473,7 @@ const DB = {
     await drop('project_extra_works', 'id', delExtra);
     await drop('project_materials', 'id', delPmat);
     await drop('customer_payments', 'id', delPay);
+    await drop('master_payouts', 'id', delVyp);
     await drop('rooms', 'id', delRooms);
     await drop('projects', 'id', delProjects);
 
@@ -7427,6 +7486,7 @@ const DB = {
     await put('project_extra_works', extraRows, 'id');
     await put('project_materials', pmatRows, 'id');
     await put('customer_payments', payRows, 'id');
+    await put('master_payouts', vypRows, 'id');
 
     // ЦЕНЫ — ПОСЛЕДНИМИ. У таблицы цен внешний ключ на строку сметы:
     // пока строки нет, цену записать некуда. Порядок обязателен.
@@ -7837,6 +7897,7 @@ const DB = {
       });
       (p.extraWorks || []).forEach(e=>{ if(!e.id) e.id = newUuid(); });
       (p.payments   || []).forEach(o=>{ if(!o.id) o.id = newUuid(); });
+      (p.payouts    || []).forEach(o=>{ if(!o.id) o.id = newUuid(); });
       (p.materials  || []).forEach(m=>{ if(!m.id) m.id = uid('pm'); });
     });
   },
@@ -12578,6 +12639,7 @@ function normalizeProjects(){
     if(!p.customer) p.customer = {};
     if(!Array.isArray(p.extraWorks)) p.extraWorks = [];
     if(!Array.isArray(p.payments))   p.payments   = [];
+    if(!Array.isArray(p.payouts))    p.payouts    = [];
     if(!p.conds || typeof p.conds !== 'object') p.conds = {};   // условия объекта
     if(!Array.isArray(p.materials)) p.materials = [];           // материалы объекта
     // Снимки. Поле появилось позже проектов, поэтому у проекта из старой
@@ -14688,6 +14750,7 @@ function matUnitLabel(u){ return UNIT_LABEL[u] || u || ''; }
 let uiMatOpen = {};
 let uiPayoutOpen = {};   // раскрыт ли «Расклад по деньгам», по проекту
 let uiOplatyOpen = {};   // раскрыт ли «Оплаты заказчика», по проекту
+let uiVyplatyOpen = {};  // раскрыты ли «Выплаты мастерам», по проекту
 let uiExtraOpen = {};    // раскрыты ли «Дополнительные работы», по проекту
 let uiCondsOpen = {};    // раскрыты ли «Условия объекта», по проекту
 
@@ -15816,6 +15879,7 @@ function renderProjectView(proj){
     ${renderPayoutBlock(proj)}
 
     ${renderOplatyBlock(proj)}
+    ${renderVyplatyBlock(proj)}
 
     <div class="smeta-wrap" id="smetaBlock" style="margin-top:32px;">${renderSmetaBlock(proj)}</div>
 
@@ -16291,6 +16355,164 @@ function renderOplatyBlock(proj){
           <div class="opl-itog"><span>Получено</span><b>${fmtMoney(polucheno)}</b></div>
           <div class="opl-itog opl-itog-main"><span>${ostatok < 0 ? 'Переплата' : 'Остаток'}</span><b>${fmtMoney(Math.abs(ostatok))}</b></div>
         </div>
+      </div>
+    </div>`;
+}
+
+// ---------- ВЫПЛАТЫ МАСТЕРАМ (задача 2026-09-02-01) ----------
+//
+// Вторая половина денег по объекту. Приход от заказчика был сделан
+// 31 августа 2026, а расход — нет: владелец сказал «взял аванс
+// с объекта, но нигде не отмечается, сколько выплачено и сколько ещё
+// должны». Про мастеров вопрос тот же, только с другой стороны.
+//
+// ОТДЕЛЬНЫМ БЛОКОМ, А НЕ ВНУТРИ «РАСКЛАДА ПО ДЕНЬГАМ». В файле задачи
+// я сам написал «лентой внутри расклада», и это было неверно: приход
+// заказчика живёт своим блоком, а приход и расход — одно и то же
+// по смыслу. Разные места для них означали бы, что человек ищет
+// одно и то же в двух местах (CLAUDE.md, «одинаковое по смыслу —
+// одинаково и на вид»). Строка выплаты и строка оплаты — один и тот же
+// класс .opl-row, один и тот же порядок полей, один и тот же вид итога.
+//
+// НАЧИСЛЕНО берём из payoutBreakdown — той же функции, что печатает
+// наряд мастеру. Посчитай здесь иначе, и у мастера в наряде будет одна
+// сумма, а в остатке другая; разговор пойдёт не о работе, а о том,
+// кто ошибся.
+function vyplatySumma(proj, userId){
+  return (proj.payouts||[])
+    .filter(o=> !userId || o.userId === userId)
+    .reduce((s,o)=> s + num(o.amount), 0);
+}
+
+// Пересчитать шапку и итоги, не перерисовывая блок: иначе поле теряет
+// фокус на каждой набранной цифре (та же причина, что у oplatyShapku).
+function vyplatyShapku(proj){
+  const box = document.querySelector(`[data-vyp-acc="${proj.id}"] .mat-head-sum`);
+  if(!box) return;
+  const d = payoutBreakdown(proj);
+  const nachisleno = d.payoutAll;
+  const vyplacheno = vyplatySumma(proj);
+  const ostatok = nachisleno - vyplacheno;
+  const spisok = (proj.payouts||[]).filter(o=> num(o.amount) || (o.note||'').trim());
+  box.textContent = spisok.length
+    ? spisok.length + ' ' + plural(spisok.length,'выплата','выплаты','выплат') +
+      ' · выплачено ' + fmtMoney(vyplacheno) +
+      (ostatok > 0 ? ' · должны ' + fmtMoney(ostatok)
+                   : (ostatok < 0 ? ' · переплата ' + fmtMoney(-ostatok) : ' · рассчитались'))
+    : '';
+  // и таблица по мастерам
+  document.querySelectorAll(`[data-vyp-acc="${proj.id}"] [data-vyp-itog]`).forEach(el=>{
+    const uid = el.getAttribute('data-vyp-itog');
+    const c = d.crew.find(x=> x.userId === uid);
+    const nach = c ? c.payout : 0;
+    const vyp = vyplatySumma(proj, uid);
+    const b = el.querySelectorAll('b');
+    if(b.length === 3){
+      b[0].textContent = fmtMoney(nach);
+      b[1].textContent = fmtMoney(vyp);
+      b[2].textContent = fmtMoney(nach - vyp);
+      b[2].classList.toggle('vyp-pereplata', (nach - vyp) < 0);
+    }
+  });
+  const vsego = document.querySelector(`[data-vyp-acc="${proj.id}"] .vyp-vsego`);
+  if(vsego){
+    const b = vsego.querySelectorAll('b');
+    if(b.length === 3){
+      b[0].textContent = fmtMoney(nachisleno);
+      b[1].textContent = fmtMoney(vyplacheno);
+      b[2].textContent = fmtMoney(ostatok);
+    }
+  }
+}
+
+function renderVyplatyBlock(proj){
+  // Только там же, где «Расклад по деньгам»: без наряда некому платить,
+  // а мастеру этот блок не показывается ни при каких условиях — в нём
+  // чужие суммы. Свои деньги мастер видит в наряде.
+  if(!canAssign(proj)) return '';
+  const d = payoutBreakdown(proj);
+  const t = teamCache[proj.id];
+  const chleny = ((t && t.members) || []).filter(m=> !currentUser || m.user_id !== currentUser.id);
+  // Некому платить и нечего показывать — блока нет вовсе.
+  if(!chleny.length && !(proj.payouts||[]).length) return '';
+
+  const imya = (uid)=>{
+    const lab = (t && t.labels || {})[uid];
+    const m = chleny.find(x=> x.user_id === uid);
+    return lab || (m && m.email) || 'мастер';
+  };
+
+  // Список выбора — родной <select>: мастеров в бригаде до десяти,
+  // это короткий список, как единицы измерения. Правило про свой список
+  // с поиском (CLAUDE.md) заведено для длинных, где родной не прокручивался.
+  const vybor = (uid, i)=>
+    `<select class="opl-kto" data-vyp="${i}|userId" title="Кому выплачено">
+       <option value=""${uid ? '' : ' selected'}>кому…</option>
+       ${chleny.map(m=>`<option value="${escapeAttr(m.user_id)}"${m.user_id===uid?' selected':''}>${escapeHtml(imya(m.user_id))}</option>`).join('')}
+     </select>`;
+
+  const rows = (proj.payouts||[]).map((o,i)=>`
+    <div class="opl-row">
+      <input type="date" class="opl-data" value="${escapeAttr(o.paidOn||'')}" data-vyp="${i}|paidOn" title="Когда выплачено">
+      ${vybor(o.userId, i)}
+      <input type="text" class="opl-summa" inputmode="decimal" placeholder="сумма" value="${escapeAttr(o.amount)}" data-vyp="${i}|amount">
+      <input type="text" class="opl-note" placeholder="за что: аванс, за этап, наличными" value="${escapeAttr(o.note||'')}" data-vyp="${i}|note">
+      <button class="btn-icon" data-vyp-del="${i}" title="Удалить">✕</button>
+    </div>`).join('');
+
+  // В таблицу берём и тех, кому уже платили, даже если работ за ними
+  // больше не числится: вышел из проекта или работы переназначили —
+  // деньги всё равно ушли, и прятать их нельзя.
+  const uids = [];
+  d.crew.forEach(c=> uids.push(c.userId));
+  (proj.payouts||[]).forEach(o=>{ if(o.userId && uids.indexOf(o.userId) < 0) uids.push(o.userId); });
+
+  const nachislenoAll = d.payoutAll;
+  const vyplachenoAll = vyplatySumma(proj);
+  const ostatokAll = nachislenoAll - vyplachenoAll;
+
+  const stroki = uids.map(uid=>{
+    const c = d.crew.find(x=> x.userId === uid);
+    const nach = c ? c.payout : 0;
+    const vyp = vyplatySumma(proj, uid);
+    const vProekte = chleny.some(m=> m.user_id === uid);
+    const ost = nach - vyp;
+    // ПЕРЕПЛАТУ НЕ КРАСИМ КАК ДОЛГ. Оранжевый в этом приложении значит
+    // «на это посмотри»: остаток — то, что вы ещё должны. Переплата —
+    // ровно наоборот, и тем же цветом она читалась бы как долг вдвое
+    // больше. Бывает это не в теории: работы переназначили после
+    // выплаты, и начисление у человека упало ниже уже отданного.
+    return `<div class="vyp-itog" data-vyp-itog="${escapeAttr(uid)}">
+      <span class="who-chip" style="--who:${whoColor(proj, uid)}">${escapeHtml(imya(uid))}${vProekte ? '' : ' · вышел'}</span>
+      <b>${fmtMoney(nach)}</b><b>${fmtMoney(vyp)}</b><b class="${ost < 0 ? 'vyp-pereplata' : ''}">${fmtMoney(ost)}</b>
+    </div>`;
+  }).join('');
+
+  const spisok = (proj.payouts||[]).filter(o=> num(o.amount) || (o.note||'').trim());
+  const shapka = spisok.length
+    ? spisok.length + ' ' + plural(spisok.length,'выплата','выплаты','выплат') +
+      ' · выплачено ' + fmtMoney(vyplachenoAll) +
+      (ostatokAll > 0 ? ' · должны ' + fmtMoney(ostatokAll)
+                      : (ostatokAll < 0 ? ' · переплата ' + fmtMoney(-ostatokAll) : ' · рассчитались'))
+    : '';
+  const open = !!uiVyplatyOpen[proj.id];
+
+  return `
+    <div class="section vyplaty-block cust-acc ${open?'open':''}" data-vyp-acc="${proj.id}">
+      <button type="button" class="cust-head no-print" data-vyp-toggle="${proj.id}" aria-expanded="${open}">
+        <span class="chev">▾</span>
+        <span>💸 Выплаты мастерам</span>
+        <span class="mat-head-sum">${shapka}</span>
+      </button>
+      <div class="cust-body">
+        <div class="mat-note">кому вы уже заплатили. Мастер видит только свою строку — чужие суммы ему не показываются</div>
+        <div class="opl-list">${rows}</div>
+        <button class="add-link" data-vyp-add="1">+ Выплата</button>
+        ${uids.length ? `
+        <div class="vyp-head"><span></span><span>начислено</span><span>выплачено</span><span>остаток</span></div>
+        ${stroki}
+        <div class="vyp-itog vyp-vsego"><span>Итого</span>
+          <b>${fmtMoney(nachislenoAll)}</b><b>${fmtMoney(vyplachenoAll)}</b><b>${fmtMoney(ostatokAll)}</b></div>` : ''}
       </div>
     </div>`;
 }
@@ -17833,6 +18055,7 @@ function attachHandlers(){
   accToggle('data-extra-toggle', uiExtraOpen, 'data-extra-acc');
   accToggle('data-conds-toggle', uiCondsOpen, 'data-conds-acc');
   accToggle('data-opl-toggle',   uiOplatyOpen, 'data-opl-acc');
+  accToggle('data-vyp-toggle',   uiVyplatyOpen, 'data-vyp-acc');
 
   // ---------- оплаты заказчика ----------
   main.querySelectorAll('[data-opl-add]').forEach(el=>{
@@ -17866,6 +18089,41 @@ function attachHandlers(){
     el.addEventListener('input', apply);
     el.addEventListener('change', apply);
   });
+  // ---------- выплаты мастерам ----------
+  main.querySelectorAll('[data-vyp-add]').forEach(el=>{
+    el.onclick = ()=>{
+      proj.payouts = proj.payouts || [];
+      // Номер задаём сразу, при создании (грабля 47). Дата — сегодняшняя:
+      // выплату записывают в день, когда отдали.
+      const d = new Date();
+      const dd = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') +
+                 '-' + String(d.getDate()).padStart(2,'0');
+      // Мастера НЕ подставляем, даже если он в бригаде один: это деньги,
+      // и выбрать получателя должен человек. Пустая строка на сервер
+      // не уедет — см. разбор в saveDiff.
+      proj.payouts.unshift({ id: newUuid(), userId:'', amount:'', paidOn: dd, note:'' });
+      scheduleSave(); render();
+    };
+  });
+  main.querySelectorAll('[data-vyp-del]').forEach(el=>{
+    el.onclick = ()=>{
+      const i = parseInt(el.getAttribute('data-vyp-del'));
+      if(proj.payouts){ proj.payouts.splice(i,1); scheduleSave(); render(); }
+    };
+  });
+  main.querySelectorAll('[data-vyp]').forEach(el=>{
+    const apply = ()=>{
+      const [idx, field] = el.getAttribute('data-vyp').split('|');
+      const o = (proj.payouts||[])[idx];
+      if(!o) return;
+      o[field] = el.value;
+      vyplatyShapku(proj);
+      scheduleSave();
+    };
+    el.addEventListener('input', apply);
+    el.addEventListener('change', apply);
+  });
+
   main.querySelectorAll('[data-cond]').forEach(el=>{
     el.onclick = ()=>{
       const key = el.getAttribute('data-cond');
