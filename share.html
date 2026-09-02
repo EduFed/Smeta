@@ -82,14 +82,51 @@
   .plitka{background:color-mix(in srgb, var(--paper-line) 45%, transparent);}
   .plitka .zhdyom{display:flex;align-items:center;justify-content:center;height:100%;
     color:var(--ink-soft);font-size:11px;}
-  /* Просмотр на весь экран — как в приложении: тёмная подложка,
-     снимок вписан целиком, закрывается щелчком и Escape. */
-  .bolshoe{display:none;position:fixed;inset:0;z-index:50;background:rgba(0,0,0,.94);
-    align-items:center;justify-content:center;padding:16px;}
-  .bolshoe img{max-width:100%;max-height:100%;object-fit:contain;display:block;}
+  /* Просмотр на весь экран — лентой с перелистыванием, как в приложении.
+     Владелец 2 сентября 2026: «фото должно быть лентой с перелистыванием».
+
+     ЛЕНТУ ДЕЛАЕМ РОДНОЙ ПРОКРУТКОЙ С ПРИЛИПАНИЕМ, а не переносим сюда
+     механику приложения. Там лента живёт на transform и ручном разборе
+     касаний, потому что несёт на себе зум, комментарии и переключение
+     между уменьшенной копией и полным снимком — на странице заказчика
+     нет ничего из этого. Родная прокрутка даёт тот же жест и ту же
+     инерцию, но без математики, которую пришлось бы чинить отдельно
+     и в которой уже сидела ошибка (её правили 27 августа 2026). */
+  .bolshoe{display:none;position:fixed;top:0;right:0;bottom:0;left:0;
+    z-index:50;background:rgba(0,0,0,.94);}
+  .bolshoe.on{display:block;}
+  .bolshoe-lenta{position:absolute;top:0;right:0;bottom:0;left:0;
+    display:flex;overflow-x:auto;overflow-y:hidden;
+    scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;
+    /* Не пускать прокрутку наружу: без этой строки палец, дойдя
+       до края ленты, начинает тянуть страницу под ней. Владелец
+       2 сентября 2026: «провожу пальцем и снизу фото скроллится
+       страница». Вторая половина решения — замок на body, см. JS. */
+    overscroll-behavior:contain;
+    scrollbar-width:none;}
+  .bolshoe-lenta::-webkit-scrollbar{display:none;}
+  .bolshoe-kadr{flex:0 0 100%;width:100%;height:100%;scroll-snap-align:center;
+    display:flex;align-items:center;justify-content:center;
+    padding:16px;box-sizing:border-box;}
+  .bolshoe-kadr img{max-width:100%;max-height:100%;object-fit:contain;display:block;}
+  .bolshoe-kadr .zhdyom{color:rgba(255,255,255,.5);font-size:12px;}
   .bolshoe-zakryt{position:absolute;top:12px;right:12px;width:44px;height:44px;
     border:none;border-radius:50%;background:rgba(0,0,0,.55);color:#fff;
-    font-size:20px;cursor:pointer;line-height:1;}
+    font-size:20px;cursor:pointer;line-height:1;z-index:2;}
+  /* Какой снимок из скольких. Без счётчика в ленте не видно, сколько
+     ещё осталось, и человек не знает, докрутил он до конца или нет. */
+  .bolshoe-schet{position:absolute;top:18px;left:50%;transform:translateX(-50%);
+    z-index:2;color:#fff;font-size:12px;letter-spacing:.04em;
+    background:rgba(0,0,0,.5);padding:5px 12px;border-radius:20px;}
+  .bolshoe-strelka{position:absolute;top:50%;transform:translateY(-50%);
+    width:44px;height:44px;border:none;border-radius:50%;
+    background:rgba(0,0,0,.55);color:#fff;font-size:20px;line-height:1;
+    cursor:pointer;z-index:2;}
+  .bolshoe-strelka.vlevo{left:12px;}
+  .bolshoe-strelka.vpravo{right:12px;}
+  /* На узком экране стрелок нет: там листают пальцем, а кнопки
+     только закрывают собой снимок. */
+  @media (max-width:700px){ .bolshoe-strelka{display:none;} }
 </style>
 </head>
 <body>
@@ -242,6 +279,9 @@ function narisovat(d){
   // закрытое, прямых адресов у снимков нет. Просим их после отрисовки,
   // пачками, чтобы страница показалась сразу, а не ждала картинок.
   const foto = d.photos || [];
+  // Порядок снимков нужен ленте: она листает по нему, а не по тому,
+  // в каком порядке пришли подписанные адреса.
+  fotoPoryadok = foto.map(f=> f.id);
   if(foto.length){
     ch.push('<h2>Фотографии</h2>');
     ch.push('<div class="plitki">' + foto.map(f=>
@@ -323,30 +363,207 @@ async function podgruzitFoto(ids){
       kl.appendChild(img);
       img.src = mini[id] || u;
       // На весь экран — всегда полный: там его и смотрят.
-      kl.onclick = ()=> pokazatBolshoe(u);
+      fotoAdresa[id] = u;
+      kl.onclick = ()=> pokazatBolshoe(id);
     });
   }
 }
 
-function pokazatBolshoe(u){
-  let b = document.getElementById('bolshoe');
-  if(!b){
-    b = document.createElement('div');
-    b.id = 'bolshoe';
-    b.className = 'bolshoe';
-    b.innerHTML = '<button class="bolshoe-zakryt" aria-label="Закрыть">✕</button><img alt="">';
-    document.body.appendChild(b);
-    // Закрывается щелчком мимо, крестиком и Escape — все три одинаково,
-    // как во всех обычных окнах приложения.
-    b.addEventListener('click', e=>{ if(e.target === b || e.target.tagName === 'BUTTON') zakrytBolshoe(); });
-    document.addEventListener('keydown', e=>{ if(e.key === 'Escape') zakrytBolshoe(); });
+// ---------- ПРОСМОТР СНИМКОВ ЛЕНТОЙ ----------
+let fotoPoryadok = [];      // номера снимков по порядку страницы
+const fotoAdresa = {};      // номер -> полный адрес
+let kadrSeychas = 0;
+let prokrutkaDo = 0;
+
+// ЗАМОК СТРАНИЦЫ.
+// Владелец 2 сентября 2026: «провожу пальцем и снизу фото скроллится
+// страница». Одного overflow:hidden на body мало — на iOS страница
+// всё равно тянется. Работает только приём с position:fixed, но он
+// сбрасывает прокрутку в ноль, поэтому её надо запомнить и вернуть,
+// иначе закрыв снимок человек окажется в начале сметы.
+function zamokStranicy(vkl){
+  const b = document.body;
+  if(vkl){
+    prokrutkaDo = window.scrollY || window.pageYOffset || 0;
+    b.style.position = 'fixed';
+    b.style.top = (-prokrutkaDo) + 'px';
+    b.style.left = '0';
+    b.style.right = '0';
+    b.style.width = '100%';
+  } else {
+    b.style.position = ''; b.style.top = '';
+    b.style.left = ''; b.style.right = ''; b.style.width = '';
+    window.scrollTo(0, prokrutkaDo);
   }
-  b.querySelector('img').src = u;
-  b.style.display = 'flex';
 }
+
+function bolshoeSobrat(){
+  let b = document.getElementById('bolshoe');
+  if(b) return b;
+  b = document.createElement('div');
+  b.id = 'bolshoe';
+  b.className = 'bolshoe';
+  b.innerHTML =
+      '<div class="bolshoe-lenta" id="bolshoeLenta">'
+    + fotoPoryadok.map(id=>
+        '<div class="bolshoe-kadr" data-kadr="' + ekran(id) + '">'
+        + '<div class="zhdyom">…</div></div>').join('')
+    + '</div>'
+    + '<div class="bolshoe-schet" id="bolshoeSchet"></div>'
+    + '<button class="bolshoe-strelka vlevo" aria-label="Предыдущий">‹</button>'
+    + '<button class="bolshoe-strelka vpravo" aria-label="Следующий">›</button>'
+    + '<button class="bolshoe-zakryt" aria-label="Закрыть">✕</button>';
+  document.body.appendChild(b);
+
+  const lenta = b.querySelector('#bolshoeLenta');
+
+  // КУДА ДОЕХАЛИ — СПРАШИВАЕМ У ЛЕНТЫ, А НЕ ЖДЁМ ОДНОГО СОБЫТИЯ.
+  //
+  // Сначала здесь стоял только слушатель scroll. Проверка 2 сентября
+  // 2026 показала, что полагаться на него нельзя: лента уезжала
+  // (scrollLeft менялся с 0 на 2480), а событие не приходило ни разу —
+  // счётчик так и держал «1 / 4». Один источник правды о положении
+  // ленты оказался источником, который иногда молчит.
+  //
+  // Теперь пересчёт зовут все, кто может сдвинуть ленту:
+  //  — scroll, где он есть;
+  //  — scrollend, где он есть (приходит, когда прилипание уже доехало);
+  //  — конец касания и колесо мыши — на случай, если молчат оба первых.
+  // Пересчёт дешёвый и идемпотентный: если кадр тот же, он ничего
+  // не делает.
+  ['scroll','scrollend'].forEach(imya=>
+    lenta.addEventListener(imya, kadrPereschitat, { passive:true }));
+  ['pointerup','touchend','wheel'].forEach(imya=>
+    lenta.addEventListener(imya, ()=> setTimeout(kadrPereschitat, 120),
+                           { passive:true }));
+
+  b.querySelector('.vlevo').onclick  = ()=> listat(-1);
+  b.querySelector('.vpravo').onclick = ()=> listat(1);
+  b.querySelector('.bolshoe-zakryt').onclick = zakrytBolshoe;
+
+  // ЗАКРЫТИЕ ЩЕЛЧКОМ ПО ПОДЛОЖКЕ — но только если палец не ехал.
+  // Без этой проверки лента закрывалась бы в конце каждого пролистывания:
+  // браузер иногда доводит смахивание до обычного щелчка.
+  let nachalo = null;
+  lenta.addEventListener('pointerdown', e=>{ nachalo = { x:e.clientX, y:e.clientY }; });
+  lenta.addEventListener('click', e=>{
+    if(e.target.tagName === 'IMG') return;         // по самому снимку не закрываем
+    if(nachalo && Math.abs(e.clientX - nachalo.x) > 10) return;
+    zakrytBolshoe();
+  });
+
+  document.addEventListener('keydown', e=>{
+    if(!b.classList.contains('on')) return;
+    if(e.key === 'Escape'){ zakrytBolshoe(); return; }
+    if(e.key === 'ArrowLeft')  listat(-1);
+    if(e.key === 'ArrowRight') listat(1);
+  });
+
+  // Повернули устройство — ширина кадра другая, и лента встала бы
+  // между снимками. Возвращаем её на текущий кадр.
+  window.addEventListener('resize', ()=>{
+    if(!b.classList.contains('on')) return;
+    lentaK(kadrSeychas);
+  });
+
+  return b;
+}
+
+// ЕДИНСТВЕННОЕ МЕСТО, КОТОРОЕ ДВИГАЕТ ЛЕНТУ.
+//
+// БЕЗ ПЛАВНОСТИ, И ЭТО НЕ ЛЕНЬ. Проверено 2 сентября 2026 в настоящем
+// браузере, на четырёх снимках: при scroll-snap-type: x mandatory лента
+// не двигается ни от scrollTo({behavior:'smooth'}), ни от присваивания
+// scrollLeft при style.scrollBehavior = 'smooth'. Счётчик оставался
+// на «1 / 4» после пяти нажатий стрелки подряд. То же присваивание
+// без плавности отрабатывает сразу и точно.
+//
+// Прилипание и плавная прокрутка спорят друг с другом, и спорят
+// по-разному в разных браузерах. Выбор между «красиво, но иногда
+// не листает» и «просто листает» тут очевиден.
+//
+// Пальцем при этом всё плавно: смахивание ведёт РОДНАЯ прокрутка
+// со своей инерцией, эта функция в нём не участвует вовсе. Стрелки —
+// только для мыши, там мгновенная смена кадра привычна.
+function lentaK(i){
+  const l = document.getElementById('bolshoeLenta');
+  if(!l) return;
+  l.scrollLeft = i * l.clientWidth;
+  // Своё же движение отмечаем сами, не дожидаясь события: его может
+  // и не прийти (см. выше). Палец по-прежнему считается пересчётом.
+  kadrSeychas = i;
+  kadryObnovit();
+}
+
+// Прочитать положение ленты и, если кадр сменился, обновить показ.
+function kadrPereschitat(){
+  const l = document.getElementById('bolshoeLenta');
+  if(!l || !l.clientWidth) return;
+  const i = Math.min(Math.max(0, Math.round(l.scrollLeft / l.clientWidth)),
+                     fotoPoryadok.length - 1);
+  if(i !== kadrSeychas){ kadrSeychas = i; kadryObnovit(); }
+}
+
+function listat(kuda){
+  const i = Math.min(Math.max(0, kadrSeychas + kuda), fotoPoryadok.length - 1);
+  lentaK(i);
+}
+
+// Грузим только текущий снимок и по одному соседу с каждой стороны.
+// Остальным адрес снимаем: полные файлы тяжёлые, и держать в памяти
+// все двадцать семь незачем — при возврате они подставятся снова.
+function kadryObnovit(){
+  const schet = document.getElementById('bolshoeSchet');
+  if(schet) schet.textContent = (kadrSeychas + 1) + ' / ' + fotoPoryadok.length;
+
+  // Стрелку у края убираем совсем. Серая неработающая кнопка заставляет
+  // гадать, сломалось оно или снимки кончились.
+  const vl = document.querySelector('.bolshoe-strelka.vlevo');
+  const vp = document.querySelector('.bolshoe-strelka.vpravo');
+  if(vl) vl.style.display = kadrSeychas > 0 ? '' : 'none';
+  if(vp) vp.style.display = kadrSeychas < fotoPoryadok.length - 1 ? '' : 'none';
+
+  fotoPoryadok.forEach((id, i)=>{
+    const kadr = document.querySelector('[data-kadr="' + CSS.escape(id) + '"]');
+    if(!kadr) return;
+    const nuzhen = Math.abs(i - kadrSeychas) <= 1;
+    const u = fotoAdresa[id];
+    if(!nuzhen){
+      if(kadr.firstChild && kadr.firstChild.tagName === 'IMG'){
+        kadr.innerHTML = '<div class="zhdyom">…</div>';
+      }
+      return;
+    }
+    if(!u){ kadr.innerHTML = '<div class="zhdyom">нет снимка</div>'; return; }
+    let img = kadr.querySelector('img');
+    if(!img){
+      img = document.createElement('img');
+      img.alt = '';
+      img.decoding = 'async';
+      img.onerror = ()=>{ kadr.innerHTML = '<div class="zhdyom">нет снимка</div>'; };
+      kadr.innerHTML = '';
+      kadr.appendChild(img);
+      img.src = u;
+    }
+  });
+}
+
+function pokazatBolshoe(id){
+  const i = fotoPoryadok.indexOf(id);
+  if(i < 0) return;
+  const b = bolshoeSobrat();
+  b.classList.add('on');
+  zamokStranicy(true);
+  // Ширина кадра известна только после показа — до него она нулевая,
+  // и лента уехала бы в начало. lentaK сам поставит номер и перерисует.
+  lentaK(i);
+}
+
 function zakrytBolshoe(){
   const b = document.getElementById('bolshoe');
-  if(b){ b.style.display = 'none'; b.querySelector('img').src = ''; }
+  if(!b || !b.classList.contains('on')) return;
+  b.classList.remove('on');
+  zamokStranicy(false);
 }
 
 otkryt();

@@ -2586,6 +2586,10 @@
 
   /* Сайдбар лежит на слое 1000, поэтому меню должно быть выше него,
      иначе оно открывается под панелью и его не видно. */
+  /* Прозрачный лист под всплывающим меню. Ловит нажатие мимо, чтобы оно
+     не дошло до списка проектов под ним. Ничего не рисует: он нужен
+     не для вида, а чтобы принять нажатие на себя. */
+  .menu-fon{position:fixed;top:0;right:0;bottom:0;left:0;z-index:5299;background:transparent;}
   .status-menu{display:none;position:fixed;z-index:5300;min-width:190px;padding:4px;
     background:var(--white);border:1px solid var(--paper-line);border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.25);}
   .status-menu button{display:flex;align-items:center;gap:9px;width:100%;padding:8px 10px;border:none;
@@ -3410,7 +3414,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-02-144';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-02-145';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -15358,6 +15362,75 @@ function renderArchiveView(){
 // Меню действий над проектом. Одно на все устройства: правой кнопкой
 // с мышью, долгим нажатием на сенсоре, кнопкой «⋯» при наведении.
 // Там, где мыши нет, свайп остаётся коротким путём к тем же действиям.
+// ---------- ВСПЛЫВАЮЩИЕ МЕНЮ: ОДИН ФОН НА ВСЕХ ----------
+//
+// Правка 2 сентября 2026. Владелец: «при нажатии мимо окна попадаем
+// в список и там сразу нажимается то, куда попали. Нужно, чтобы первый
+// клик был просто закрытием меню».
+//
+// Прежде нажатие мимо гасилось слушателями на document: pointerdown
+// в перехвате, следом click, оба со stopImmediatePropagation. Замысел
+// был верный, а держался на порядке событий — и держался плохо:
+//
+//  — выбрав пункт меню, человек закрывал его через close(), а слушатели
+//    оставались висеть на document навсегда. Каждое открытие вешало ещё
+//    пару, и они копились всю сессию;
+//  — первый же из накопившихся глушил всех остальных своим
+//    stopImmediatePropagation, и до слушателя текущего меню дело
+//    не доходило;
+//  — pointerup и mouseup не гасились вовсе.
+//
+// Теперь под меню кладётся прозрачный лист во весь экран. Нажатие мимо
+// попадает В НЕГО — не в список проектов, не в кнопку, ни во что под ним.
+// Гасить нечего: событие туда просто не доходит, каким бы оно ни было
+// и в каком бы порядке ни пришло.
+//
+// Закрываем по click, а НЕ по pointerdown, и это важно. Сними лист
+// на pointerdown — и pointerup с click придутся уже на то, что лежит
+// ниже, а как браузер поступит с наполовину осиротевшим нажатием,
+// зависит от браузера. Лист держится до конца нажатия и уносит его
+// с собой целиком.
+let menuFon = null;          // прозрачный лист под открытым меню
+let menuOtkryto = null;      // само меню — чтобы Escape знал, что закрывать
+
+function menuZakryt(){
+  if(menuOtkryto){ menuOtkryto.style.display = 'none'; menuOtkryto = null; }
+  if(menuFon){ menuFon.remove(); menuFon = null; }
+  document.removeEventListener('keydown', menuEscape, true);
+}
+
+function menuEscape(e){
+  if(e.key === 'Escape'){ e.preventDefault(); menuZakryt(); }
+}
+
+// Показать меню в точке (x, y) и подложить под него лист.
+// Меню — обычное всплывающее, а не окно решения: закрывается и мимо,
+// и по Escape. Правило «окно решения не закрывается жестом» (CLAUDE.md)
+// сюда не относится — здесь нечего терять, выбор ещё не начат.
+function menuPokazat(m, x, y){
+  menuZakryt();                       // двух открытых сразу быть не должно
+
+  menuFon = document.createElement('div');
+  menuFon.className = 'menu-fon no-print';
+  menuFon.addEventListener('click', e=>{ e.preventDefault(); menuZakryt(); });
+  // Правая кнопка по листу тоже закрывает — и своё меню браузера
+  // поверх нашего не показывает.
+  menuFon.addEventListener('contextmenu', e=>{ e.preventDefault(); menuZakryt(); });
+  document.body.appendChild(menuFon);
+
+  // показываем и только потом меряем: до показа высота неизвестна
+  m.style.visibility = 'hidden';
+  m.style.display = 'block';
+  m.style.left = '0px'; m.style.top = '0px';
+  const r = m.getBoundingClientRect();
+  m.style.left = Math.min(Math.max(8, x), Math.max(8, window.innerWidth  - r.width  - 8)) + 'px';
+  m.style.top  = Math.min(Math.max(8, y), Math.max(8, window.innerHeight - r.height - 8)) + 'px';
+  m.style.visibility = '';
+
+  menuOtkryto = m;
+  document.addEventListener('keydown', menuEscape, true);
+}
+
 function projMenu(id, x, y){
   // если открыто другое меню — закрываем, двух сразу быть не должно
   const prev = document.getElementById('statusMenu');
@@ -15386,7 +15459,7 @@ function projMenu(id, x, y){
     + `<div class="sm-sep"></div>`
     + `<button data-act="del" class="danger"><i class="none"></i>Удалить проект</button>`;
 
-  const close = ()=>{ m.style.display = 'none'; };
+  const close = ()=> menuZakryt();
 
   m.querySelectorAll('[data-st]').forEach(b=>{
     b.onclick = ()=>{
@@ -15418,51 +15491,19 @@ function projMenu(id, x, y){
     };
   });
 
-  // показываем и только потом меряем: до показа высота неизвестна
-  m.style.visibility = 'hidden';
-  m.style.display = 'block';
-  m.style.left = '0px'; m.style.top = '0px';
-  const r = m.getBoundingClientRect();
-  m.style.left = Math.min(Math.max(8, x), Math.max(8, window.innerWidth  - r.width  - 8)) + 'px';
-  m.style.top  = Math.min(Math.max(8, y), Math.max(8, window.innerHeight - r.height - 8)) + 'px';
-  m.style.visibility = '';
-
-  // Первое нажатие мимо меню должно только закрывать его. Раньше событие
-  // шло дальше и сразу открывало то, во что человек ткнул, — меню исчезало,
-  // и вместо него открывался другой проект или экран.
-  // Гасим всю цепочку: и сам pointerdown, и следующий за ним click,
-  // иначе браузер всё равно доведёт нажатие до кнопки под курсором.
-  const swallow = (e)=>{
-    e.preventDefault();
-    e.stopPropagation();
-    if(e.stopImmediatePropagation) e.stopImmediatePropagation();
-  };
-  const offClick = (e)=>{
-    if(m.contains(e.target)) return;
-    swallow(e);
-    document.removeEventListener('click', offClick, true);
-  };
-  const off = (e)=>{
-    if(m.contains(e.target)) return;
-    swallow(e);
-    close();
-    document.removeEventListener('pointerdown', off, true);
-    // click прилетит следом за pointerdown — снимаем и его
-    setTimeout(()=> document.removeEventListener('click', offClick, true), 350);
-  };
-  setTimeout(()=>{
-    document.addEventListener('pointerdown', off, true);
-    document.addEventListener('click', offClick, true);
-  }, 0);
+  menuPokazat(m, x, y);
 }
 
 // ВСПЛЫВАЮЩЕЕ МЕНЮ НАЗНАЧЕНИЯ (наряды, с 2026-08-10-11).
-// Каркас — показ, позиционирование и закрытие первым нажатием мимо —
-// повторяет openStatusMenu намеренно, а не переиспользует его: там
-// в закрытии сидит разбор случая, который стоил отдельной правки
-// (нажатие мимо гасилось не полностью, и меню исчезало, а под ним
-// сразу открывалось то, во что ткнули). Трогать работающее ради
-// красоты не стал.
+// Показ, положение и закрытие первым нажатием мимо — общие с меню
+// проекта, через menuPokazat/menuZakryt.
+//
+// До 2 сентября 2026 этот кусок был здесь СКОПИРОВАН, и в комментарии
+// стояло «трогать работающее ради красоты не стал». Оно и не работало:
+// в обеих копиях сидела одна и та же ошибка, а замечена она была
+// в одной — ровно то, о чём правило «одинаковое по смыслу — одинаково
+// и на вид» в CLAUDE.md. Починили в общем месте, и второе меню
+// починилось само.
 function openAssignMenu(x, y, proj, ids, roomId, kind){
   const prev = document.getElementById('assignMenu');
   if(prev) prev.style.display = 'none';
@@ -15514,7 +15555,7 @@ function openAssignMenu(x, y, proj, ids, roomId, kind){
       + `<button data-uid="" class="${cur?'':'on'}"><i class="none"></i>Снять назначение</button>`;
   }
 
-  const close = ()=>{ m.style.display = 'none'; };
+  const close = ()=> menuZakryt();
 
   m.querySelectorAll('[data-uid]').forEach(b=>{
     b.onclick = async ()=>{
@@ -15524,34 +15565,7 @@ function openAssignMenu(x, y, proj, ids, roomId, kind){
     };
   });
 
-  m.style.visibility = 'hidden';
-  m.style.display = 'block';
-  m.style.left = '0px'; m.style.top = '0px';
-  const r = m.getBoundingClientRect();
-  m.style.left = Math.min(Math.max(8, x), Math.max(8, window.innerWidth  - r.width  - 8)) + 'px';
-  m.style.top  = Math.min(Math.max(8, y), Math.max(8, window.innerHeight - r.height - 8)) + 'px';
-  m.style.visibility = '';
-
-  const swallow = (e)=>{
-    e.preventDefault(); e.stopPropagation();
-    if(e.stopImmediatePropagation) e.stopImmediatePropagation();
-  };
-  const offClick = (e)=>{
-    if(m.contains(e.target)) return;
-    swallow(e);
-    document.removeEventListener('click', offClick, true);
-  };
-  const off = (e)=>{
-    if(m.contains(e.target)) return;
-    swallow(e);
-    close();
-    document.removeEventListener('pointerdown', off, true);
-    setTimeout(()=> document.removeEventListener('click', offClick, true), 350);
-  };
-  setTimeout(()=>{
-    document.addEventListener('pointerdown', off, true);
-    document.addEventListener('click', offClick, true);
-  }, 0);
+  menuPokazat(m, x, y);
 }
 
 function findWorkByLid(proj, lid){
