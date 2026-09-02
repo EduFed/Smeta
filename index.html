@@ -2081,6 +2081,9 @@
   .plan-price{font-family:'JetBrains Mono',monospace;font-size:24px;font-weight:600;color:var(--ink);margin-bottom:2px;}
   .plan-price small{font-size:12px;font-weight:400;color:var(--ink-soft);}
   .plan-price-note{font-size:11px;color:var(--ink-soft);margin-bottom:16px;min-height:15px;}
+  /* Годовая сумма внутри заметки — это ВТОРАЯ ЦЕНА, а не слово в тексте.
+     Тем же цветом, что и главная цена, иначе теряется в сером. */
+  .plan-price-note b{color:var(--ink);font-weight:600;}
   .plan-feats{list-style:none;margin:0 0 18px;padding:0;display:flex;flex-direction:column;gap:11px;flex:1;}
   .plan-feats li{font-size:13px;line-height:1.45;color:var(--ink);display:flex;gap:10px;align-items:flex-start;}
   /* иконки-кружки вместо символов */
@@ -3147,13 +3150,15 @@
 
     <div class="plan-banner" id="planBanner"></div>
 
-    <!-- ВЫБОР СРОКА. По умолчанию ГОД: «продавать годовую вперёд»
-         (docs/ТАРИФЫ.md). Подарок подписан рядом с годовой ценой и
-         только там - складывать его с пробным периодом нельзя,
-         это обещало бы 2,5 месяца вместо двух. -->
+    <!-- ВЫБОР СРОКА. По умолчанию МЕСЯЦ (владелец, 2 сентября 2026:
+         годовая сумма первым числом пугает). Годовая при этом никуда
+         не делась — она стоит второй ценой под месячной, с выгодой
+         в рублях. Подарок подписан здесь, на кнопке, и только здесь:
+         складывать его с пробным периодом нельзя, это обещало бы
+         2,5 месяца вместо двух (docs/ТАРИФЫ.md). -->
     <div class="plan-period" id="planPeriod">
-      <button type="button" class="plan-period-btn" data-period="month">На месяц</button>
-      <button type="button" class="plan-period-btn on" data-period="year">На год<span class="plan-period-gift">два месяца в подарок</span></button>
+      <button type="button" class="plan-period-btn on" data-period="month">На месяц</button>
+      <button type="button" class="plan-period-btn" data-period="year">На год<span class="plan-period-gift">два месяца в подарок</span></button>
     </div>
 
     <div class="plan-grid">
@@ -3180,7 +3185,7 @@
         <span class="plan-col-badge">Рекомендуем</span>
         <div class="plan-name"><svg class="plan-logo" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><rect x="6" y="6" width="88" height="88" rx="18" fill="none" stroke="var(--orange)" stroke-width="5"/><path d="M30 64 L30 42 L50 28 L70 42 L70 64" fill="none" stroke="var(--orange)" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/><path d="M43 64 L43 51 L57 51 L57 64" fill="none" stroke="var(--orange)" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/></svg>Полный доступ</div>
         <div class="plan-price">890 ₽ <small>/ месяц</small></div>
-        <div class="plan-price-note">или 8 900 ₽ в год — два месяца в подарок</div>
+        <div class="plan-price-note">или <b>8 900 ₽ в год</b> — выгода 1 780 ₽</div>
         <ul class="plan-feats">
           <li class="yes"><span class="ic"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>Всё из бесплатного тарифа</span></li>
           <li class="yes"><span class="ic"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>Неограниченное число проектов и помещений</span></li>
@@ -3198,7 +3203,7 @@
       <div class="plan-col" id="planColTeam">
         <div class="plan-name"><svg class="plan-logo" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><rect x="6" y="6" width="88" height="88" rx="18" fill="none" stroke="var(--ink-soft)" stroke-width="5"/><path d="M30 64 L30 42 L50 28 L70 42 L70 64" fill="none" stroke="var(--ink-soft)" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/><path d="M43 64 L43 51 L57 51 L57 64" fill="none" stroke="var(--ink-soft)" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/></svg>Бригада</div>
         <div class="plan-price">1 790 ₽ <small>/ месяц</small></div>
-        <div class="plan-price-note" data-svoyo="цена двух подписок, а мест пять">или 17 900 ₽ в год — два месяца в подарок<br>цена двух подписок, а мест пять</div>
+        <div class="plan-price-note" data-svoyo="цена двух подписок, а мест пять">или <b>17 900 ₽ в год</b> — выгода 3 580 ₽<br>цена двух подписок, а мест пять</div>
         <ul class="plan-feats">
           <li class="yes"><span class="ic"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>Всё из полного доступа</span></li>
           <li class="lim"><span class="ic">5</span><span>Пять мест: вы и ещё четверо мастеров</span></li>
@@ -3213,7 +3218,7 @@
       <div class="plan-col" id="planColFore">
         <div class="plan-name"><svg class="plan-logo" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><rect x="6" y="6" width="88" height="88" rx="18" fill="none" stroke="var(--ink-soft)" stroke-width="5"/><path d="M30 64 L30 42 L50 28 L70 42 L70 64" fill="none" stroke="var(--ink-soft)" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/><path d="M43 64 L43 51 L57 51 L57 64" fill="none" stroke="var(--ink-soft)" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/></svg>Прораб</div>
         <div class="plan-price">2 900 ₽ <small>/ месяц</small></div>
-        <div class="plan-price-note" data-svoyo="для тех, кто нанимает мастеров">или 29 000 ₽ в год — два месяца в подарок<br>для тех, кто нанимает мастеров</div>
+        <div class="plan-price-note" data-svoyo="для тех, кто нанимает мастеров">или <b>29 000 ₽ в год</b> — выгода 5 800 ₽<br>для тех, кто нанимает мастеров</div>
         <ul class="plan-feats">
           <li class="yes"><span class="ic"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>Всё из «Бригады»</span></li>
           <li class="lim"><span class="ic">10</span><span>Десять мест: вы и ещё девять мастеров</span></li>
@@ -3405,7 +3410,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-02-143';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-02-144';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -4685,7 +4690,14 @@ const PLAN_CENY = {
 };
 const PLAN_KOLONKI = { pro:'planColPro', brigada:'planColTeam', prorab:'planColFore' };
 
-let uiPlanPeriod = 'year';   // по умолчанию год: «продавать годовую вперёд»
+// ПО УМОЛЧАНИЮ — МЕСЯЦ. Правило владельца, 2 сентября 2026: «годовые
+// цены сразу напугают пользователей». Прежде окно открывалось на годе,
+// и первое, что видел мастер, было 8 900 ₽ — сумма, которую он сравнивал
+// не с пользой, а с дневным заработком.
+// В docs/ТАРИФЫ.md записано «продавать годовую вперёд», и это остаётся
+// верным: годовую продаём — но вторым числом, рядом с месячной, где она
+// выглядит выгодой, а не ценником.
+let uiPlanPeriod = 'month';
 
 function planCenyNarisovat(){
   document.querySelectorAll('#planPeriod .plan-period-btn').forEach(b=>{
@@ -4701,12 +4713,26 @@ function planCenyNarisovat(){
     if(cena) cena.innerHTML = fmtMoney(god ? c.year : c.month) +
       ' <small>/ ' + (god ? 'год' : 'месяц') + '</small>';
     if(nota){
+      // ВЫГОДУ СЧИТАЕМ, А НЕ ПИШЕМ РУКАМИ. Год = десять месяцев вместо
+      // двенадцати (docs/ТАРИФЫ.md), значит экономия — ровно два месяца.
+      // Поменяется цена в одном месте — строка пересчитается сама,
+      // а вписанное число молча разошлось бы с ценником над ним.
+      const vygoda = c.month * 12 - c.year;
+      // Сколько выходит в месяц при годовой оплате. Округляем до рубля:
+      // копейки в доводе «дешевле» только мешают читать.
+      const vMesyats = Math.round(c.year / 12);
       // Подарок подписан ТОЛЬКО рядом с годовой ценой и НЕ складывается
       // с пробным периодом - см. docs/ТАРИФЫ.md, правило для текстов.
       const svoyo = nota.getAttribute('data-svoyo') || '';
       nota.innerHTML = (god
-        ? 'два месяца в подарок: год по цене десяти месяцев'
-        : 'или ' + fmtMoney(c.year) + ' в год — два месяца в подарок')
+        // Год выбран — снимаем испуг от крупной суммы: показываем, во что
+        // она обходится в месяц.
+        ? 'это ' + fmtMoney(vMesyats) + ' в месяц — выгода ' + fmtMoney(vygoda) + ' за год'
+        // Месяц выбран — годовая идёт ВТОРОЙ ценой: сумма выделена, рядом
+        // выгода в рублях. «Два месяца в подарок» здесь не пишем: подарок
+        // подписан на кнопке «На год», а два довода в одной строке
+        // читаются как один и теряются оба.
+        : 'или <b>' + fmtMoney(c.year) + ' в год</b> — выгода ' + fmtMoney(vygoda))
         + (svoyo ? '<br>' + svoyo : '');
     }
   });
