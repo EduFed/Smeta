@@ -3083,6 +3083,15 @@
               title="Скачать снимок">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0l-4.5-4.5M12 15l4.5-4.5M4 20h16"/></svg>
       </button>
+      <!-- ПОВЕРНУТЬ СНИМОК (3 сентября 2026). Телефон часто кладёт
+           снимок набок, и на объекте это замечают уже дома.
+           Права те же, что у скачивания: правит тот, кто вправе править.
+           Прячем тем же классом .tolko-smotrit, из разметки не вырезаем
+           (грабля 19). -->
+      <button type="button" class="pv-komm-knopka pv-skachat pv-povernut" id="pvPovernut"
+              title="Повернуть на 90°">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 1 1 2.3 5.7"/><path d="M4 6v5h5"/></svg>
+      </button>
     </div>
     <!-- КОММЕНТАРИИ ВМЕСТО ПОДПИСИ (с 2026-08-23).
          Была одна подпись на снимок, общая: прораб написал, мастер
@@ -3454,7 +3463,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-03-147';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-03-148';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -9245,6 +9254,107 @@ async function photoUpload(proj, roomId, file, kind){
   return id;
 }
 
+// ---------- ПОВЕРНУТЬ СНИМОК ----------
+//
+// Владелец, 3 сентября 2026: «возможность поворачивать фото».
+//
+// ПОВОРАЧИВАЕМ САМ ФАЙЛ, А НЕ ПОКАЗ. Второй путь — хранить угол
+// в базе и крутить картинку при отрисовке — выглядит дешевле и
+// не пересжимает снимок. Но тогда угол пришлось бы применять
+// в СЕМИ местах: плитка, просмотр на весь экран, PDF, Excel, Word,
+// отдельная страница заказчика и наряд мастера. Пропусти одно —
+// и заказчик увидит снимок набок, когда у прораба он ровный.
+// Ровно этот вид расхождения — тихий и находится не тем, кто писал, —
+// в этом проекте стоит дороже пересжатия.
+//
+// Файл — один источник правды. Повернули его, и правы все разом.
+//
+// Цена решения названа честно: снимок пересжимается. Берём качество
+// 0.9 вместо обычных 0.7 — поворот не должен становиться поводом
+// испортить доказательство.
+const PHOTO_POVOROT_QUALITY = 0.9;
+
+async function fotoPovernut(a){
+  if(!a) return;
+  const knopka = document.getElementById('pvPovernut');
+  if(knopka) knopka.disabled = true;
+  try{
+    // 1. Берём полный файл. Сначала со склада — он уже на устройстве,
+    //    и это единственный способ повернуть снимок без сети.
+    let adres = null;
+    try{ adres = await fotoSkladVzyat(a.id); }catch(_){}
+    if(!adres) adres = pvUrls.get(a.id);
+    if(!adres){
+      const urls = await photoViewUrls([a.id]);
+      adres = urls && urls[a.id];
+    }
+    if(!adres) throw new Error('адрес снимка не получен');
+    const ishodnyy = await (await fetch(adres)).blob();
+
+    // 2. Поворот по часовой на 90°. Ширина и высота меняются местами.
+    const bmp = await createImageBitmap(ishodnyy);
+    const cv = document.createElement('canvas');
+    cv.width = bmp.height; cv.height = bmp.width;
+    const ctx = cv.getContext('2d');
+    ctx.translate(cv.width / 2, cv.height / 2);
+    ctx.rotate(Math.PI / 2);
+    ctx.drawImage(bmp, -bmp.width / 2, -bmp.height / 2);
+    try{ bmp.close && bmp.close(); }catch(_){}
+    const povernutyy = await new Promise(res =>
+      cv.toBlob(res, 'image/jpeg', PHOTO_POVOROT_QUALITY));
+    if(!povernutyy || !povernutyy.size) throw new Error('поворот не удался');
+
+    // 3. Кладём на место старого файла. Путь тот же, значит и все
+    //    прежние ссылки останутся верными.
+    const znak = await photoAsk({ action:'upload', attachment_id: a.id });
+    const kuda = znak && znak.links && znak.links[a.id];
+    if(!kuda) throw new Error('обработчик не выдал адрес для загрузки');
+    const put = await fetch(kuda, { method:'PUT',
+      headers:{ 'Content-Type':'image/jpeg' }, body: povernutyy });
+    if(!put.ok) throw new Error('хранилище отказало: ' + put.status);
+
+    // 4. Уменьшенную копию перекладываем следом — иначе плитка
+    //    останется лежать набок, а снимок будет ровный.
+    //    Молча: если копия не выйдет, плитка возьмёт полный файл.
+    try{
+      const mini = await fotoMini(povernutyy);
+      if(mini && mini.size){
+        const zm = await photoAsk({ action:'upload', attachment_id: a.id, size:'m' });
+        const kudaM = zm && zm.links && zm.links[a.id];
+        if(kudaM){
+          const r = await fetch(kudaM, { method:'PUT',
+            headers:{ 'Content-Type':'image/jpeg' }, body: mini });
+          if(r.ok) try{ await fotoSkladPolozhitBlob(fotoMiniKluch(a.id), mini); }catch(_){}
+        }
+      }
+    }catch(e){ console.error('Копия после поворота не легла', e); }
+
+    // 5. Размеры в базе меняются местами. Не поправить — раскладка
+    //    страницы будет резервировать место под прежнюю форму.
+    try{
+      await sb.from('attachments')
+        .update({ width: cv.width, height: cv.height, size_bytes: povernutyy.size })
+        .eq('id', a.id);
+    }catch(e){ console.error('Размеры снимка в базе не обновились', e); }
+    a.w = cv.width; a.h = cv.height; a.size = povernutyy.size;
+
+    // 6. Своя копия на устройстве — теперь повёрнутая. И показать её
+    //    сразу: подписанный адрес ведёт на тот же путь, а по нему
+    //    браузер вернул бы старые байты из своего кэша.
+    try{ await fotoSkladPolozhitBlob(a.id, povernutyy); }catch(_){}
+    const svezhiy = URL.createObjectURL(povernutyy);
+    pvUrls.set(a.id, svezhiy);
+    photoUrlCache.delete(a.id);
+    photoUrlCache.delete(fotoMiniKluch(a.id));
+    pvRasstavit();
+  }catch(e){
+    console.error('Поворот не вышел', e);
+    toast('Повернуть не удалось: ' + ((e && e.message) || 'неизвестно почему'));
+  }finally{
+    if(knopka) knopka.disabled = false;
+  }
+}
+
 // ---------- ПРОСМОТР НА ВЕСЬ ЭКРАН ----------
 // Снимок открывается нажатием на миниатюру, листается свайпом, кнопками
 // и стрелками. Без этого нажатие на миниатюру проваливалось, телефон
@@ -14606,6 +14716,11 @@ document.getElementById('previewClose') && document.getElementById('previewClose
   if(skachatBtn) skachatBtn.addEventListener('click', e=>{
     e.stopPropagation();          // иначе просмотрщик примет это за листание
     fotoSkachat(pvList[pvIdx]);
+  });
+  const povorotBtn = document.getElementById('pvPovernut');
+  if(povorotBtn) povorotBtn.addEventListener('click', e=>{
+    e.stopPropagation();          // иначе просмотрщик примет это за листание
+    fotoPovernut(pvList[pvIdx]);
   });
   const kKnopka = document.getElementById('pvKommKnopka');
   if(kKnopka) kKnopka.addEventListener('click', e=>{
