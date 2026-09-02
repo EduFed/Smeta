@@ -3463,7 +3463,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-03-148';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-03-149';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -19343,22 +19343,48 @@ function updateBarState(){
     const stuck = !!lastSaveError || (Date.now() - waitingSince) > 20000;
 
     if(stuck){
-      if(txt) txt.textContent = 'Новая версия. Данные не уходят — правки останутся на устройстве';
+      if(txt) txt.textContent = versiiPodpis() + '. Данные не уходят — правки останутся на устройстве';
       if(btn){ btn.disabled = false; btn.textContent = 'Обновить всё равно'; }
     } else {
-      if(txt) txt.textContent = navigator.onLine
-        ? 'Новая версия. Ждём отправки данных…'
-        : 'Новая версия. Обновимся, когда будет связь';
+      if(txt) txt.textContent = versiiPodpis() + (navigator.onLine
+        ? '. Ждём отправки данных…'
+        : '. Обновимся, когда будет связь');
       if(btn){ btn.disabled = true; btn.textContent = 'Ждём'; }
     }
   } else {
     waitingSince = 0;
-    if(txt) txt.textContent = 'Доступна новая версия приложения';
+    if(txt) txt.textContent = versiiPodpis() + ' — можно обновиться';
     if(btn){ btn.disabled = false; btn.textContent = 'Обновить'; }
   }
 }
 
 let waitingSince = 0;   // с какого момента ждём отправки данных
+// Номер сборки, которая ждёт установки. Спрашиваем у самого sw.js:
+// страница знает только СВОЮ версию, а какая приехала — не знает.
+// Без этого в полоске было безымянное «доступна новая версия»,
+// и понять, та ли это сборка, которую ждёшь, было нельзя.
+let novayaVersiya = '';
+
+async function uznatNovuyuVersiyu(){
+  if(novayaVersiya) return novayaVersiya;
+  try{
+    // no-store обязателен: иначе браузер отдаст ту же копию sw.js,
+    // из-за которой мы и сидим на старой сборке.
+    const r = await fetch('sw.js?v=' + Date.now(), { cache:'no-store' });
+    const t = await r.text();
+    const m = t.match(/CACHE_VERSION\s*=\s*['"]([^'"]+)['"]/);
+    if(m){ novayaVersiya = m[1]; updateBarState(); }
+  }catch(_){}
+  return novayaVersiya;
+}
+
+// «Новая версия 2026-09-03-148, у вас 2026-09-03-146».
+// Номер новой ещё не приехал — говорим просто «новая версия»,
+// но не врём и не ждём: полоска должна появиться сразу.
+function versiiPodpis(){
+  if(!novayaVersiya) return 'Новая версия';
+  return 'Версия ' + novayaVersiya + ' (у вас ' + APP_BUILD + ')';
+}
 
 // Тихое обновление: если всё сохранено и человек ушёл из приложения
 // (свернул, переключился на другую вкладку) — применяем новую версию
@@ -19389,12 +19415,23 @@ if('serviceWorker' in navigator){
 // На телефоне приложение обычно не закрывают, а сворачивают — навигации
 // не происходит, и человек может неделями сидеть на старой версии.
 // Поэтому проверяем сами: при возврате в приложение и при появлении сети.
-// Проверка дешёвая — один запрос к sw.js, но не чаще раза в 15 минут.
+//
+// ПРОВЕРЯЕМ ПРИ КАЖДОМ ОТКРЫТИИ (правка 3 сентября 2026).
+// Было «не чаще раза в 15 минут». За эти пятнадцать минут владелец
+// успевал открыть приложение, не увидеть выложенную сборку и решить,
+// что она не доехала: 3 сентября так и вышло — на сайте лежала 148,
+// на телефоне была 146, и полчаса ушло на выяснение, где потерялось.
+// Тормозило это не приложение, а работу над ним.
+//
+// Тридцать секунд вместо пятнадцати минут — это «при каждом открытии»
+// на деле, но с защитой от града событий: focus на компьютере
+// прилетает по десять раз подряд, и без заслонки мы стучались бы
+// в сервер зря. Сама проверка — один запрос к sw.js, весит копейки.
 let lastUpdCheck = 0;
 function checkForUpdate(){
   if(!swReg || !navigator.onLine) return;
   const now = Date.now();
-  if(now - lastUpdCheck < 15 * 60 * 1000) return;
+  if(now - lastUpdCheck < 30 * 1000) return;
   lastUpdCheck = now;
   swReg.update().then(()=>{
     // версия могла доустановиться, пока приложение было свёрнуто
@@ -19414,6 +19451,9 @@ let updTicker = null;
 function markUpdateReady(sw){
   if(!sw || waitingSW === sw) return;
   waitingSW = sw;
+  // Спрашиваем номер приехавшей сборки. Не ждём ответа: полоска
+  // покажется сразу, а номер подставится, как только придёт.
+  uznatNovuyuVersiyu();
   const btn = document.getElementById('updateBtn');
   if(btn) btn.onclick = ()=>{
     if(btn.disabled) return;
