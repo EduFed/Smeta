@@ -3564,7 +3564,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-03-158';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-03-159';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -9416,6 +9416,17 @@ function otmEst(rw){
 function otmChislo(rw){
   return otmEst(rw) ? Math.max(0, Math.min(100, Math.round(num(rw.donePct)))) : null;
 }
+// НАЗВАНИЕ ЭТОГО ПОНЯТИЯ — «ГОТОВНОСТЬ», И ТОЛЬКО ОНО.
+// Решение владельца 3 сентября 2026 из трёх разобранных вариантов.
+// Одно русское слово во всех четырёх местах: кнопка в строке, окно,
+// шапка помещения, итог проекта. «Выполнение», «прогресс», «сделано»
+// НЕ применять — три названия одного и того же читаются как три
+// разные вещи, и человек начинает искать между ними разницу.
+//
+// Слово выбрано не на вкус: «готовность объекта 60 %» — так говорят
+// на стройке. А «прогресс выполнения» — и заимствование там, где есть
+// русское слово (CLAUDE.md, раздел «Язык»), и удвоение смысла.
+//
 // ПОДПИСЬ СЛОВАМИ, А НЕ ЗНАЧКОМ (правка 3 сентября 2026).
 // Владелец: «поле с процентами вижу, работает. Но изначально непонятно,
 // что за поле. Для новых пользователей точно».
@@ -9431,7 +9442,7 @@ function otmChislo(rw){
 // тому, кто видит впервые».
 function otmPodpis(rw){
   const n = otmChislo(rw);
-  if(n === null) return 'отметить';
+  if(n === null) return 'готовность';
   return n >= 100 ? 'готово' : (n + ' %');
 }
 function otmKlass(rw){
@@ -9479,7 +9490,7 @@ function otmStrokaItoga(proj){
   const d = otmDolya(proj.rooms, proj);
   if(d === null) return '';
   return `<div class="smeta-total otm-itog">
-      <span class="label">Выполнено</span>
+      <span class="label">Готовность</span>
       <span class="value">${d} %</span>
     </div>`;
 }
@@ -9518,7 +9529,7 @@ function otmOpen(roomId, lid){
   ov.innerHTML =
       '<div class="refcfg-modal">'
     + '<div class="refcfg-head"><div>'
-    + '<div class="refcfg-title">Выполнение</div>'
+    + '<div class="refcfg-title">Готовность работы</div>'
     + '<div class="refcfg-sub">' + escapeHtml(imyaOtm) + '</div></div>'
     + '<button type="button" class="plan-close" data-otm-close="1" aria-label="Закрыть">✕</button></div>'
     + '<div class="refcfg-body">'
@@ -17595,7 +17606,7 @@ function renderRoomWorks(room){
       ${line.over ? `<button class="btn-icon qty-reset" data-qty-reset="${room.id}|${rw.lid}" title="Вернуть расчёт из размеров помещения">↺</button>` : ''}
       ${unitField}
       <button type="button" class="otm-knopka${otmKlass(rw)}" data-otm="${room.id}|${rw.lid}"
-              title="Отметить выполнение">${otmPodpis(rw)}</button>
+              title="Готовность работы">${otmPodpis(rw)}</button>
       <span class="wsum" data-wsum="${room.id}|${rw.lid}">${fmt(line.qty)} ${workUnitLabel(work,rw)} · ${fmtMoney(line.sum)}</span>
       ${mayAssign ? `<button class="sel-work-assign${rw.assignedTo?' on':''}" data-assign="${rw.lid}"
         ${rw.assignedTo ? `style="--who:${whoColor(proj, rw.assignedTo)}"` : ''}
@@ -17650,7 +17661,7 @@ function roomBrief(room, g){
   // на объекте не начинали, ноль процентов в шапке каждого помещения
   // это шум: и так видно, что не начинали.
   const d = otmDolya([room], currentProject());
-  const otm = (d === null || !(room.works||[]).some(otmEst)) ? '' : ` · выполнено ${d} %`;
+  const otm = (d === null || !(room.works||[]).some(otmEst)) ? '' : ` · готовность ${d} %`;
   return `стены ${fmt(g.wallArea)} м² · пол ${fmt(g.floorArea)} м² · ${fmtMoney(sum)}${otm}`;
 }
 
