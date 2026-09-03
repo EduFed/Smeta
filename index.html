@@ -2840,8 +2840,13 @@
   .opl-kto{min-width:0;}
   /* Таблица «начислено / выплачено / остаток». Числа моноширинные
      и прижаты вправо — так столбик читается, а не рассыпается. */
-  .vyp-head, .vyp-itog{display:grid;grid-template-columns:1fr auto auto auto;
+  /* minmax(0,1fr), а не 1fr: подпись мастера бывает длинной («Серега
+     плиточник. Санузел 1. Первый этаж, справа»), и обычный 1fr не даёт
+     колонке сжаться ниже её содержимого — сетка распирается, а остаток
+     уезжает за край. Владелец прислал это 3 сентября 2026. */
+  .vyp-head, .vyp-itog{display:grid;grid-template-columns:minmax(0,1fr) auto auto auto;
     gap:12px;align-items:center;padding:6px 0;}
+  .vyp-itog > .who-chip{min-width:0;overflow-wrap:anywhere;}
   .vyp-head{font-size:11px;color:var(--ink-soft);border-bottom:1px solid var(--paper-line);
     margin-top:14px;}
   .vyp-head span:not(:first-child){text-align:right;min-width:86px;}
@@ -2856,6 +2861,22 @@
   .vyp-itog:not(.vyp-vsego) b.vyp-pereplata{color:var(--green);}
   .vyp-vsego{border-top:1px solid var(--paper-line);margin-top:4px;font-weight:600;}
   .vyp-vsego b{font-weight:600;}
+  /* НА ТЕЛЕФОНЕ ЧЕТЫРЁХ КОЛОНОК НЕ БЫВАЕТ. Подпись мастера занимает
+     свою строку целиком, три числа идут под ней, и у каждого своя
+     надпись — общая шапка на узком экране всё равно не читалась. */
+  @media (max-width:640px){
+    .vyp-head{display:none;}
+    .vyp-head, .vyp-itog{grid-template-columns:repeat(3, minmax(0,1fr));gap:8px;
+      padding:10px 0;border-bottom:1px solid var(--paper-line);}
+    .vyp-itog > .who-chip, .vyp-itog > span:first-child{grid-column:1 / -1;margin-bottom:6px;}
+    .vyp-itog b{min-width:0;text-align:left;font-size:13px;}
+    .vyp-itog b::before{display:block;font-family:var(--font, inherit);font-size:10px;
+      font-weight:400;color:var(--ink-soft);letter-spacing:.04em;
+      text-transform:uppercase;margin-bottom:2px;}
+    .vyp-itog b:nth-of-type(1)::before{content:"начислено";}
+    .vyp-itog b:nth-of-type(2)::before{content:"выплачено";}
+    .vyp-itog b:nth-of-type(3)::before{content:"остаток";}
+  }
   .opl-itogi{margin-top:16px;padding-top:12px;border-top:1px solid var(--paper-line);
     display:flex;flex-direction:column;gap:6px;max-width:420px;}
   .opl-itog{display:flex;justify-content:space-between;align-items:baseline;gap:14px;font-size:14px;color:var(--ink-soft);}
@@ -3478,7 +3499,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-03-153';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-03-154';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
