@@ -2820,6 +2820,21 @@
     font-family:inherit;font-size:11px;font-weight:500;color:var(--ink-soft);
     text-decoration:underline;text-underline-offset:2px;cursor:pointer;}
   .extra-rassp:hover{color:var(--orange);}
+  /* «ИЗ ПОМЕЩЕНИЯ» — подсказка количества у доп. работы.
+     Надписью, а не значком: возможность, о которой нельзя догадаться,
+     всё равно что отсутствует (грабля 72). */
+  .kolvo-iz{flex:0 0 auto;border:1px dashed var(--paper-line);border-radius:8px;
+    background:transparent;color:var(--ink-soft);font-size:11px;line-height:1;
+    padding:7px 9px;cursor:pointer;white-space:nowrap;}
+  .kolvo-iz:hover{border-color:var(--orange);color:var(--ink);}
+  .kiz-room{font-weight:600;margin:12px 0 4px;font-size:12px;color:var(--ink-soft);
+    letter-spacing:.04em;text-transform:uppercase;}
+  .kiz-row{display:flex;align-items:center;gap:10px;width:100%;padding:9px 10px;
+    border:1px solid var(--paper-line);border-radius:8px;background:var(--white);
+    color:var(--ink);cursor:pointer;margin-bottom:6px;font-size:14px;text-align:left;}
+  .kiz-row:hover{border-color:var(--orange);}
+  .kiz-row b{margin-left:auto;font-family:'JetBrains Mono',monospace;font-weight:600;}
+  .kiz-net{color:var(--ink-soft);font-size:13px;padding:8px 0;}
   /* .opl-row — вид берётся из общего правила строки позиции выше.
      Строка выплаты мастеру — та же самая строка, плюс поле «кому». */
   .opl-kto{min-width:0;}
@@ -3463,7 +3478,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-03-152';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-03-153';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -9277,6 +9292,123 @@ async function photoUpload(proj, roomId, file, kind){
   }catch(e){ console.error('Уменьшенная копия не вышла', e); }
 
   return id;
+}
+
+// ---------- «ИЗ ПОМЕЩЕНИЯ»: ПОДСКАЗКА КОЛИЧЕСТВА ДЛЯ ДОП. РАБОТЫ ----------
+//
+// Владелец 3 сентября 2026: «при добавлении позиции из справочника данные
+// о квадратуре не потягиваются... в справочнике стоит галочка пол,
+// а количество не потянулось».
+//
+// ПОЧЕМУ НЕ ТЯНЕТСЯ САМО И НЕ БУДЕТ. Строка «Видов работ» живёт ВНУТРИ
+// помещения: галочка «пол» указывает на пол этой кухни, и площадь
+// однозначна. Доп. работа помещению не принадлежит вовсе — она у проекта
+// целиком, и на вопрос «пол чего?» ответа нет: в проекте кухня, санузел
+// и коридор.
+//
+// Подставить сумму всех полов было бы неверно почти всегда: тёплый пол
+// кладут в одной комнате. А молча подставленное неверное число хуже
+// пустого поля — пустое видно, неверное уедет в смету и в соглашение.
+//
+// Поэтому не угадываем, а показываем. Решение владельца: подсказка
+// со списком помещений плюс свободный ввод — поле остаётся обычным
+// и правится руками как раньше.
+function kizMery(proj, unit){
+  const out = [];
+  const dobavit = (room, imya, znach)=>{
+    if(znach > 0.0001) out.push({ room: room, imya: imya, znach: znach });
+  };
+  (proj.rooms || []).forEach(room=>{
+    const g = calcRoomGeometry(room);
+    const imyaK = room.name || 'Помещение';
+    if(unit === 'm2'){
+      dobavit(imyaK, 'пол', g.floorArea);
+      dobavit(imyaK, 'стены', g.wallArea);
+      dobavit(imyaK, 'потолок', g.ceilingArea);
+    } else if(unit === 'ml'){
+      dobavit(imyaK, 'периметр', g.perimeter);
+      if(Math.abs(g.perimeterForSkirting - g.perimeter) > 0.0001)
+        dobavit(imyaK, 'периметр под плинтус', g.perimeterForSkirting);
+    } else if(unit === 'm3'){
+      dobavit(imyaK, 'объём', g.volume);
+    }
+  });
+  return out;
+}
+
+let kizIndex = null;      // какой строке доп. работ подбираем количество
+
+function kizOpen(proj, i){
+  const e = (proj.extraWorks || [])[i];
+  if(!e) return;
+  kizIndex = i;
+  const unit = e.unit || 'pcs';
+  const mery = kizMery(proj, unit);
+
+  // Складываем одноимённые: «пол» по всем помещениям — тот итог,
+  // который чаще всего и нужен, если работа идёт по всей квартире.
+  const itogi = new Map();
+  mery.forEach(m=> itogi.set(m.imya, (itogi.get(m.imya) || 0) + m.znach));
+
+  let ov = document.getElementById('kizOverlay');
+  if(!ov){
+    ov = document.createElement('div');
+    ov.id = 'kizOverlay';
+    ov.className = 'refcfg-overlay no-print';
+    document.body.appendChild(ov);
+  }
+
+  const podpis = { m2:'м²', ml:'м.п.', m3:'м³' }[unit] || '';
+  let telo;
+  if(!mery.length){
+    telo = '<div class="kiz-net">' + (podpis
+      ? 'В проекте пока нет помещений с размерами — считать не из чего.'
+      : 'Для единицы «' + (UNIT_LABEL[unit] || unit) + '» считать нечего: ' +
+        'подсказка работает для м², м.п. и м³.') + '</div>';
+  } else {
+    // Сначала итоги по всему проекту, потом разбивка по помещениям:
+    // если работа идёт по всей квартире, ответ виден сразу.
+    telo = '<div class="kiz-room">по всему проекту</div>';
+    itogi.forEach((z, imya)=>{
+      telo += '<button type="button" class="kiz-row" data-kiz="' + z + '">' +
+              escapeHtml(imya) + ' — все помещения <b>' + fmt(z) + ' ' + podpis + '</b></button>';
+    });
+    let tek = '';
+    mery.forEach(m=>{
+      if(m.room !== tek){ tek = m.room; telo += '<div class="kiz-room">' + escapeHtml(tek) + '</div>'; }
+      telo += '<button type="button" class="kiz-row" data-kiz="' + m.znach + '">' +
+              escapeHtml(m.imya) + ' <b>' + fmt(m.znach) + ' ' + podpis + '</b></button>';
+    });
+    telo += '<div class="kiz-net">Число подставится в поле — его можно поправить руками.</div>';
+  }
+
+  ov.innerHTML =
+      '<div class="refcfg-modal">'
+    + '<div class="refcfg-head"><div>'
+    + '<div class="refcfg-title">Количество из помещения</div>'
+    + '<div class="refcfg-sub">подставим число — поправить его можно руками</div></div>'
+    + '<button type="button" class="plan-close" data-kiz-close="1" aria-label="Закрыть">✕</button></div>'
+    + '<div class="refcfg-body">' + telo + '</div>'
+    + '</div>';
+  ov.style.display = 'flex';
+
+  ov.querySelectorAll('[data-kiz]').forEach(b=>{
+    b.onclick = ()=>{
+      const z = Number(b.getAttribute('data-kiz'));
+      const pr = currentProject();
+      const stroka = pr && (pr.extraWorks || [])[kizIndex];
+      if(stroka){ stroka.qty = fmt(z); scheduleSave(); render(); }
+      kizClose();
+    };
+  });
+  const zakr = ov.querySelector('[data-kiz-close]');
+  if(zakr) zakr.onclick = kizClose;
+}
+
+function kizClose(){
+  const ov = document.getElementById('kizOverlay');
+  if(ov){ ov.style.display = 'none'; ov.innerHTML = ''; }
+  kizIndex = null;
 }
 
 // ---------- ПОВЕРНУТЬ СНИМОК ----------
@@ -16483,6 +16615,8 @@ function renderExtraWorksBlock(proj){
              <option value="pcs" ${(e.unit==='pcs'||!e.unit)?'selected':''}>шт.</option>
              <option value="days" ${e.unit==='days'?'selected':''}>дн.</option>
            </select>
+           <button type="button" class="kolvo-iz" data-kolvo-iz="${i}"
+                   title="Взять количество из помещения">из помещения</button>
            <input type="text" class="manual-qty extra-cena" inputmode="decimal" placeholder="цена" value="${escapeAttr(e.price)}" data-extra="${i}|price">`}
       <span class="wsum" data-extra-sum="${i}">${extraItog(e)}</span>
       ${canAssign(proj) ? `<button class="sel-work-assign${e.assignedTo?' on':''}" data-assign-extra="${escapeAttr(e.id||'')}"
@@ -18401,6 +18535,14 @@ function attachHandlers(){
     el.addEventListener('input', apply);
     el.addEventListener('change', apply);
   });
+  // «Из помещения» — подсказка количества у доп. работы.
+  main.querySelectorAll('[data-kolvo-iz]').forEach(el=>{
+    el.onclick = (ev)=>{
+      ev.stopPropagation();
+      kizOpen(proj, parseInt(el.getAttribute('data-kolvo-iz')));
+    };
+  });
+
   // ---------- выплаты мастерам ----------
   main.querySelectorAll('[data-vyp-add]').forEach(el=>{
     el.onclick = ()=>{
