@@ -1122,11 +1122,33 @@
     border-radius:var(--radius);padding:5px 6px;width:100%;background:var(--paper);color:var(--ink);
   }
   .opening-row input:focus{outline:none;border-color:var(--blue);}
+  /* КНОПКИ ДОБАВЛЕНИЯ — ОДНИ НА ВСЁ ПРИЛОЖЕНИЕ (правка 3 сентября 2026).
+     Владелец: «кнопка Оплата и кнопка Выплата теряются, не видно. Нужно
+     выделить. Думаю, аналогично добавление окон и дверей и все аналогичные».
+     Их девять штук, и класс у них один — значит и правка одна.
+
+     Было: синий текст 12-го кегля без границ и почти без отступов. Среди
+     полей ввода он читался как подпись, а не как кнопка, и на телефоне
+     в него было трудно попасть — высота выходила меньше пальца.
+
+     Стало: обведённая пунктиром кнопка в цвете действия, высотой
+     не меньше 38 точек. Пунктир, а не сплошная заливка: это добавление
+     строки, а не главное действие экрана, и спорить с «Оформить подписку»
+     ей не положено. */
   .add-link{
-    background:none;border:none;color:var(--blue);font-size:12px;font-weight:600;cursor:pointer;
-    padding:4px 0;font-family:'Inter',sans-serif;
+    display:inline-flex;align-items:center;gap:6px;
+    background:none;border:1px dashed var(--orange);border-radius:9px;
+    color:var(--orange);font-size:13px;font-weight:600;cursor:pointer;
+    padding:9px 14px;min-height:38px;margin-top:4px;
+    font-family:'Inter',sans-serif;
   }
-  .add-link:hover{color:var(--orange);}
+  .add-link:hover{background:color-mix(in srgb, var(--orange) 12%, transparent);}
+  .add-link:disabled{opacity:.45;cursor:default;border-style:solid;border-color:var(--paper-line);color:var(--ink-soft);}
+  /* «Удалить эту точку» в черчении контура — тот же класс, но это НЕ
+     добавление. Цветом действия её красить нельзя: человек тянется
+     к оранжевому, ожидая, что прибавится, а точка исчезнет. */
+  #pdDelVert{border-color:var(--paper-line);color:var(--ink-soft);}
+  #pdDelVert:hover{border-color:var(--red);color:var(--red);background:none;}
 
   .work-list{display:flex;flex-direction:column;gap:6px;}
   .work-row{
@@ -3499,7 +3521,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-03-154';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-03-155';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
