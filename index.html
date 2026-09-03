@@ -2867,6 +2867,10 @@
   .otm-kogda{font-size:11px;color:var(--ink-soft);margin-top:10px;}
   /* Две кнопки в подвале окна отметки. «Снять» без заливки — это выход,
      а не главное действие. */
+  /* Строка выполнения под итогом проекта — тише самого итога:
+     деньги главнее, процент рядом. */
+  .smeta-total.otm-itog{border-top:none;padding-top:0;}
+  .smeta-total.otm-itog .value{color:var(--ink-soft);font-size:16px;}
   #otmOverlay .refcfg-foot{display:flex;gap:10px;}
   #otmOverlay .refcfg-foot .btn{flex:1 1 0;}
 
@@ -3549,7 +3553,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-03-156';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-03-157';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -9437,6 +9441,23 @@ function otmDolya(rooms, proj){
   });
   if(vsego <= 0) return null;
   return Math.round(sdelano / vsego * 100);
+}
+
+// Строка «выполнено на N %» под итогом проекта. Показывается, только
+// когда хоть что-то отмечено: до начала работ ноль процентов ничего
+// не сообщает, а место занимает.
+//
+// Считается ПО ДЕНЬГАМ — см. otmDolya. Сами деньги наружу не выходят:
+// в строке одно число в процентах.
+function otmStrokaItoga(proj){
+  const otmecheno = (proj.rooms||[]).some(r=> (r.works||[]).some(otmEst));
+  if(!otmecheno) return '';
+  const d = otmDolya(proj.rooms, proj);
+  if(d === null) return '';
+  return `<div class="smeta-total otm-itog">
+      <span class="label">Выполнено</span>
+      <span class="value">${d} %</span>
+    </div>`;
 }
 
 let otmTek = null;   // {roomId, lid}
@@ -16485,7 +16506,8 @@ function renderSmetaBlock(proj){
     <div class="smeta-total">
       <span class="label">Итого по проекту</span>
       <span class="value">${fmtMoney(grandTotal)}</span>
-    </div>`;
+    </div>
+    ${otmStrokaItoga(proj)}`;
 }
 
 const ICON_SEND = `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>`;
@@ -17599,7 +17621,12 @@ function roomBrief(room, g){
     const work = effWork(byId.get(rw.workId), rw);
     return work ? s + calcWorkLine(room, rw, work, g).sum : s;
   }, 0);
-  return `стены ${fmt(g.wallArea)} м² · пол ${fmt(g.floorArea)} м² · ${fmtMoney(sum)}`;
+  // Выполнение — последним и только если хоть что-то отмечено. Пока
+  // на объекте не начинали, ноль процентов в шапке каждого помещения
+  // это шум: и так видно, что не начинали.
+  const d = otmDolya([room], currentProject());
+  const otm = (d === null || !(room.works||[]).some(otmEst)) ? '' : ` · выполнено ${d} %`;
+  return `стены ${fmt(g.wallArea)} м² · пол ${fmt(g.floorArea)} м² · ${fmtMoney(sum)}${otm}`;
 }
 
 function wallAreaHint(room, g){
