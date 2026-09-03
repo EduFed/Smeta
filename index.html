@@ -2842,6 +2842,34 @@
     font-family:inherit;font-size:11px;font-weight:500;color:var(--ink-soft);
     text-decoration:underline;text-underline-offset:2px;cursor:pointer;}
   .extra-rassp:hover{color:var(--orange);}
+  /* ОТМЕТКА О ВЫПОЛНЕНИИ (задача 2026-09-03-04).
+     Кнопка в строке показывает процент. Не отмечено — бледный кружок,
+     чтобы не мозолил глаз на несделанном; отмечено частично — оранжевый,
+     цвет внимания; сделано целиком — зелёный с галочкой.
+     Три состояния различимы с одного взгляда, как и просил владелец. */
+  .otm-knopka{flex:0 0 auto;min-width:46px;border:1px solid var(--paper-line);
+    border-radius:8px;background:transparent;color:var(--ink-soft);
+    font-family:'JetBrains Mono',monospace;font-size:11px;line-height:1;
+    padding:7px 6px;cursor:pointer;white-space:nowrap;}
+  .otm-knopka:hover{border-color:var(--orange);color:var(--ink);}
+  .otm-knopka.otm-chast{border-color:var(--orange);color:var(--orange);font-weight:600;}
+  .otm-knopka.otm-vsyo{border-color:var(--green);color:var(--green);font-weight:600;}
+  /* Строка выполненной работы — приглушённая. Она сделана, и глаз должен
+     цепляться за оставшееся, а не за неё. Зачёркивать НЕ стали: работа
+     выполнена, а не отменена; зачёркнутое здесь означает исключённое. */
+  .sel-work.rabota-sdelana .sel-work-name{opacity:.62;}
+  .otm-bystro{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;}
+  .otm-bystro button{flex:1 1 0;min-width:56px;border:1px solid var(--paper-line);
+    border-radius:8px;background:var(--white);color:var(--ink);
+    font-family:'JetBrains Mono',monospace;font-size:14px;padding:11px 6px;cursor:pointer;}
+  .otm-bystro button:hover{border-color:var(--orange);}
+  .otm-bystro button.on{background:var(--orange);border-color:var(--orange);color:#fff;font-weight:600;}
+  .otm-kogda{font-size:11px;color:var(--ink-soft);margin-top:10px;}
+  /* Две кнопки в подвале окна отметки. «Снять» без заливки — это выход,
+     а не главное действие. */
+  #otmOverlay .refcfg-foot{display:flex;gap:10px;}
+  #otmOverlay .refcfg-foot .btn{flex:1 1 0;}
+
   /* «ИЗ ПОМЕЩЕНИЯ» — подсказка количества у доп. работы.
      Надписью, а не значком: возможность, о которой нельзя догадаться,
      всё равно что отсутствует (грабля 72). */
@@ -3521,7 +3549,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-03-155';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-03-156';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -7308,6 +7336,13 @@ const DB = {
       // Мастеру сервер отдаёт только назначенные ему строки, поэтому
       // у него здесь всегда он сам; смысл поле имеет для владельца.
       assignedTo: w.assigned_to || null,
+      // ОТМЕТКА О ВЫПОЛНЕНИИ (задача 2026-09-03-04). Процент — суждение
+      // прораба, а не расчёт: приложение не знает, сколько уложено.
+      // done_at проставляет ТРИГГЕР в базе и только он: время отметки —
+      // свидетельство, а не поле формы. Читаем, но никогда не шлём.
+      donePct:  (w.done_pct === null || w.done_pct === undefined) ? '' : String(w.done_pct),
+      doneNote: w.done_note || '',
+      doneAt:   w.done_at || '',
       workId: w.is_ref_lay ? REF_LAY_ID : (w.work_id || ('ghost_' + w.lid)),
       manualQty: w.manual_qty === null ? '' : w.manual_qty,
       // null из базы -> пустое поле («считать из размеров»),
@@ -8181,6 +8216,15 @@ const DB = {
       applies_to: applies,
       _price: price,          // не колонка таблицы, забирается вызывающим
       is_ref_lay: isRef,
+      // Процент и примечание идут в общем сохранении, в отличие
+      // от assigned_to и исключения: писать строку сметы может только
+      // тот, кто правит смету, — мастеру политика этого не даёт вовсе.
+      // Значит затереть чужое некому.
+      // done_at ЗДЕСЬ НЕТ НАРОЧНО: его ставит триггер, и присланное
+      // клиентом он всё равно перетирает.
+      done_pct: (rw.donePct === '' || rw.donePct === null || rw.donePct === undefined)
+                  ? null : Math.max(0, Math.min(100, Math.round(num(rw.donePct)))),
+      done_note: txt(rw.doneNote),
       manual_qty: num(rw.manualQty), manual_unit: txt(rw.manualUnit),
       // ПЕРЕБИТОЕ КОЛИЧЕСТВО (с 2026-08-10-74).
       // Человек может заменить посчитанное из размеров число своим:
@@ -9335,6 +9379,157 @@ async function photoUpload(proj, roomId, file, kind){
   }catch(e){ console.error('Уменьшенная копия не вышла', e); }
 
   return id;
+}
+
+// ---------- ОТМЕТКА О ВЫПОЛНЕНИИ ----------
+//
+// Владелец 3 сентября 2026: «отметка в приложении о выполнении вида работ
+// с примечанием. И возможность подписать, на какой процент выполнен».
+// И сразу же, важнее самой просьбы: «стоп, тут не надо чего-то
+// высчитывать. Это просто прораб ставит число, которое ему кажется
+// отражает объём выполненных работ».
+//
+// Процент — СУЖДЕНИЕ, а не измерение. Посчитанный был бы ложной
+// точностью: приложение не знает, сколько плитки уложено. Поставленный
+// рукой честно говорит «я так вижу».
+//
+// В документы не идёт ни в какие — ни в смету, ни в акт, ни в наряд,
+// ни в ссылку заказчику. Это рабочая пометка, а не обязательство.
+function otmEst(rw){
+  return rw && rw.donePct !== '' && rw.donePct !== null && rw.donePct !== undefined;
+}
+function otmChislo(rw){
+  return otmEst(rw) ? Math.max(0, Math.min(100, Math.round(num(rw.donePct)))) : null;
+}
+function otmPodpis(rw){
+  const n = otmChislo(rw);
+  if(n === null) return '○';
+  return n >= 100 ? '✓' : (n + '%');
+}
+function otmKlass(rw){
+  const n = otmChislo(rw);
+  if(n === null) return '';
+  return n >= 100 ? ' otm-vsyo' : ' otm-chast';
+}
+
+// ВЫПОЛНЕНО ПО ДЕНЬГАМ, А НЕ ПО ЧИСЛУ СТРОК. Пять мелочей и одна
+// большая работа — это не «шесть шестых». Считаем долю: сумма
+// (сумма строки × процент) делённая на сумму всех строк.
+// Деньги здесь только основание — наружу выходит одно число в процентах.
+// Исключённые строки не берём: их из сметы убрали.
+function otmDolya(rooms, proj){
+  const byId = catalogById();
+  const k = condK(proj);
+  let vsego = 0, sdelano = 0;
+  (rooms || []).forEach(room=>{
+    const g = calcRoomGeometry(room);
+    (room.works || []).forEach(rw=>{
+      if(typeof isklyuchena === 'function' && isklyuchena(rw)) return;
+      const work = effWork(byId.get(rw.workId), rw);
+      if(!work) return;
+      const line = calcWorkLine(room, rw, work, g);
+      const summa = line.qty * Math.round(num(work.price) * k);
+      if(summa <= 0) return;
+      vsego += summa;
+      const n = otmChislo(rw);
+      if(n !== null) sdelano += summa * n / 100;
+    });
+  });
+  if(vsego <= 0) return null;
+  return Math.round(sdelano / vsego * 100);
+}
+
+let otmTek = null;   // {roomId, lid}
+
+function otmOpen(roomId, lid){
+  const proj = currentProject();
+  const room = proj && (proj.rooms||[]).find(r=>r.id===roomId);
+  const rw = room && (room.works||[]).find(w=>w.lid===lid);
+  if(!rw) return;
+  otmTek = { roomId: roomId, lid: lid };
+  const n = otmChislo(rw);
+  // Название берём тем же путём, что и строка сметы: через effWork,
+  // иначе у своей позиции и у «призрака» из прайса оно разойдётся
+  // с тем, что человек видит в списке.
+  const workOtm = effWork(catalogById().get(rw.workId), rw);
+  const imyaOtm = rw.cfg ? REF_TILING.layName : ((workOtm && workOtm.name) || 'работа');
+
+  let ov = document.getElementById('otmOverlay');
+  if(!ov){
+    ov = document.createElement('div');
+    ov.id = 'otmOverlay';
+    ov.className = 'refcfg-overlay no-print';
+    document.body.appendChild(ov);
+  }
+  const bystro = [0, 25, 50, 75, 100].map(v=>
+    `<button type="button" data-otm-pct="${v}"${n === v ? ' class="on"' : ''}>${v}%</button>`).join('');
+  // Когда отмечали. Время ставит база, поэтому у только что отмеченной
+  // строки его ещё нет — так и пишем, а не выдумываем «сейчас».
+  const kogda = rw.doneAt
+    ? 'Отмечено: ' + new Date(rw.doneAt).toLocaleString('ru-RU',
+        { day:'numeric', month:'long', hour:'2-digit', minute:'2-digit' })
+    : (otmEst(rw) ? 'Время отметки появится после сохранения' : '');
+
+  ov.innerHTML =
+      '<div class="refcfg-modal">'
+    + '<div class="refcfg-head"><div>'
+    + '<div class="refcfg-title">Выполнение</div>'
+    + '<div class="refcfg-sub">' + escapeHtml(imyaOtm) + '</div></div>'
+    + '<button type="button" class="plan-close" data-otm-close="1" aria-label="Закрыть">✕</button></div>'
+    + '<div class="refcfg-body">'
+    + '<div class="otm-bystro">' + bystro + '</div>'
+    + '<div class="refcfg-row"><label>Свой процент</label>'
+    + '<input type="text" inputmode="decimal" id="otmPct" class="ownw-inp" placeholder="0–100" value="'
+    + escapeAttr(n === null ? '' : String(n)) + '"></div>'
+    + '<div class="refcfg-row"><label>Примечание</label>'
+    + '<input type="text" id="otmNote" class="ownw-inp" maxlength="1000" placeholder="напр. ждём высыхания" value="'
+    + escapeAttr(rw.doneNote || '') + '"></div>'
+    + (kogda ? '<div class="otm-kogda">' + escapeHtml(kogda) + '</div>' : '')
+    + '<div class="otm-kogda">В документы не попадает: ни в смету, ни в акт, ни в наряд, ни в ссылку заказчику.</div>'
+    + '</div>'
+    + '<div class="refcfg-foot">'
+    + '<button type="button" class="btn btn-outline" data-otm-snyat="1">Снять отметку</button>'
+    + '<button type="button" class="btn btn-primary" data-otm-ok="1">Готово</button>'
+    + '</div></div>';
+  ov.style.display = 'flex';
+
+  const pole = ov.querySelector('#otmPct');
+  ov.querySelectorAll('[data-otm-pct]').forEach(b=>{
+    b.onclick = ()=>{
+      pole.value = b.getAttribute('data-otm-pct');
+      ov.querySelectorAll('[data-otm-pct]').forEach(x=> x.classList.remove('on'));
+      b.classList.add('on');
+    };
+  });
+  ov.querySelector('[data-otm-close]').onclick = otmClose;
+  ov.querySelector('[data-otm-snyat]').onclick = ()=> otmPrimenit(null, '');
+  ov.querySelector('[data-otm-ok]').onclick = ()=>{
+    const v = (pole.value || '').trim();
+    otmPrimenit(v === '' ? null : v, (ov.querySelector('#otmNote').value || '').trim());
+  };
+}
+
+function otmPrimenit(pct, note){
+  const t = otmTek;
+  if(!t) return;
+  const proj = currentProject();
+  const room = proj && (proj.rooms||[]).find(r=>r.id===t.roomId);
+  const rw = room && (room.works||[]).find(w=>w.lid===t.lid);
+  if(rw){
+    // Ноль — это ноль, а не «не отмечено»: прораб может сознательно
+    // сказать «к этой работе не приступали». Снять отметку — отдельная
+    // кнопка, и только она возвращает пустоту.
+    rw.donePct = (pct === null) ? '' : String(Math.max(0, Math.min(100, Math.round(num(pct)))));
+    rw.doneNote = note || '';
+    scheduleSave(); render();
+  }
+  otmClose();
+}
+
+function otmClose(){
+  const ov = document.getElementById('otmOverlay');
+  if(ov){ ov.style.display = 'none'; ov.innerHTML = ''; }
+  otmTek = null;
 }
 
 // ---------- «ИЗ ПОМЕЩЕНИЯ»: ПОДСКАЗКА КОЛИЧЕСТВА ДЛЯ ДОП. РАБОТЫ ----------
@@ -17352,6 +17547,8 @@ function renderRoomWorks(room){
                   data-qty-over="${room.id}|${rw.lid}">`}
       ${line.over ? `<button class="btn-icon qty-reset" data-qty-reset="${room.id}|${rw.lid}" title="Вернуть расчёт из размеров помещения">↺</button>` : ''}
       ${unitField}
+      <button type="button" class="otm-knopka${otmKlass(rw)}" data-otm="${room.id}|${rw.lid}"
+              title="Отметить выполнение">${otmPodpis(rw)}</button>
       <span class="wsum" data-wsum="${room.id}|${rw.lid}">${fmt(line.qty)} ${workUnitLabel(work,rw)} · ${fmtMoney(line.sum)}</span>
       ${mayAssign ? `<button class="sel-work-assign${rw.assignedTo?' on':''}" data-assign="${rw.lid}"
         ${rw.assignedTo ? `style="--who:${whoColor(proj, rw.assignedTo)}"` : ''}
@@ -18578,6 +18775,15 @@ function attachHandlers(){
     el.addEventListener('input', apply);
     el.addEventListener('change', apply);
   });
+  // Отметка о выполнении — кнопка процента в строке сметы.
+  main.querySelectorAll('[data-otm]').forEach(el=>{
+    el.onclick = (ev)=>{
+      ev.stopPropagation();
+      const [roomId, lid] = el.getAttribute('data-otm').split('|');
+      otmOpen(roomId, lid);
+    };
+  });
+
   // «Из помещения» — подсказка количества у доп. работы.
   main.querySelectorAll('[data-kolvo-iz]').forEach(el=>{
     el.onclick = (ev)=>{
