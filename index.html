@@ -3564,7 +3564,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-03-159';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-03-160';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -11503,13 +11503,20 @@ const DOC_NAZVANIYA = {
   akt_defects:  'Акт о выявленных недостатках (по п. 6.5)',
   dopsogl:      'Дополнительное соглашение на дополнительные работы',
   dopsrok:      'Дополнительное соглашение о сроках',
-  rastorzhenie: 'Соглашение о расторжении'
+  rastorzhenie: 'Соглашение о расторжении',
+  otchyot:      'Отчёт о выполненных работах'
 };
 let uiContractDays = '';
 let uiContractDate = '';
 let uiSettlementAmount = '';
 let uiStageNo = '';
 let uiDopNo = '';        // номер дополнительного соглашения на доп. работы
+// Период отчёта руководителю. Решение владельца 3 сентября 2026:
+// «лучше по датам» — а не «с прошлого отчёта». Это важнее, чем кажется:
+// период, заданный датами, ничего не «съедает». Отчёт можно посмотреть,
+// не отдавая, и переиздать за тот же период — выйдет то же самое.
+let uiOtchyotS  = '';
+let uiOtchyotPo = '';
 
 // ---------- СТЕНЫ (типы фигур) ----------
 // ---------- ФОРМЫ ПОМЕЩЕНИЯ (режим "размеры помещения") ----------
@@ -14528,6 +14535,118 @@ function dopSoglRabotyBlocks(proj){
   return B;
 }
 
+// ---------- ОТЧЁТ РУКОВОДИТЕЛЮ (задача 2026-09-03-06) ----------
+//
+// Владелец 3 сентября 2026: «нужно будет сделать кнопку формирования
+// отчёта для условно руководителя. Туда попадает, что сделано за сегодня».
+//
+// Читатель — РУКОВОДИТЕЛЬ: тот, кому прораб отчитывается об объёме.
+// Не заказчик и не мастер. Отсюда три решения владельца:
+//
+//  · только то, что сдвинулось за период — не простыня всех работ:
+//    руководитель не должен искать новое глазами;
+//  · БЕЗ ЦЕН. Ни цены заказчика, ни выплаты мастеру, ни итога в рублях.
+//    Ему нужен объём. Это же определяет, кому документ можно показать:
+//    коммерческой тайны прораба в нём нет;
+//  · период задаётся ДАТАМИ.
+
+// Местная дата отметки в виде ГГГГ-ММ-ДД. Сравнивать надо по местному
+// дню, а не по всемирному времени: отметка, поставленная в 2 часа ночи,
+// иначе уехала бы во вчера.
+function otchyotDenOtmetki(rw){
+  if(!rw || !rw.doneAt) return '';
+  const d = new Date(rw.doneAt);
+  if(isNaN(d)) return '';
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0')
+       + '-' + String(d.getDate()).padStart(2,'0');
+}
+
+// Что отмечено за период, с разбивкой по помещениям.
+function otchyotSobrat(proj, sDate, poDate){
+  const byId = catalogById();
+  const gruppy = [];
+  (proj.rooms||[]).forEach(room=>{
+    const g = calcRoomGeometry(room);
+    const items = [];
+    (room.works||[]).forEach(rw=>{
+      // Исключённую позицию в отчёт не берём: её из сметы убрали,
+      // и объём по ней не причитается.
+      if(typeof isklyuchena === 'function' && isklyuchena(rw)) return;
+      if(!otmEst(rw)) return;
+      const den = otchyotDenOtmetki(rw);
+      // Отметка есть, а времени ещё нет — значит поставлена только что
+      // и на сервер не уехала. В отчёт за прошлые дни ей нельзя,
+      // а за сегодня — можно и нужно.
+      const segodnya = new Date();
+      const dnes = segodnya.getFullYear() + '-' + String(segodnya.getMonth()+1).padStart(2,'0')
+                 + '-' + String(segodnya.getDate()).padStart(2,'0');
+      const kogda = den || dnes;
+      if(sDate && kogda < sDate) return;
+      if(poDate && kogda > poDate) return;
+      const work = effWork(byId.get(rw.workId), rw);
+      if(!work) return;
+      const line = calcWorkLine(room, rw, work, g);
+      items.push({
+        name: rw.cfg ? REF_TILING.layName : (work.name || '—'),
+        pct: otmChislo(rw),
+        qty: line.qty,
+        unit: workUnitLabel(work, rw) || '',
+        note: (rw.doneNote||'').trim()
+      });
+    });
+    if(items.length) gruppy.push({ room: room.name || 'Помещение', items });
+  });
+  return gruppy;
+}
+
+function otchyotBlocks(proj){
+  const c = proj.customer || {};
+  const B = [];
+  const P = (t, o)=> B.push(Object.assign({ text:t, style:'normal' }, o||{}));
+
+  const sD = (uiOtchyotS||'').trim();
+  const poD = (uiOtchyotPo||'').trim();
+  const period = (sD && poD && sD !== poD)
+      ? ('с ' + formatDate(sD) + ' по ' + formatDate(poD))
+      : (sD ? ('за ' + formatDate(sD)) : (poD ? ('по ' + formatDate(poD)) : 'за всё время'));
+
+  P('Отчёт о выполненных работах', { style:'h1', align:'center', gap:2 });
+  P('объект: ' + _or(proj.name, 'без названия') +
+    (c.address ? ', ' + c.address : ''), { align:'center', gap:2, style:'small' });
+  P('период: ' + period, { align:'center', gap:12, style:'small' });
+
+  const gruppy = otchyotSobrat(proj, sD, poD);
+
+  if(!gruppy.length){
+    // Пустой бланк хуже честной строки: получивший его решит, что
+    // отчёт сломался, а не что за период ничего не отмечали.
+    P('За указанный период отметок о готовности не вносилось.', { gap:12 });
+  } else {
+    P('Выполнено за период:', { gap:6 });
+    gruppy.forEach(gr=>{
+      P(gr.room, { gap:2, bold:true });
+      gr.items.forEach(it=>{
+        const kolvo = it.qty ? (fmt(it.qty) + (it.unit ? ' ' + it.unit : '')) : '';
+        // ЦЕН ЗДЕСЬ НЕТ И БЫТЬ НЕ ДОЛЖНО — решение владельца.
+        P('— ' + it.name + ' — ' + it.pct + ' %' + (kolvo ? ', ' + kolvo : '') +
+          (it.note ? ' (' + it.note + ')' : ''), { gap:2 });
+      });
+      B.push({ text:'', style:'normal', gap:6 });
+    });
+  }
+
+  // ВСЕГО ПО ОБЪЕКТУ — считается ПО ДЕНЬГАМ (otmDolya), но сами деньги
+  // в документ не выходят: наружу только процент. Пять мелочей и одна
+  // большая работа — это не «шесть шестых», и счёт по числу строк
+  // врал бы уверенно.
+  const vsego = otmDolya(proj.rooms, proj);
+  if(vsego !== null) P('Всего по объекту: ' + vsego + ' %', { gap:16, bold:true });
+
+  P('Отчёт составлен ' + formatDate(new Date().toISOString().slice(0,10)) +
+    '. Проценты — оценка производителя работ.', { style:'small' });
+  return B;
+}
+
 function aktEtapaBlocks(proj){
   const c = proj.customer||{};
   const date = _or(formatDate(c.date), '«___» __________ 20___ г.');
@@ -14655,18 +14774,18 @@ async function generateDoc(proj, docType, format, action, btn){
       await ensureXLSX();
       blob = smetaXlsxBlob(proj);
       filename = `${isNaryad(proj) ? 'Наряд' : 'Смета'}_${nm}.xlsx`;
-    } else if(['dogovor','raspiska','akt_priem','akt_etapa','akt_defects','dopsrok','dopsogl','rastorzhenie'].includes(docType)){
+    } else if(['dogovor','raspiska','akt_priem','akt_etapa','akt_defects','dopsrok','dopsogl','rastorzhenie','otchyot'].includes(docType)){
       const map = {
         dogovor: dogovorBlocks, raspiska: raspiskaBlocks, akt_priem: aktBlocks,
         akt_etapa: aktEtapaBlocks, akt_defects: aktDefectsBlocks,
         dopsrok: dopSrokBlocks, dopsogl: dopSoglRabotyBlocks,
-        rastorzhenie: rastorzhenieBlocks,
+        rastorzhenie: rastorzhenieBlocks, otchyot: otchyotBlocks,
       };
       const titles = {
         dogovor:'Договор', raspiska:'Расписка', akt_priem:'Акт_приёма-сдачи',
         akt_etapa:'Акт_этапа', akt_defects:'Акт_о_недостатках',
         dopsrok:'Доп_соглашение_сроки', dopsogl:'Доп_соглашение_работы',
-        rastorzhenie:'Соглашение_о_расторжении',
+        rastorzhenie:'Соглашение_о_расторжении', otchyot:'Отчёт_о_работах',
       };
       const blocks = map[docType](proj);
       const title = titles[docType];
@@ -17346,6 +17465,10 @@ function renderDogovorDocPanel(proj){
         <option value="" ${!uiDopNo?'selected':''}>Черновик — ещё не подписанные${svobodnyh ? ' (' + svobodnyh + ')' : ''}</option>
       </select></div>`);
   }
+  if(t === 'otchyot'){
+    fields.push(`<div class="cust-field"><label>Период с</label><input type="date" value="${escapeAttr(uiOtchyotS)}" data-otchyot-s></div>`);
+    fields.push(`<div class="cust-field"><label>по</label><input type="date" value="${escapeAttr(uiOtchyotPo)}" data-otchyot-po></div>`);
+  }
   if(t === 'dopsrok') fields.push(`<div class="cust-field"><label>Количество рабочих дней</label><input type="text" inputmode="numeric" placeholder="если пусто — прочерк" value="${escapeAttr(uiContractDays)}" data-contract-days></div>`);
   if(t === 'raspiska' || t === 'akt_etapa' || t === 'rastorzhenie'){
     const lbl = t === 'akt_etapa' ? 'Сумма этапа, ₽' : t === 'raspiska' ? 'Полученная сумма, ₽' : 'Сумма взаиморасчёта, ₽';
@@ -18758,6 +18881,10 @@ function attachHandlers(){
   if(sett) sett.addEventListener('input', ()=>{ uiSettlementAmount = sett.value; });
   const stg = main.querySelector('[data-stageno]');
   if(stg) stg.addEventListener('input', ()=>{ uiStageNo = stg.value; });
+  const ots = main.querySelector('[data-otchyot-s]');
+  if(ots) ots.addEventListener('input', ()=>{ uiOtchyotS = ots.value; });
+  const otp = main.querySelector('[data-otchyot-po]');
+  if(otp) otp.addEventListener('input', ()=>{ uiOtchyotPo = otp.value; });
   const dpn = document.querySelector('[data-dopno]');
   // Теперь это <select>, а не поле ввода: слушаем и change тоже.
   if(dpn){
