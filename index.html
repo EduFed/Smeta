@@ -3463,7 +3463,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-03-151';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-03-152';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -14952,6 +14952,25 @@ function render(){
     const cp = currentProject();
     if(cp) realtimeWatch(cp.id); else realtimeStop();
   }
+  // ПОТОЛОК ВЫСОТЫ У УЖЕ РАСКРЫТЫХ БЛОКОВ — СНЯТЬ СРАЗУ.
+  //
+  // Раскрытие блока сделано через max-height с числовым потолком
+  // (2000–6000 точек), иначе анимации не из чего считать. Потолок
+  // снимается в transitionend, когда анимация раскрытия доиграла.
+  //
+  // Но перерисовка страницы строит разметку заново, и снятый потолок
+  // теряется вместе со старым узлом: блок остаётся раскрытым, а высота
+  // снова упирается в 2000. Анимации при этом нет — значит и снимать
+  // потолок некому.
+  //
+  // Владелец 3 сентября 2026: «с айфона добавил позицию, а карточку
+  // обрезало и низ вкладки с полем не виден и не прокручивается.
+  // Свернул вкладку и заново развернул — всё стало нормально».
+  // Свернул-развернул — это и есть та самая анимация, которой не хватало.
+  //
+  // На телефоне это заметнее: строки выше, и до потолка добираются
+  // втрое быстрее, чем на широком экране.
+  accPotolokSnyat();
   if(uiWorkSearchRefocus){
     const target = uiWorkSearchRefocus; uiWorkSearchRefocus = null;
     const inp = document.querySelector(`[data-worksearch-input="${target}"]`);
@@ -19286,6 +19305,13 @@ document.addEventListener('transitionend', (e)=>{
     (el.parentElement && el.parentElement.classList.contains('open'));
   if(isOpen) el.style.maxHeight = 'none';
 });
+// Снять потолок высоты со всех РАСКРЫТЫХ блоков. Зовётся после каждой
+// перерисовки: там анимации нет, а значит нет и transitionend.
+function accPotolokSnyat(){
+  document.querySelectorAll('.cust-acc.open > .cust-body, .doc-panel.open > .doc-panel-body, .smeta-body.open')
+    .forEach(el=>{ el.style.maxHeight = 'none'; });
+}
+
 function accBeforeToggle(bodyEl, willOpen){
   if(!bodyEl) return;
   if(!willOpen && bodyEl.style.maxHeight === 'none'){
