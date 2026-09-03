@@ -2847,10 +2847,14 @@
      чтобы не мозолил глаз на несделанном; отмечено частично — оранжевый,
      цвет внимания; сделано целиком — зелёный с галочкой.
      Три состояния различимы с одного взгляда, как и просил владелец. */
-  .otm-knopka{flex:0 0 auto;min-width:46px;border:1px solid var(--paper-line);
+  .otm-knopka{flex:0 0 auto;border:1px dashed var(--paper-line);
     border-radius:8px;background:transparent;color:var(--ink-soft);
-    font-family:'JetBrains Mono',monospace;font-size:11px;line-height:1;
-    padding:7px 6px;cursor:pointer;white-space:nowrap;}
+    font-family:'Inter',sans-serif;font-size:11px;line-height:1;
+    padding:8px 10px;cursor:pointer;white-space:nowrap;}
+  /* Отмеченная — сплошная рамка и моноширинное число: цифру глаз ищет
+     столбиком, а слово «отметить» читается как обычный текст. */
+  .otm-knopka.otm-chast, .otm-knopka.otm-vsyo{
+    border-style:solid;font-family:'JetBrains Mono',monospace;}
   .otm-knopka:hover{border-color:var(--orange);color:var(--ink);}
   .otm-knopka.otm-chast{border-color:var(--orange);color:var(--orange);font-weight:600;}
   .otm-knopka.otm-vsyo{border-color:var(--green);color:var(--green);font-weight:600;}
@@ -2865,6 +2869,13 @@
   .otm-bystro button:hover{border-color:var(--orange);}
   .otm-bystro button.on{background:var(--orange);border-color:var(--orange);color:#fff;font-weight:600;}
   .otm-kogda{font-size:11px;color:var(--ink-soft);margin-top:10px;}
+  /* Примечание к выполнению — под названием работы, там же, где параметры
+     укладки. Отдельным местом не разводим: это подпись к строке,
+     а подпись к строке в приложении одна (CLAUDE.md). Отличается
+     кавычками и наклоном — чтобы не путать с параметрами расчёта. */
+  .sel-work-sub.otm-zametka{font-style:italic;color:var(--ink-soft);}
+  .sel-work-sub.otm-zametka::before{content:"« ";}
+  .sel-work-sub.otm-zametka::after{content:" »";}
   /* Две кнопки в подвале окна отметки. «Снять» без заливки — это выход,
      а не главное действие. */
   /* Строка выполнения под итогом проекта — тише самого итога:
@@ -3553,7 +3564,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-03-157';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-03-158';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -9405,10 +9416,23 @@ function otmEst(rw){
 function otmChislo(rw){
   return otmEst(rw) ? Math.max(0, Math.min(100, Math.round(num(rw.donePct)))) : null;
 }
+// ПОДПИСЬ СЛОВАМИ, А НЕ ЗНАЧКОМ (правка 3 сентября 2026).
+// Владелец: «поле с процентами вижу, работает. Но изначально непонятно,
+// что за поле. Для новых пользователей точно».
+//
+// Сначала здесь стоял кружок «○». Мне он казался говорящим: пустой —
+// значит не отмечено. Но это понятно тому, кто знает, что отметка
+// вообще бывает. Человек, открывший приложение впервые, видит кружок
+// и не знает даже, что его можно нажать.
+//
+// Та же грабля 72, что с калькулятором: возможность, о которой нельзя
+// догадаться, глядя на экран, всё равно что отсутствует. Второй раз
+// за два дня — значит проверять надо не «понятно ли мне», а «понятно ли
+// тому, кто видит впервые».
 function otmPodpis(rw){
   const n = otmChislo(rw);
-  if(n === null) return '○';
-  return n >= 100 ? '✓' : (n + '%');
+  if(n === null) return 'отметить';
+  return n >= 100 ? 'готово' : (n + ' %');
 }
 function otmKlass(rw){
   const n = otmChislo(rw);
@@ -17558,7 +17582,8 @@ function renderRoomWorks(room){
     const svoya = !rw.cfg && !realIds.has(rw.workId);
     return `<div class="sel-work ${rw.cfg?'sel-work-cfg':''} ${line.over?'sel-work-over':''}">
       <span class="sel-work-name">${escapeHtml(rw.cfg ? REF_TILING.layName : work.name)}${
-        cfgParts ? `<span class="sel-work-sub">${escapeHtml(cfgParts)} · ${fmtMoney(work.price)}/м²</span>` : ''}</span>
+        cfgParts ? `<span class="sel-work-sub">${escapeHtml(cfgParts)} · ${fmtMoney(work.price)}/м²</span>` : ''}${
+        (rw.doneNote||'').trim() ? `<span class="sel-work-sub otm-zametka">${escapeHtml(rw.doneNote)}</span>` : ''}</span>
       ${rw.cfg ? `<button class="btn-icon sel-work-gear" data-cfg-edit="${room.id}|${rw.lid}" title="Изменить параметры укладки">⚙</button>` : ''}
       ${svoya ? `<button class="btn-icon sel-work-gear" data-own-edit="${room.id}|${rw.lid}" title="Изменить название, единицу и цену">✎</button>` : ''}
       ${manual
