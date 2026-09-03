@@ -3463,7 +3463,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-03-149';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-03-150';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -8755,6 +8755,31 @@ async function fotoSkladPolozhitBlob(id, blob){
     const c = await caches.open(FOTO_SKLAD);
     await c.put(fotoKluch(id),
       new Response(blob, { headers: { 'Content-Type': blob.type || 'image/jpeg' } }));
+
+    // БАЙТЫ ЗАМЕНИЛИСЬ — ЗНАЧИТ ПАМЯТЬ АДРЕСОВ УСТАРЕЛА.
+    //
+    // fotoSkladVzyat отдаёт адрес из fotoAdresa, не заглядывая в склад:
+    // адрес одного и того же снимка незачем создавать дважды. Пока снимок
+    // не менялся, это верно. Поворот (3 сентября 2026) стал первым
+    // случаем, когда байты под тем же номером ДРУГИЕ, — и старый адрес
+    // начал врать.
+    //
+    // Как это выглядело у владельца: «поворачивает ровно один раз,
+    // дальше кнопка не срабатывает». Кнопка срабатывала: каждый раз
+    // поворот брал со склада ИСХОДНЫЙ снимок и честно крутил его
+    // на 90° — то есть выдавал один и тот же результат.
+    //
+    // Чиню здесь, а не в повороте: это единственное место, где байты
+    // снимка заменяются. Любая будущая правка снимка получит это даром,
+    // и второй такой же разбор не понадобится.
+    const staryyAdres = fotoAdresa.get(id);
+    if(staryyAdres){
+      fotoAdresa.delete(id);
+      // Отпускаем НЕ СРАЗУ: старый адрес может стоять в картинке,
+      // которая прямо сейчас на экране. Отпустишь немедленно — на её
+      // месте будет битый значок, пока страница не перерисуется.
+      setTimeout(()=>{ try{ URL.revokeObjectURL(staryyAdres); }catch(_){} }, 15000);
+    }
     fotoOtmetit(id, blob.size);
     await fotoSkladPodzhat();
   }catch(_){}
@@ -9347,6 +9372,16 @@ async function fotoPovernut(a){
     photoUrlCache.delete(a.id);
     photoUrlCache.delete(fotoMiniKluch(a.id));
     pvRasstavit();
+
+    // 7. Плитка позади просмотрщика держит СВОЙ адрес в картинке —
+    //    забыть его в памяти мало, надо подставить новый. Иначе
+    //    человек закроет снимок и увидит прежнюю, неповёрнутую плитку:
+    //    решит, что не сработало, и повернёт ещё раз.
+    try{
+      const mini = await fotoSkladVzyat(fotoMiniKluch(a.id));
+      const plitka = document.querySelector(`[data-ph-thumb="${a.id}"] img`);
+      if(plitka) plitka.src = mini || svezhiy;
+    }catch(_){}
   }catch(e){
     console.error('Поворот не вышел', e);
     toast('Повернуть не удалось: ' + ((e && e.message) || 'неизвестно почему'));
