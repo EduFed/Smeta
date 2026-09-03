@@ -2869,6 +2869,15 @@
   .otm-bystro button:hover{border-color:var(--orange);}
   .otm-bystro button.on{background:var(--orange);border-color:var(--orange);color:#fff;font-weight:600;}
   .otm-kogda{font-size:11px;color:var(--ink-soft);margin-top:10px;}
+  /* ИСКЛЮЧЁННАЯ ПОЗИЦИЯ. Зачёркнута — работу отменили; это НЕ то же,
+     что выполненная (та просто приглушена). Два разных состояния должны
+     и выглядеть по-разному, иначе их начнут путать в разговоре
+     с заказчиком. */
+  .sel-work.pozicia-isklyuchena .sel-work-name{text-decoration:line-through;opacity:.55;}
+  .sel-work.pozicia-isklyuchena .wsum{text-decoration:line-through;opacity:.55;}
+  .isk-metka{flex:0 0 auto;font-size:10px;letter-spacing:.03em;
+    color:var(--red);border:1px solid var(--red);border-radius:6px;
+    padding:4px 7px;white-space:nowrap;opacity:.85;}
   /* Примечание к выполнению — под названием работы, там же, где параметры
      укладки. Отдельным местом не разводим: это подпись к строке,
      а подпись к строке в приложении одна (CLAUDE.md). Отличается
@@ -3564,7 +3573,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-03-160';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-03-161';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -7358,6 +7367,12 @@ const DB = {
       donePct:  (w.done_pct === null || w.done_pct === undefined) ? '' : String(w.done_pct),
       doneNote: w.done_note || '',
       doneAt:   w.done_at || '',
+      // ИСКЛЮЧЕНА ЛИ ПОЗИЦИЯ и каким соглашением (задача 2026-09-03-01).
+      // Как и assignedTo, в общем сохранении НЕ участвует: уходит узким
+      // запросом. Впиши в общую пачку — и первое же сохранение соседней
+      // строки сняло бы исключение молча.
+      excludedDopNo: w.excluded_dop_no || '',
+      excludedDate:  w.excluded_date || '',
       workId: w.is_ref_lay ? REF_LAY_ID : (w.work_id || ('ghost_' + w.lid)),
       manualQty: w.manual_qty === null ? '' : w.manual_qty,
       // null из базы -> пустое поле («считать из размеров»),
@@ -8075,6 +8090,42 @@ const DB = {
   // ids не задан - снимаем всё соглашение целиком, одним запросом:
   // отобьётся одна строка - не применится ни одна, и соглашение
   // не останется расподписанным наполовину.
+  // ИСКЛЮЧИТЬ ПОЗИЦИИ ИЗ СМЕТЫ (задача 2026-09-03-01).
+  //
+  // ЧЕРНОВИКА НЕТ, И ЭТО НЕ УПУЩЕНИЕ. В базе состояние одно: номер
+  // соглашения проставлен — позиция исключена и заморожена. Пометить
+  // «решил убрать, но ещё не оформил» нечем: сторож считает исключением
+  // сам факт непустого номера. Значит исключение И ЕСТЬ оформление
+  // соглашения. Отменяется снятием подписания, которое уже есть.
+  async isklyuchitPozicii(projectId, lids, nomer, data_){
+    const nom = String(nomer || '').trim();
+    if(!nom) throw new Error('Номер соглашения не может быть пустым.');
+    const spisok = (lids || []).filter(Boolean);
+    if(!spisok.length) return [];
+    const { data, error } = await sb.from('room_works')
+      .update({ excluded_dop_no: nom, excluded_date: data_ || null })
+      .eq('project_id', projectId)
+      .in('lid', spisok)
+      .is('excluded_dop_no', null)      // страховка от повторного исключения
+      .select('lid, excluded_dop_no, excluded_date');
+    if(error) throw error;
+    return data || [];
+  },
+
+  // Вернуть позиции этого соглашения в смету. Сторож пропускает снятие
+  // ВЧИСТУЮ — только эти два поля и ничего больше.
+  async vernutPozicii(projectId, nomer){
+    const nom = String(nomer || '').trim();
+    if(!nom) return [];
+    const { data, error } = await sb.from('room_works')
+      .update({ excluded_dop_no: null, excluded_date: null })
+      .eq('project_id', projectId)
+      .eq('excluded_dop_no', nom)
+      .select('lid');
+    if(error) throw error;
+    return data || [];
+  },
+
   async snyatPodpisanie(projectId, nomer, ids){
     let q = sb.from('project_extra_works')
       .update({ dop_no: null, dop_date: null })
@@ -11490,7 +11541,7 @@ const uiWorkSearch = {};      // текст поиска по помещению
 const uiExtraSearch = {};     // текст поиска по справочнику в доп. работах
 let uiWorkSearchRefocus = null; // вернуть фокус после render
 const uiCustomerOpen = {};
-const uiPanel = { smeta:false, zakupka:false, dogovor:false };
+const uiPanel = { smeta:false, zakupka:false, dogovor:false, otchyot:false };
 let uiContractType = 'dogovor';
 // Названия документов одним списком: раньше они жили только внутри
 // разметки выпадающего списка, и показать выбранный где-то ещё было
@@ -11503,9 +11554,11 @@ const DOC_NAZVANIYA = {
   akt_defects:  'Акт о выявленных недостатках (по п. 6.5)',
   dopsogl:      'Дополнительное соглашение на дополнительные работы',
   dopsrok:      'Дополнительное соглашение о сроках',
-  rastorzhenie: 'Соглашение о расторжении',
-  otchyot:      'Отчёт о выполненных работах'
+  rastorzhenie: 'Соглашение о расторжении'
 };
+// Отчёта руководителю в этом списке НЕТ намеренно: у него своя кнопка
+// (renderOtchyotDocPanel). Два входа в один документ — это два места,
+// где придётся помнить про него при каждой правке.
 let uiContractDays = '';
 let uiContractDate = '';
 let uiSettlementAmount = '';
@@ -13760,6 +13813,10 @@ function payoutBreakdown(proj){
   (proj.rooms || []).forEach(room=>{
     const g = calcRoomGeometry(room);
     (room.works || []).forEach(rw=>{
+      // Исключённая позиция мастеру не начисляется: работы больше нет.
+      // Если ему за неё уже платили, в «Выплатах» появится переплата —
+      // зелёным, и это верно: деньги ушли, работа отменена.
+      if(isklyuchena(rw)) return;
       const work = effWork(byId.get(rw.workId), rw);
       if(!work) return;
       const line = calcWorkLine(room, rw, work, g);
@@ -13903,6 +13960,12 @@ function buildEstimateData(proj, opts){
     const items = [];
     const g = calcRoomGeometry(room);
     (room.works||[]).forEach(rw=>{
+      // ИСКЛЮЧЁННАЯ ПОЗИЦИЯ В ИТОГ НЕ ИДЁТ — ни в смету, ни в наряд,
+      // ни в PDF, ни в Excel, ни в Word, ни в снимок заказчику, ни в итог
+      // проекта. Всё это считается ЭТОЙ функцией, поэтому одна проверка
+      // здесь закрывает семь мест разом. Считай где-то ещё отдельно —
+      // и в двух документах будут разные суммы, а найдёт это заказчик.
+      if(isklyuchena(rw)) return;
       const work = effWork(byId.get(rw.workId), rw);
       if(!work) return;
       const line = calcWorkLine(room, rw, work, g);
@@ -16067,6 +16130,44 @@ function renderZakupkaDocPanel(proj){
     </div>`;
 }
 
+// ОТЧЁТ РУКОВОДИТЕЛЮ — СВОЕЙ КНОПКОЙ (правка 3 сентября 2026).
+//
+// Сначала он был просто ещё одним пунктом в списке документов, рядом
+// с договором и актами. Владелец его там не нашёл: «во вкладке документы
+// ничего нового не появилось».
+//
+// И правильно не нашёл. Отчёт руководителю делают КАЖДЫЙ ДЕНЬ, а договор
+// — один раз на объект. Прятать ежедневное в один список с разовым —
+// та же ошибка, за которую в этот же день досталось кнопкам «Оплата»
+// и «Выплата»: их не было видно среди полей.
+//
+// Частота использования — а не родство по смыслу — решает, что стоит
+// на виду.
+function renderOtchyotDocPanel(proj){
+  const open = uiPanel.otchyot;
+  // Есть ли вообще что отмечать. Ни одной отметки — объясняем, где
+  // их ставят, а не показываем пустые поля дат.
+  const estOtmetki = (proj.rooms||[]).some(r=> (r.works||[]).some(otmEst));
+  const d = estOtmetki ? otmDolya(proj.rooms, proj) : null;
+  return `
+    <div class="doc-panel ${open?'open':''}" data-panel-box="otchyot">
+      <button class="doc-main-btn" data-panel="otchyot"><span class="chev">▾</span> Отчёт руководителю${
+        d === null ? '' : ` · готовность ${d} %`}</button>
+      <div class="doc-panel-body">
+        ${estOtmetki ? `
+          <div class="cust-grid" style="margin-bottom:12px;">
+            <div class="cust-field"><label>Период с</label>
+              <input type="date" value="${escapeAttr(uiOtchyotS)}" data-otchyot-s></div>
+            <div class="cust-field"><label>по</label>
+              <input type="date" value="${escapeAttr(uiOtchyotPo)}" data-otchyot-po></div>
+          </div>
+          ${docBtns('otchyot','docx','Word')}
+          <div class="mat-note" style="margin-top:10px;">Что сделано за период, с процентами и примечаниями. Цен в документе нет — его можно показывать кому угодно.</div>`
+        : `<div class="mat-note">Отметьте готовность работ в смете — кнопка «готовность» в строке. После этого здесь можно будет собрать отчёт за день или за период.</div>`}
+      </div>
+    </div>`;
+}
+
 function projStatusColor(p){
   const st = PROJ_STATUS[p && p.status];
   return st ? st.color : '';
@@ -16745,6 +16846,7 @@ function renderProjectView(proj){
       <div class="docs-title">Документы</div>
       ${renderSmetaDocPanel(proj)}
       ${renderZakupkaDocPanel(proj)}
+      ${renderOtchyotDocPanel(proj)}
       ${renderDogovorDocPanel(proj)}
       <!-- ССЫЛКА ЗАКАЗЧИКУ. Стоит в «Документах», а не отдельным блоком:
            по смыслу это ещё один способ отдать смету — как PDF, только
@@ -16813,11 +16915,50 @@ function docBtns(type, fmt2, fmt2label){
 // ПОДПИСАННОЕ НЕ МЕНЯЕТСЯ. Держится это не видом кнопок, а сторожем
 // в базе (zz_dop_frozen): его не обходит даже служебный ключ сервера.
 // Здесь мы лишь не показываем полей, которые всё равно отобьются.
+// Исключена ли позиция сметы. Одно место на всё приложение — чтобы
+// признак не начал расходиться по копиям (задача 2026-09-03-01).
+function isklyuchena(rw){
+  return !!(rw && (rw.excludedDopNo||'').trim());
+}
+
+// Исключённые строки проекта — с помещением, количеством и суммой.
+// Нужны документу соглашения и окну подписания.
+function isklyuchyonnye(proj, nomer){
+  const byId = catalogById();
+  const k = condK(proj);
+  const out = [];
+  (proj.rooms||[]).forEach(room=>{
+    const g = calcRoomGeometry(room);
+    (room.works||[]).forEach(rw=>{
+      if(!isklyuchena(rw)) return;
+      if(nomer !== undefined && nomer !== null &&
+         (rw.excludedDopNo||'').trim() !== String(nomer).trim()) return;
+      const work = effWork(byId.get(rw.workId), rw);
+      if(!work) return;
+      const line = calcWorkLine(room, rw, work, g);
+      const price = Math.round(num(work.price) * k);
+      out.push({ lid: rw.lid, room: room.name || 'Помещение',
+                 name: rw.cfg ? REF_TILING.layName : (work.name || '—'),
+                 unit: workUnitLabel(work, rw) || '', qty: line.qty,
+                 price: price, sum: line.qty * price,
+                 nomer: (rw.excludedDopNo||'').trim(),
+                 data: rw.excludedDate || '' });
+    });
+  });
+  return out;
+}
+
 function dopNomera(proj){
   const vidno = [];
   (proj.extraWorks||[]).forEach(e=>{
     const nom = (e.dopNo||'').trim();
     if(nom && vidno.indexOf(nom) === -1) vidno.push(nom);
+  });
+  // Соглашение может состоять ТОЛЬКО из исключений — ни одной добавленной
+  // работы. Не собери мы номера отсюда, такое соглашение исчезло бы
+  // из списка документов вместе со всем, что в нём подписано.
+  isklyuchyonnye(proj).forEach(x=>{
+    if(x.nomer && vidno.indexOf(x.nomer) === -1) vidno.push(x.nomer);
   });
   return vidno;
 }
@@ -17465,10 +17606,6 @@ function renderDogovorDocPanel(proj){
         <option value="" ${!uiDopNo?'selected':''}>Черновик — ещё не подписанные${svobodnyh ? ' (' + svobodnyh + ')' : ''}</option>
       </select></div>`);
   }
-  if(t === 'otchyot'){
-    fields.push(`<div class="cust-field"><label>Период с</label><input type="date" value="${escapeAttr(uiOtchyotS)}" data-otchyot-s></div>`);
-    fields.push(`<div class="cust-field"><label>по</label><input type="date" value="${escapeAttr(uiOtchyotPo)}" data-otchyot-po></div>`);
-  }
   if(t === 'dopsrok') fields.push(`<div class="cust-field"><label>Количество рабочих дней</label><input type="text" inputmode="numeric" placeholder="если пусто — прочерк" value="${escapeAttr(uiContractDays)}" data-contract-days></div>`);
   if(t === 'raspiska' || t === 'akt_etapa' || t === 'rastorzhenie'){
     const lbl = t === 'akt_etapa' ? 'Сумма этапа, ₽' : t === 'raspiska' ? 'Полученная сумма, ₽' : 'Сумма взаиморасчёта, ₽';
@@ -17714,7 +17851,11 @@ function renderRoomWorks(room){
       </select>` : '';
     const cfgParts = rw.cfg ? refCfgParts(rw.cfg).join(' · ') : '';
     const svoya = !rw.cfg && !realIds.has(rw.workId);
-    return `<div class="sel-work ${rw.cfg?'sel-work-cfg':''} ${line.over?'sel-work-over':''}">
+    // ИСКЛЮЧЁННАЯ СТРОКА ОСТАЁТСЯ ВИДИМОЙ, зачёркнутой, с номером
+    // соглашения. Прятать нельзя: пропавшая строка не отвечает
+    // на вопрос «а куда делась укладка в санузле».
+    const isk = isklyuchena(rw);
+    return `<div class="sel-work ${rw.cfg?'sel-work-cfg':''} ${line.over?'sel-work-over':''} ${isk?'pozicia-isklyuchena':''}">
       <span class="sel-work-name">${escapeHtml(rw.cfg ? REF_TILING.layName : work.name)}${
         cfgParts ? `<span class="sel-work-sub">${escapeHtml(cfgParts)} · ${fmtMoney(work.price)}/м²</span>` : ''}${
         (rw.doneNote||'').trim() ? `<span class="sel-work-sub otm-zametka">${escapeHtml(rw.doneNote)}</span>` : ''}</span>
@@ -17728,6 +17869,7 @@ function renderRoomWorks(room){
                   data-qty-over="${room.id}|${rw.lid}">`}
       ${line.over ? `<button class="btn-icon qty-reset" data-qty-reset="${room.id}|${rw.lid}" title="Вернуть расчёт из размеров помещения">↺</button>` : ''}
       ${unitField}
+      ${isk ? `<span class="isk-metka">исключена · соглашение № ${escapeHtml(rw.excludedDopNo)}</span>` : ''}
       <button type="button" class="otm-knopka${otmKlass(rw)}" data-otm="${room.id}|${rw.lid}"
               title="Готовность работы">${otmPodpis(rw)}</button>
       <span class="wsum" data-wsum="${room.id}|${rw.lid}">${fmt(line.qty)} ${workUnitLabel(work,rw)} · ${fmtMoney(line.sum)}</span>
