@@ -2875,6 +2875,15 @@
      с заказчиком. */
   .sel-work.pozicia-isklyuchena .sel-work-name{text-decoration:line-through;opacity:.55;}
   .sel-work.pozicia-isklyuchena .wsum{text-decoration:line-through;opacity:.55;}
+  .isk-detali{margin:12px 0;border:1px solid var(--paper-line);border-radius:10px;padding:10px 12px;}
+  .isk-detali summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--ink);}
+  .isk-room{font-size:11px;color:var(--ink-soft);text-transform:uppercase;
+    letter-spacing:.04em;margin:10px 0 4px;}
+  .isk-stroka{display:flex;align-items:center;gap:10px;padding:7px 0;
+    border-bottom:1px solid var(--paper-line);font-size:14px;cursor:pointer;}
+  .isk-stroka:last-child{border-bottom:none;}
+  .isk-stroka b{margin-left:auto;font-family:'JetBrains Mono',monospace;
+    font-size:12px;font-weight:500;color:var(--ink-soft);white-space:nowrap;}
   .isk-metka{flex:0 0 auto;font-size:10px;letter-spacing:.03em;
     color:var(--red);border:1px solid var(--red);border-radius:6px;
     padding:4px 7px;white-space:nowrap;opacity:.85;}
@@ -3573,7 +3582,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-03-161';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-03-162';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -14574,9 +14583,20 @@ function dopSoglRabotyBlocks(proj){
   P(`к Договору оказания услуг № ${cn} от ${date}`, {align:'center', gap:6, style:'small'});
   P(`г. ${_or(c.city,'____________________')},          ${_or(formatDate(dataSogl), compDate)}`, {align:'right', gap:12, style:'small'});
   P(`${execFioD()}, именуемый в дальнейшем «Подрядчик», с одной стороны, и ${_or(c.fio)}, именуемый(-ая) в дальнейшем «Заказчик», с другой стороны, заключили настоящее Дополнительное соглашение о нижеследующем:`, {gap:8});
-  P(`1. В ходе выполнения работ по Договору № ${cn} от ${date} выявлена необходимость выполнения дополнительных работ, не вошедших в Смету (Приложение № 1 к Договору).`);
-  P('2. Стороны согласовали выполнение следующих дополнительных работ:', {gap:4});
-  if(items.length){
+  // СОГЛАШЕНИЕ МОЖЕТ БЫТЬ ТОЛЬКО ИЗ ИСКЛЮЧЕНИЙ: позицию убрали, ничего
+  // не добавив. Тогда пункт 1 не должен обещать дополнительные работы,
+  // а пункт 2 — стоять пустым бланком с прочерками. Это не мелочь
+  // слога: документ подписывают, и обещанного в нём быть не должно.
+  const tolkoIsk = vybrano ? (!items.length && isklyuchyonnye(proj, vybrano).length) : false;
+  if(tolkoIsk){
+    P(`1. В ходе выполнения работ по Договору № ${cn} от ${date} выявлена необходимость исключения части работ, предусмотренных Сметой (Приложение № 1 к Договору).`);
+  } else {
+    P(`1. В ходе выполнения работ по Договору № ${cn} от ${date} выявлена необходимость выполнения дополнительных работ, не вошедших в Смету (Приложение № 1 к Договору).`);
+    P('2. Стороны согласовали выполнение следующих дополнительных работ:', {gap:4});
+  }
+  if(tolkoIsk){
+    // перечня дополнительных работ нет — сразу к исключениям
+  } else if(items.length){
     items.forEach((it, i)=>{
       const kolvo = it.qty ? (fmt(it.qty) + (it.unit ? ' ' + it.unit : '')) : '—';
       // Пункты перечня — тем же шрифтом, что и остальные пункты соглашения.
@@ -14589,6 +14609,40 @@ function dopSoglRabotyBlocks(proj){
   } else {
     P('2.1. ______________________________________________ — ______ × ______ = ______',
       {gap:2});
+  }
+  // ИСКЛЮЧЁННЫЕ ПОЗИЦИИ — своим разделом. Их может не быть вовсе:
+  // тогда документ выглядит как прежде, слово в слово.
+  const isk = vybrano ? isklyuchyonnye(proj, vybrano) : [];
+  const iskSum = isk.reduce((a,x)=> a + x.sum, 0);
+  if(isk.length){
+    // НУМЕРАЦИЯ СЧИТАЕТСЯ, А НЕ ВПИСЫВАЕТСЯ. Разделов может быть два
+    // (добавили и исключили) или один (только исключили) — вписанные
+    // руками номера в одном из случаев соврали бы, а в документе,
+    // который подписывают, ссылка «см. пункт 3» обязана вести туда,
+    // куда обещает.
+    const nIsk = tolkoIsk ? 2 : 3;          // раздел с перечнем исключений
+    const nSum = nIsk + 1;                  // стоимость исключаемого
+    const nItog = nSum + 1;                 // итоговое изменение договора
+    const nNet = nItog + 1;                 // «не выполняются и не оплачиваются»
+    const nSrok = nNet + 1;
+    const nSila = nSrok + 1;
+    P(`${nIsk}. Стороны согласовали исключение из Сметы (Приложение № 1 к Договору) следующих работ:`, {gap:4});
+    isk.forEach((it, i)=>{
+      const kolvo = it.qty ? (fmt(it.qty) + (it.unit ? ' ' + it.unit : '')) : '—';
+      P(`${nIsk}.${i+1}. ${it.room}: ${it.name} — ${kolvo} × ${fmtMoney(it.price)} = ${fmtMoney(it.sum)}`, {gap:2});
+    });
+    P(`${nSum}. Стоимость исключаемых работ составляет ${amountInline(iskSum)} и подлежит вычету из стоимости работ по Договору.`, {gap:4});
+    // ИТОГ ПО ОБЕИМ ПОЛОВИНАМ. Ради него всё и затевалось: заказчику
+    // нужна одна цифра — на сколько меняется договор, а не две
+    // в разных разделах.
+    const raznica = total - iskSum;
+    const ssylka = tolkoIsk ? `пункта ${nIsk}` : `пунктов 2–${nSum}`;
+    P(`${nItog}. С учётом ${ssylka} стоимость работ по Договору ${raznica >= 0 ? 'увеличивается' : 'уменьшается'} на ${amountInline(Math.abs(raznica))}.`, {gap:4});
+    P(`${nNet}. Работы, исключённые пунктом ${nIsk}, Подрядчиком не выполняются и Заказчиком не оплачиваются.`);
+    P(`${nSrok}. Срок выполнения работ по Договору изменяется соразмерно изменению состава работ, согласованного настоящим Соглашением.`);
+    P(`${nSila}. Настоящее Соглашение вступает в силу с момента подписания Сторонами и является неотъемлемой частью Договора.`, {gap:16});
+    B.push({ sig:true, pName: fioShort(ex().fio), zName: fioShort(c.fio) });
+    return B;
   }
   P(`3. Общая стоимость дополнительных работ составляет ${amountInline(total)}.`, {gap:4});
   P('4. Стоимость, указанная в п. 3 настоящего Соглашения, не входит в стоимость работ по Договору и оплачивается Заказчиком дополнительно.');
@@ -16992,7 +17046,29 @@ function dopDataSoglasheniya(proj, nomer){
 // Окно подписания. Номер подставляется следующим по порядку, но остаётся
 // открытым: у владельца может быть своя нумерация или соглашение,
 // подписанное на бумаге до приложения.
-let dopPodpis = null;   // {projectId, nomer, data}
+let dopPodpis = null;   // {projectId, nomer, data, isk:Set(lid)}
+
+// Строки сметы, которые ЕЩЁ можно исключить: не исключены и не пустые.
+// Пустую исключать бессмысленно — её просто убирают крестиком.
+function iskKandidaty(proj){
+  const byId = catalogById();
+  const out = [];
+  (proj.rooms||[]).forEach(room=>{
+    const g = calcRoomGeometry(room);
+    (room.works||[]).forEach(rw=>{
+      if(isklyuchena(rw)) return;
+      const work = effWork(byId.get(rw.workId), rw);
+      if(!work) return;
+      const line = calcWorkLine(room, rw, work, g);
+      if(!(line.qty > 0)) return;
+      out.push({ lid: rw.lid, room: room.name || 'Помещение',
+                 name: rw.cfg ? REF_TILING.layName : (work.name || '—'),
+                 qty: line.qty, unit: workUnitLabel(work, rw) || '',
+                 sum: line.qty * Math.round(num(work.price) * condK(proj)) });
+    });
+  });
+  return out;
+}
 
 function dopPodpisOpen(projectId){
   const p = (state.projects||[]).find(x=>x.id===projectId);
@@ -17002,7 +17078,11 @@ function dopPodpisOpen(projectId){
     projectId: projectId,
     nomer: dopSleduyuschiyNomer(p),
     data: d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') +
-          '-' + String(d.getDate()).padStart(2,'0')
+          '-' + String(d.getDate()).padStart(2,'0'),
+    // Какие позиции сметы уходят из неё этим же соглашением.
+    // Пусто по умолчанию: исключение — решение, а не побочный эффект
+    // подписания.
+    isk: new Set()
   };
   let ov = document.getElementById('dopPodpisOverlay');
   if(!ov){
@@ -17036,8 +17116,9 @@ function dopPodpisOpen(projectId){
           <label>Дата подписания</label>
           <input type="date" id="dopPodpisData" class="ownw-inp" value="${escapeAttr(dopPodpis.data)}">
         </div>
+        <div class="isk-vybor" id="dopIskVybor"></div>
         ${nedodelanyh ? `<div class="ownw-note" style="color:var(--amber);">${nedodelanyh} ${plural(nedodelanyh,'позиция','позиции','позиций')} без количества ${plural(nedodelanyh,'не войдёт','не войдут','не войдут')} в соглашение и ${plural(nedodelanyh,'останется','останутся','останутся')} в черновике. Заполните количество, если ${plural(nedodelanyh,'она нужна','они нужны','они нужны')} здесь.</div>` : ''}
-        <div class="ownw-note">После подписания эти работы перестанут меняться: бумага у заказчика на руках, и правка в приложении сделала бы документ ложью. Ошиблись — исправляется новым соглашением, в том числе минусовой позицией.</div>
+        <div class="ownw-note">После подписания эти работы перестанут меняться: бумага у заказчика на руках, и правка в приложении сделала бы документ ложью. Ошиблись — исправляется новым соглашением или снятием подписания.</div>
         <div class="plan-lead-msg" id="dopPodpisMsg"></div>
       </div>
       <div class="refcfg-foot">
@@ -17045,6 +17126,7 @@ function dopPodpisOpen(projectId){
       </div>
     </div>`;
   ov.style.display = 'flex';
+  iskVyborNarisovat(p);
   const nm = document.getElementById('dopPodpisNomer');
   const dt = document.getElementById('dopPodpisData');
   if(nm) nm.addEventListener('input', ()=>{ dopPodpis.nomer = nm.value; });
@@ -17053,6 +17135,52 @@ function dopPodpisOpen(projectId){
   if(x) x.onclick = dopPodpisClose;
   const ok = document.getElementById('dopPodpisOk');
   if(ok) ok.onclick = dopPodpisApply;
+}
+
+// СПИСОК ПОЗИЦИЙ К ИСКЛЮЧЕНИЮ — внутри окна подписания, а не отдельным
+// местом. Причина в устройстве базы: состояния «исключено, но ещё
+// не подписано» там нет. Сторож считает исключением сам факт номера
+// соглашения и с этого мгновения морозит строку.
+//
+// Значит исключение И ЕСТЬ оформление соглашения: выбрали позицию,
+// назвали номер — она ушла из сметы. Отдельная кнопка «исключить»
+// в строке обещала бы черновик, которого не существует.
+//
+// Свёрнут по умолчанию: чаще подписывают только добавленные работы,
+// и список всей сметы мешал бы.
+function iskVyborNarisovat(proj){
+  const box = document.getElementById('dopIskVybor');
+  if(!box || !dopPodpis) return;
+  const spisok = iskKandidaty(proj);
+  if(!spisok.length){ box.innerHTML = ''; return; }
+  const vybrano = dopPodpis.isk;
+  const otkryt = vybrano.size > 0;
+  let tek = '';
+  const stroki = spisok.map(x=>{
+    let shapka = '';
+    if(x.room !== tek){ tek = x.room; shapka = `<div class="isk-room">${escapeHtml(tek)}</div>`; }
+    return shapka + `<label class="isk-stroka">
+      <input type="checkbox" data-isk="${escapeAttr(x.lid)}"${vybrano.has(x.lid)?' checked':''}>
+      <span>${escapeHtml(x.name)}</span>
+      <b>${fmt(x.qty)} ${escapeHtml(x.unit)} · ${fmtMoney(x.sum)}</b>
+    </label>`;
+  }).join('');
+  box.innerHTML = `
+    <details class="isk-detali"${otkryt?' open':''}>
+      <summary>Исключить позиции из сметы${vybrano.size ? ` · выбрано ${vybrano.size}` : ''}</summary>
+      <div class="ownw-note">Позиция уйдёт из сметы этим же соглашением и перестанет меняться. Вернуть можно снятием подписания.</div>
+      ${stroki}
+    </details>`;
+  box.querySelectorAll('[data-isk]').forEach(ch=>{
+    ch.onchange = ()=>{
+      const lid = ch.getAttribute('data-isk');
+      if(ch.checked) vybrano.add(lid); else vybrano.delete(lid);
+      // Перерисовываем только заголовок счётчика, чтобы не схлопнуть
+      // раскрытый список под руками у человека.
+      const sum = box.querySelector('summary');
+      if(sum) sum.textContent = 'Исключить позиции из сметы' + (vybrano.size ? ` · выбрано ${vybrano.size}` : '');
+    };
+  });
 }
 
 function dopPodpisClose(){
@@ -17064,6 +17192,9 @@ function dopPodpisClose(){
 async function dopPodpisApply(){
   const o = dopPodpis;
   if(!o) return;
+  // Соглашение может состоять ТОЛЬКО из исключений: позицию убрали,
+  // ничего не добавив. Раньше подписание требовало хотя бы одну
+  // доп. работу — теперь достаточно любой из двух половин.
   const nom = String(o.nomer||'').trim();
   const msg = document.getElementById('dopPodpisMsg');
   const skazat = (t, klass)=>{ if(msg){ msg.textContent = t; msg.className = 'plan-lead-msg' + (klass?' '+klass:''); } };
@@ -17076,11 +17207,19 @@ async function dopPodpisApply(){
     return;
   }
 
+  if(!dopKPodpisi(p).length && !(o.isk && o.isk.size)){
+    skazat('Нечего подписывать: заполните доп. работу или выберите позицию к исключению.', 'err');
+    return;
+  }
   const btn = document.getElementById('dopPodpisOk');
   if(btn){ btn.disabled = true; btn.textContent = 'Подписываем…'; }
   try{
+    const iskLids = Array.from((o.isk && o.isk.size) ? o.isk : []);
     if(LOCAL_TEST){
       dopKPodpisi(p).forEach(e=>{ e.dopNo = nom; e.dopDate = o.data; });
+      (p.rooms||[]).forEach(r=> (r.works||[]).forEach(w=>{
+        if(iskLids.indexOf(w.lid) !== -1){ w.excludedDopNo = nom; w.excludedDate = o.data; }
+      }));
     } else {
       // ПЕРЕД подписанием дошлём несохранённое: если строка ещё не уехала
       // на сервер, узкий запрос её не найдёт и она останется неподписанной,
@@ -17093,6 +17232,19 @@ async function dopPodpisApply(){
         const r = po_id.get(e.id);
         if(r){ e.dopNo = r.dop_no || ''; e.dopDate = r.dop_date || ''; }
       });
+      // ИСКЛЮЧЕНИЯ — ТЕМ ЖЕ НОМЕРОМ. Отдельным запросом: это другая
+      // таблица. Порядок важен — сперва доп. работы, потом исключения:
+      // если второй запрос не пройдёт, соглашение останется без
+      // исключений, и это видно. Наоборот было бы хуже — позиции ушли
+      // бы из сметы по соглашению, которого нет.
+      if(iskLids.length){
+        const iskTronuty = await DB.isklyuchitPozicii(o.projectId, iskLids, nom, o.data);
+        const po_lid = new Map((iskTronuty||[]).map(r=>[r.lid, r]));
+        (p.rooms||[]).forEach(r=> (r.works||[]).forEach(w=>{
+          const t = po_lid.get(w.lid);
+          if(t){ w.excludedDopNo = t.excluded_dop_no || ''; w.excludedDate = t.excluded_date || ''; }
+        }));
+      }
       markLocalClean();
     }
     uiDopNo = nom;          // печатать теперь предлагаем именно его
@@ -17109,6 +17261,24 @@ async function dopPodpisApply(){
 async function dopSnyat(proj, nomer, ids, vopros){
   if(!confirm(vopros)) return;
   try{
+    // СНЯТИЕ ВОЗВРАЩАЕТ И ИСКЛЮЧЁННЫЕ ПОЗИЦИИ — иначе расподписание
+    // сработает наполовину: доп. работы отойдут, а позиции останутся
+    // вычеркнутыми из сметы навсегда, и вернуть их будет нечем.
+    // Только когда снимают соглашение целиком (ids не задан): снятие
+    // одной доп. работы исключений не касается.
+    if(!ids){
+      if(LOCAL_TEST){
+        (proj.rooms||[]).forEach(r=> (r.works||[]).forEach(w=>{
+          if((w.excludedDopNo||'').trim() === String(nomer)){ w.excludedDopNo=''; w.excludedDate=''; }
+        }));
+      } else {
+        const verno = await DB.vernutPozicii(proj.id, nomer);
+        const lids = new Set((verno||[]).map(r=>r.lid));
+        (proj.rooms||[]).forEach(r=> (r.works||[]).forEach(w=>{
+          if(lids.has(w.lid)){ w.excludedDopNo=''; w.excludedDate=''; }
+        }));
+      }
+    }
     if(LOCAL_TEST){
       (proj.extraWorks||[]).forEach(e=>{
         const svoya = ids ? ids.indexOf(e.id) !== -1 : (e.dopNo||'').trim() === String(nomer);
