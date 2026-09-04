@@ -2315,9 +2315,17 @@
   .tc-legend i{display:inline-block;width:11px;height:11px;border-radius:2px;margin-right:5px;vertical-align:-1px;border:1px solid;}
   .tc-legend .lg-full{background:var(--blue-soft);border-color:var(--blue);}
   .tc-legend .lg-cut{background:var(--orange-soft);border-color:var(--orange);}
-  .tc-sec-title{
+  /* ЗАГОЛОВОК РАЗДЕЛА ВНУТРИ ЭКРАНА — один вид на всё приложение.
+     Оранжевый в палитре означает действие: кнопка, выделение, рамка
+     логотипа. Заголовок — не действие, он ничего не предлагает нажать,
+     и оранжевым спорил за внимание с кнопками рядом. Владелец
+     4 сентября 2026: «а нужны подписи оранжевым цветом?» — не нужны.
+     Остальные подписи разделов в приложении (`.cust-group-title`,
+     `.extra-title`, `.tc-cut-title`) давно приглушённые: оранжевой
+     была одна раскладка плитки. */
+  .podzag, .sk-podzag, .tc-sec-title{
     font-family:'JetBrains Mono',monospace;font-size:11px;text-transform:uppercase;letter-spacing:.08em;
-    color:var(--orange);font-weight:600;margin:18px 0 10px;padding-bottom:5px;border-bottom:1px solid var(--paper-line);
+    color:var(--ink-soft);font-weight:600;margin:18px 0 8px;
   }
   .tc-label{font-size:12px;color:var(--ink-soft);margin:12px 0 6px;}
   .tc-fields{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
@@ -2961,8 +2969,7 @@
      не увидел их вовсе — «вкладки листы, кирпич и так далее не видно,
      не заметно». Третьего вида того же самого не заводим. */
   .sk-vkladki{margin:16px 0 4px;}
-  .sk-podzag{font-size:11px;color:var(--ink-soft);text-transform:uppercase;
-    letter-spacing:.04em;margin:16px 0 6px;}
+
   .sk-proyom{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:6px;}
   .sk-proyom .ownw-inp{flex:1 1 110px;min-width:0;}
   .sk-proyom .sk-uzko{flex:0 0 70px;}
@@ -3708,7 +3715,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-04-182';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-04-183';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
