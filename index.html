@@ -2897,6 +2897,20 @@
   .sk-chisla span{display:block;font-size:11px;color:var(--ink-soft);
     text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px;}
   .sk-chisla b{font-family:'JetBrains Mono',monospace;font-size:19px;color:var(--orange);}
+  /* ПОЛЯ КАК В РАСКЛАДКЕ ПЛИТКИ — БЕЛЫЕ (правка владельца 4 сентября 2026).
+     Я взял обёртку .cust-field, а у неё фон серый (var(--paper)): она
+     сделана для данных заказчика, где поле — часть карточки. В расчёте
+     поле должно звать вводить, а не лежать фоном.
+
+     Селектор длиннее, чем .cust-field input, НАРОЧНО: короткий проиграл
+     бы по весу, и класс стоял бы, а цвет остался серым. На эту же
+     ловушку я наступал 3 сентября с переплатой в выплатах. */
+  .sk-wrap .cust-field input, .sk-wrap .cust-field select,
+  .sk-wrap .ownw-inp{ background:var(--white); }
+  /* Числа моноширинно, как в раскладке плитки: столбик цифр читается,
+     а название материала — обычным шрифтом, это текст. */
+  .sk-wrap input[inputmode="decimal"], .sk-wrap input[inputmode="numeric"]{
+    font-family:'JetBrains Mono',monospace; }
   .sk-stena{border:1px solid var(--paper-line);border-radius:10px;
     padding:12px 14px;margin-bottom:10px;}
   .sk-stena-shapka{display:flex;align-items:center;gap:8px;margin-bottom:8px;}
@@ -3618,7 +3632,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-04-170';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-04-171';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -21867,7 +21881,7 @@ function renderSkalkView(){
       ${skItogSmes()}`;
   }
   return `
-    <div class="tc-wrap">
+    <div class="tc-wrap sk-wrap">
       <div class="proj-header">
         <div>
           <div class="proj-title-input" style="font-weight:700;">Строительный калькулятор</div>
