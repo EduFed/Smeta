@@ -2897,6 +2897,11 @@
   .sk-chisla span{display:block;font-size:11px;color:var(--ink-soft);
     text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px;}
   .sk-chisla b{font-family:'JetBrains Mono',monospace;font-size:19px;color:var(--orange);}
+  .sk-stena{border:1px solid var(--paper-line);border-radius:10px;
+    padding:12px 14px;margin-bottom:10px;}
+  .sk-stena-shapka{display:flex;align-items:center;gap:8px;margin-bottom:8px;}
+  .sk-stena-imya{flex:1 1 auto;font-weight:600;}
+  .sk-stena-itog{margin-top:14px;}
   .sk-kuski{margin-top:14px;}
   .sk-kuski-spisok{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px;}
   .sk-kusok{display:inline-flex;align-items:center;gap:8px;
@@ -3613,7 +3618,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-04-169';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-04-170';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -21364,18 +21369,34 @@ function skZapomnit(klyuch, znachenie){
 // Все размеры внутри — в миллиметрах: стена приходит в метрах, лист
 // в миллиметрах, и смешивать их в одной формуле — верный способ
 // ошибиться на тысячу.
+// НЕСКОЛЬКО СТЕН СРАЗУ, И ОБРЕЗКИ ХОДЯТ МЕЖДУ НИМИ.
+// Владелец 4 сентября 2026: «нужна возможность добавить сразу несколько
+// стен». Считать их порознь и складывать числа было бы неверно: на
+// объекте обрезок от одной стены идёт на другую, и раздельный счёт
+// потерял бы ровно ту экономию, ради которой «с докладкой» и заведено.
+//
+// Поэтому: раскладку строим ПО КАЖДОЙ стене отдельно — у каждой своя
+// картинка и свои проёмы, — а куски со всех стен сваливаем в один
+// список и укладываем разом, из общего запаса.
 function skListyRaschet(d){
-  const dlina  = Math.round(num(d.dlina) * 1000);
-  const vysota = Math.round(num(d.vysota) * 1000);
   const listD  = Math.round(num(d.listD));
   const listSh = Math.round(num(d.listSh));
-  if(!(dlina > 0 && vysota > 0 && listD > 0 && listSh > 0)) return null;
+  if(!(listD > 0 && listSh > 0)) return null;
 
-  // Направление: вдоль — длинная сторона листа по горизонтали.
+  // Направление: горизонтально — длинная сторона листа по горизонтали.
   const w = (d.napravlenie === 'poperyok') ? listSh : listD;
   const h = (d.napravlenie === 'poperyok') ? listD  : listSh;
 
-  const proyomy = (d.proyomy || [])
+  const steny = [];
+  const kuski = [];
+  let ploschadSteny = 0, ploschadDyr = 0;
+
+  (d.steny || []).forEach(st=>{
+  const dlina  = Math.round(num(st.dlina) * 1000);
+  const vysota = Math.round(num(st.vysota) * 1000);
+  if(!(dlina > 0 && vysota > 0)) return;
+
+  const proyomy = (st.proyomy || [])
     .map(o=>({ x: Math.round(num(o.x)*1000), y: Math.round(num(o.y)*1000),
                w: Math.round(num(o.w)*1000), h: Math.round(num(o.h)*1000),
                n: Math.max(1, Math.round(num(o.n) || 1)) }))
@@ -21412,8 +21433,7 @@ function skListyRaschet(d){
     return luchshiy;
   };
 
-  const kuski = [];      // что реально нужно вырезать, размерами
-  const setka = [];      // для картинки
+  const setka = [];      // для картинки этой стены
   const kolonok = Math.ceil(dlina / w);
   const ryadov  = Math.ceil(vysota / h);
   for(let r = 0; r < ryadov; r++){
@@ -21427,6 +21447,14 @@ function skListyRaschet(d){
       if(!pusto) kuski.push({ w: kw, h: kh, vyrez: vyrezIzKletki(x1, y1, x2, y2) });
     }
   }
+
+  ploschadSteny += dlina * vysota / 1e6;
+  ploschadDyr += dyry.reduce((a,o)=> a + o.w*o.h, 0) / 1e6;
+  steny.push({ imya: (st.imya||'').trim(), dlina: dlina, vysota: vysota,
+               setka: setka, dyry: dyry });
+  });   // конец обхода стен
+
+  if(!steny.length) return null;
 
   // БЕЗ ДОКЛАДКИ: сколько кусков — столько листов.
   const bez = kuski.length;
@@ -21479,8 +21507,6 @@ function skListyRaschet(d){
   const zapas  = Math.max(0, num(d.zapas) || 0);
   const sZapasom = (n)=> Math.ceil(n * sloyov * (1 + zapas/100));
 
-  const ploschadSteny = dlina * vysota / 1e6;
-  const ploschadDyr = dyry.reduce((a,o)=> a + o.w*o.h, 0) / 1e6;
 
   // ПОДРЕЗКА — какие куски придётся отрезать. Целый лист подрезкой
   // не считается: резать его не надо. Одинаковые складываем в одну
@@ -21497,7 +21523,7 @@ function skListyRaschet(d){
   const podrezka = svesti(kuski.filter(k=> k.w < w || k.h < h));
 
   return {
-    setka: setka, dyry: dyry, dlina: dlina, vysota: vysota, w: w, h: h,
+    steny: steny, w: w, h: h,
     bez: sZapasom(bez), sDokl: sZapasom(sDokl),
     bezGolyh: bez, sDoklGolyh: sDokl,
     podrezka: podrezka,
@@ -21582,8 +21608,10 @@ function skSmesRaschet(d){
 // «отдельно от проектов»).
 let SK = {
   razdel: 'listy',
-  listy: { imya:'', dlina:'', vysota:'', listD:'', listSh:'',
-           napravlenie:'vdol', sloyov:'', zapas:'', proyomy:[] },
+  listy: { imya:'', listD:'', listSh:'', napravlenie:'vdol', sloyov:'', zapas:'',
+           // Стены списком: обрезки ходят между ними, поэтому считаются
+           // они вместе, а не по одной (владелец 4 сентября 2026).
+           steny: [ { imya:'', dlina:'', vysota:'', proyomy:[] } ] },
   bloki: { imya:'', dlina:'', vysota:'', blokD:'', blokV:'', blokSh:'',
            shov:'', stena:'', zapas:'', proyomy:[] },
   smes:  { imya:'', ploschad:'', rashod:'', priTolsch:'', faktTolsch:'', zapas:'' }
@@ -21605,44 +21633,74 @@ function skPole(razdel, klyuch, podpis, opts){
   </div>`;
 }
 
-function skProyomyHtml(razdel, sPolozheniem){
-  const spisok = SK[razdel].proyomy || [];
+// Стены списком. У каждой своё название, свои размеры и свои проёмы —
+// но лист, направление, слои и запас общие: это про материал, а не
+// про стену.
+function skStenyHtml(){
+  const steny = SK.listy.steny || [];
+  return `<div class="sk-steny">${steny.map((st,i)=>`
+    <div class="sk-stena">
+      <div class="sk-stena-shapka">
+        <input type="text" class="ownw-inp sk-stena-imya" placeholder="${escapeAttr('стена ' + (i+1))}"
+               value="${escapeAttr(st.imya||'')}" data-sk-st="${i}|imya">
+        ${steny.length > 1
+          ? `<button type="button" class="btn-icon" data-sk-st-del="${i}" title="Убрать стену">✕</button>`
+          : ''}
+      </div>
+      <div class="cust-grid">
+        <div class="cust-field"><label>Длина, м</label>
+          <input type="text" inputmode="decimal" class="ownw-inp"
+                 value="${escapeAttr(st.dlina||'')}" data-sk-st="${i}|dlina"></div>
+        <div class="cust-field"><label>Высота, м</label>
+          <input type="text" inputmode="decimal" class="ownw-inp"
+                 value="${escapeAttr(st.vysota||'')}" data-sk-st="${i}|vysota"></div>
+      </div>
+      ${skProyomyHtml('listy', true, i)}
+    </div>`).join('')}
+    <button type="button" class="add-link" data-sk-st-add="1">+ Стена</button>
+  </div>`;
+}
+
+function skProyomyHtml(razdel, sPolozheniem, iSteny){
+  const vStene = (iSteny !== undefined && iSteny !== null);
+  const spisok = vStene ? (SK.listy.steny[iSteny].proyomy || []) : (SK[razdel].proyomy || []);
+  const adr = vStene ? ('st' + iSteny) : razdel;
   const stroki = spisok.map((o,i)=>`
     <div class="sk-proyom">
       <input type="text" inputmode="decimal" class="ownw-inp" placeholder="ширина, м"
-             value="${escapeAttr(o.w||'')}" data-sk-pr="${razdel}|${i}|w">
+             value="${escapeAttr(o.w||'')}" data-sk-pr="${adr}|${i}|w">
       <input type="text" inputmode="decimal" class="ownw-inp" placeholder="высота, м"
-             value="${escapeAttr(o.h||'')}" data-sk-pr="${razdel}|${i}|h">
+             value="${escapeAttr(o.h||'')}" data-sk-pr="${adr}|${i}|h">
       ${sPolozheniem ? `
       <input type="text" inputmode="decimal" class="ownw-inp" placeholder="от левого края, м"
-             value="${escapeAttr(o.x||'')}" data-sk-pr="${razdel}|${i}|x">
+             value="${escapeAttr(o.x||'')}" data-sk-pr="${adr}|${i}|x">
       <input type="text" inputmode="decimal" class="ownw-inp" placeholder="от пола, м"
-             value="${escapeAttr(o.y||'')}" data-sk-pr="${razdel}|${i}|y">` : ''}
+             value="${escapeAttr(o.y||'')}" data-sk-pr="${adr}|${i}|y">` : ''}
       <input type="text" inputmode="numeric" class="ownw-inp sk-uzko" placeholder="шт."
-             value="${escapeAttr(o.n||'')}" data-sk-pr="${razdel}|${i}|n">
-      <button type="button" class="btn-icon" data-sk-pr-del="${razdel}|${i}" title="Убрать">✕</button>
+             value="${escapeAttr(o.n||'')}" data-sk-pr="${adr}|${i}|n">
+      <button type="button" class="btn-icon" data-sk-pr-del="${adr}|${i}" title="Убрать">✕</button>
     </div>`).join('');
   return `<div class="sk-proyomy">
     <div class="sk-podzag">Проёмы</div>
     ${stroki || '<div class="mat-note">Окон и дверей нет.</div>'}
-    <button type="button" class="add-link" data-sk-pr-add="${razdel}">+ Проём</button>
+    <button type="button" class="add-link" data-sk-pr-add="${adr}">+ Проём</button>
   </div>`;
 }
 
 // КАРТИНКА РАСКЛАДКИ. Рисуем то же, что посчитали: те же клетки, тот же
 // порядок. Расходиться картинке и числу нельзя — человек поверит глазам.
-function skListyKartinka(r){
-  if(!r) return '';
+function skListyKartinka(r, st){
+  if(!r || !st) return '';
   const W = 640, ots = 8;
-  const k = (W - ots*2) / r.dlina;
-  const H = Math.round(r.vysota * k) + ots*2;
+  const k = (W - ots*2) / st.dlina;
+  const H = Math.round(st.vysota * k) + ots*2;
   // Стена рисуется снизу вверх: y в разметке считается сверху, а высота
   // проёма задаётся от пола. Перевернуть надо один раз и здесь, иначе
   // дверь окажется под потолком.
   const naEkran = (x, y, w, h)=> ({
-    x: ots + x*k, y: ots + (r.vysota - y - h)*k, w: w*k, h: h*k });
+    x: ots + x*k, y: ots + (st.vysota - y - h)*k, w: w*k, h: h*k });
 
-  const kletki = r.setka.map(c=>{
+  const kletki = st.setka.map(c=>{
     const g = naEkran(c.x, c.y, c.w, c.h);
     const celyy = (c.w >= r.w && c.h >= r.h);
     // РАЗМЕР ПИШЕМ ТОЛЬКО НА ПОДРЕЗАННЫХ. На целых он и так известен
@@ -21664,7 +21722,7 @@ function skListyKartinka(r){
   // а дверь, не накрывшая ни одной клетки полностью, не оставляла
   // на схеме следа. Владелец 4 сентября: «проём не отобразился
   // на картинке».
-  const proyomy = (r.dyry || []).map(o=>{
+  const proyomy = (st.dyry || []).map(o=>{
     const g = naEkran(o.x, o.y, o.w, o.h);
     return `<rect x="${g.x.toFixed(1)}" y="${g.y.toFixed(1)}" width="${g.w.toFixed(1)}" height="${g.h.toFixed(1)}"
       fill="var(--paper)" fill-opacity="0.92" stroke="var(--orange)"
@@ -21679,7 +21737,7 @@ function skListyKartinka(r){
   return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-width:640px;display:block;margin-top:10px;">
     ${kletki}
     ${proyomy}
-    <rect x="${ots}" y="${ots}" width="${(r.dlina*k).toFixed(1)}" height="${(r.vysota*k).toFixed(1)}"
+    <rect x="${ots}" y="${ots}" width="${(st.dlina*k).toFixed(1)}" height="${(st.vysota*k).toFixed(1)}"
           fill="none" stroke="var(--ink)" stroke-width="2"/>
   </svg>`;
 }
@@ -21713,7 +21771,11 @@ function skItogListy(){
         r.zapas ? ` Запас ${fmt(r.zapas)} %.` : ''}</div>
       <div class="mat-note">Приложение не знает, как режут на вашем объекте, поэтому не выбирает за вас. Разница между числами — цена аккуратности бригады.</div>
     </div>
-    ${skListyKartinka(r)}
+    ${r.steny.map((st,i)=> `
+      <div class="sk-stena-itog">
+        <div class="sk-podzag">${escapeHtml(st.imya || ('стена ' + (i+1)))} · ${fmt(st.dlina/1000)} × ${fmt(st.vysota/1000)} м</div>
+        ${skListyKartinka(r, st)}
+      </div>`).join('')}
     <div class="mat-note">Серым — места, целиком попавшие в проём: там лист не нужен. Оранжевым пунктиром — сами проёмы. Лист, задетый проёмом, берётся целиком, но выпиленная полоса не пропадает: в счёте «с докладкой» она возвращается в запас и может пойти над этим же проёмом.</div>
     ${skSpisokKuskov('Подрезка — что резать', r.podrezka,
         'Размеры кусков, которые придётся отрезать от листа. Целые листы сюда не идут.')}
@@ -21759,8 +21821,6 @@ function renderSkalkView(){
       <div class="cust-grid">
         ${skPole('listy','imya','Что считаем', {text:true, placeholder:'напр. гипсокартон'})}
         ${skPole('listy','zapas','Запас на подрезку, %')}
-        ${skPole('listy','dlina','Длина стены, м')}
-        ${skPole('listy','vysota','Высота стены, м')}
         ${skPole('listy','listD','Лист: длина, мм')}
         ${skPole('listy','listSh','Лист: ширина, мм')}
         ${skPole('listy','sloyov','Слоёв', {placeholder:'пусто — один'})}
@@ -21776,7 +21836,7 @@ function renderSkalkView(){
             <option value="poperyok"${SK.listy.napravlenie==='poperyok'?' selected':''}>вертикально</option>
           </select></div>
       </div>
-      ${skProyomyHtml('listy', true)}
+      ${skStenyHtml()}
       ${skItogListy()}`;
   } else if(r === 'bloki'){
     telo = `
@@ -21844,10 +21904,35 @@ function skAttach(){
     el.addEventListener('change', prinyat);
     el.addEventListener('blur', prinyat);
   });
-  main.querySelectorAll('[data-sk-pr]').forEach(el=>{
-    const [razdel, i, pole] = el.getAttribute('data-sk-pr').split('|');
+  // Куда писать проём: в стену листового или в общий список раздела.
+  const proyomySpiska = (adr)=> adr.indexOf('st') === 0
+    ? SK.listy.steny[parseInt(adr.slice(2))].proyomy
+    : SK[adr].proyomy;
+
+  main.querySelectorAll('[data-sk-st]').forEach(el=>{
+    const [i, pole] = el.getAttribute('data-sk-st').split('|');
     const prinyat = ()=>{
-      const o = SK[razdel].proyomy[parseInt(i)];
+      const st = SK.listy.steny[parseInt(i)];
+      if(st){ st[pole] = el.value; render(); }
+    };
+    el.addEventListener('change', prinyat);
+    el.addEventListener('blur', prinyat);
+  });
+  main.querySelectorAll('[data-sk-st-add]').forEach(el=>{
+    el.onclick = ()=>{ SK.listy.steny.push({ imya:'', dlina:'', vysota:'', proyomy:[] }); render(); };
+  });
+  main.querySelectorAll('[data-sk-st-del]').forEach(el=>{
+    el.onclick = ()=>{
+      SK.listy.steny.splice(parseInt(el.getAttribute('data-sk-st-del')), 1);
+      if(!SK.listy.steny.length) SK.listy.steny.push({ imya:'', dlina:'', vysota:'', proyomy:[] });
+      render();
+    };
+  });
+
+  main.querySelectorAll('[data-sk-pr]').forEach(el=>{
+    const [adr, i, pole] = el.getAttribute('data-sk-pr').split('|');
+    const prinyat = ()=>{
+      const o = proyomySpiska(adr)[parseInt(i)];
       if(o){ o[pole] = el.value; render(); }
     };
     el.addEventListener('change', prinyat);
@@ -21855,15 +21940,14 @@ function skAttach(){
   });
   main.querySelectorAll('[data-sk-pr-add]').forEach(el=>{
     el.onclick = ()=>{
-      const razdel = el.getAttribute('data-sk-pr-add');
-      SK[razdel].proyomy.push({ w:'', h:'', x:'', y:'', n:'' });
+      proyomySpiska(el.getAttribute('data-sk-pr-add')).push({ w:'', h:'', x:'', y:'', n:'' });
       render();
     };
   });
   main.querySelectorAll('[data-sk-pr-del]').forEach(el=>{
     el.onclick = ()=>{
-      const [razdel, i] = el.getAttribute('data-sk-pr-del').split('|');
-      SK[razdel].proyomy.splice(parseInt(i), 1);
+      const [adr, i] = el.getAttribute('data-sk-pr-del').split('|');
+      proyomySpiska(adr).splice(parseInt(i), 1);
       render();
     };
   });
