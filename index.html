@@ -2635,7 +2635,7 @@
      стоит пробел, он даёт около четырёх.
      Там, где значок стоит ОДИН или в конце подписи, отступ снимаем —
      иначе он съезжает с середины кнопки. */
-  [data-theme-mode] .zn, .extra-zamok .zn{margin-right:0;}
+  [data-theme-mode] .zn, .extra-zamok .zn, .sel-work-gear .zn{margin-right:0;}
   .btn-locked .zn, .docs-btns .zn{margin-right:0;margin-left:1px;}
 
   /* Прозрачный лист под всплывающим меню. Ловит нажатие мимо, чтобы оно
@@ -3183,7 +3183,7 @@
         </span>
         <span class="plan-tag free" id="planBtnTag">—</span>
       </button>
-      <button class="btn btn-ghost" id="settingsBtn">⚙ Настройки</button>
+      <button class="btn btn-ghost" id="settingsBtn"><span class="zn-mesto" data-zn="shesternya"></span> Настройки</button>
       <button class="btn btn-ghost" id="tcOpenBtn"><span class="zn-mesto" data-zn="plitka"></span> Раскладка плитки</button>
       <button class="btn btn-ghost" id="skOpenBtn"><span class="zn-mesto" data-zn="schyoty"></span> Строительный калькулятор</button>
       <button class="btn btn-primary" id="newProjectBtn">+ Новый проект</button>
@@ -3626,7 +3626,7 @@
 <!-- Экран «не настроено» -->
 <div class="config-warn" id="configWarn" style="display:none;">
   <div id="configWarnText">
-    ⚙ Приложение ещё не подключено к облаку.<br>
+    <span class="zn-mesto" data-zn="shesternya"></span> Приложение ещё не подключено к облаку.<br>
     Впишите <code>SUPABASE_URL</code> и <code>SUPABASE_ANON_KEY</code><br>
     в начале блока &lt;script&gt; и откройте страницу снова.<br>
     <span style="color:var(--sb-muted);">(см. инструкцию по настройке)</span>
@@ -3655,7 +3655,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-04-175';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-04-176';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -17135,7 +17135,7 @@ function renderSmetaBlock(proj){
 // Приём не новый: так уже нарисованы ICON_SEND и ICON_DL. Третьего
 // способа рисовать значки не заводим (CLAUDE.md).
 //
-// Типографские знаки — ✕ ▾ → ← ⋯ ⋮ ✓ − ○ ⚙ ✎ ⌫ ☰ — оставлены как
+// Типографские знаки — ✕ ▾ → ← ⋯ ⋮ ✓ − ○ ✎ ⌫ ☰ — оставлены как
 // были: они одноцветные по своей природе и цвет текста уже берут.
 function ZN(putь, razmer){
   return '<svg class="zn" viewBox="0 0 24 24" width="' + (razmer||16) + '" height="' + (razmer||16) +
@@ -17164,6 +17164,16 @@ const ZN_NET_SETI = ZN('<path d="M2 2l20 20"/><path d="M5 12.5a10 10 0 0 1 3.2-2
 const ZN_GLAZ     = ZN('<path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="2.6"/>');
 const ZN_SOLNCE   = ZN('<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>');
 const ZN_MESYATS  = ZN('<path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z"/>');
+// ШЕСТЕРЁНКА. Сначала оставил типографскую ⚙ — она одноцветная, менять
+// вроде нечего. Но владелец 4 сентября 2026: «настройки и виды работ,
+// отступ не изменился» — и он прав: отступ я дал только рисованным,
+// а знак остался стоять вплотную к слову.
+//
+// Вывод общий, не про шестерёнку: одноцветность была не тем признаком.
+// Значок рядом с подписью живёт по правилам подписи — ему нужен отступ
+// и общий размер, а знаку из шрифта их не задать, не разъехавшись
+// на другом устройстве. Значит рисуем и его.
+const ZN_SHESTERNYA = ZN('<circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 9 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 4.6 9a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/>');
 const ZN_VNIMANIE = ZN('<path d="M12 4l9 16H3z"/><path d="M12 10v4M12 17.5h.01"/>', 15);
 // РАСКЛАДКА ПЛИТКИ. Дважды переделан, и оба раза по делу.
 //
@@ -17186,6 +17196,7 @@ const ZN_PLITKA   = ZN('<rect x="3.5" y="3.5" width="7" height="7" rx="1"/><rect
 // раз при запуске.
 const ZN_PO_IMENI = {
   schyoty: ZN_SCHYOTY, solnce: ZN_SOLNCE, mesyats: ZN_MESYATS, plitka: ZN_PLITKA,
+  shesternya: ZN_SHESTERNYA,
   zamok: ZN_ZAMOK, vnimanie: ZN_VNIMANIE
 };
 function znNapolnit(korn){
@@ -18405,7 +18416,7 @@ function renderRoomWorks(room){
       <span class="sel-work-name">${escapeHtml(rw.cfg ? REF_TILING.layName : work.name)}${
         cfgParts ? `<span class="sel-work-sub">${escapeHtml(cfgParts)} · ${fmtMoney(work.price)}/м²</span>` : ''}${
         (rw.doneNote||'').trim() ? `<span class="sel-work-sub otm-zametka">${escapeHtml(rw.doneNote)}</span>` : ''}</span>
-      ${rw.cfg ? `<button class="btn-icon sel-work-gear" data-cfg-edit="${room.id}|${rw.lid}" title="Изменить параметры укладки">⚙</button>` : ''}
+      ${rw.cfg ? `<button class="btn-icon sel-work-gear" data-cfg-edit="${room.id}|${rw.lid}" title="Изменить параметры укладки">${ZN_SHESTERNYA}</button>` : ''}
       ${svoya ? `<button class="btn-icon sel-work-gear" data-own-edit="${room.id}|${rw.lid}" title="Изменить название, единицу и цену">✎</button>` : ''}
       ${manual
         ? `<input class="manual-qty" type="text" inputmode="decimal" placeholder="кол-во" value="${escapeAttr(rw.manualQty||'')}" data-manual-qty="${room.id}|${rw.lid}">`
@@ -18890,7 +18901,7 @@ function renderSettingsView(){
       </div>
     </div>
     <div class="settings-menu">
-      <button class="settings-item" data-go="catalog"><span>⚙ Виды работ</span><span class="settings-arrow">→</span></button>
+      <button class="settings-item" data-go="catalog"><span>${ZN_SHESTERNYA} Виды работ</span><span class="settings-arrow">→</span></button>
       <button class="settings-item" data-go="materials"><span>${ZN_KOROBKA} Материалы</span><span class="settings-arrow">→</span></button>
       <button class="settings-item" data-go="executor"><span>${ZN_CHELOVEK} Данные исполнителя</span><span class="settings-arrow">→</span></button>
     </div>`;
