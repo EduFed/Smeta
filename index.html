@@ -3405,16 +3405,27 @@
          · шапка стала ниже примерно втрое, освободившееся место
            ушло списку проектов — в панели оно дефицитное. -->
     <div class="brand">
-      <svg class="brand-znak" viewBox="139 44 134 134"
+      <!-- ЗНАК ВСЕГДА В РАМКЕ. Владелец 5 сентября 2026: «почему в сайдбаре
+           наш логотип без рамки, наш логотип всегда в рамке».
+           Оранжевая скруглённая рамка — часть самого знака, а не украшение:
+           она стоит на заставке, на значке приложения, на экране входа
+           и в тарифах. Собирая шапку панели, я взял из знака один домик —
+           и получился другой знак, похожий на наш. Правило то же, что
+           и везде: одинаковое по смыслу — одинаково и на вид.
+           Геометрия взята у заставки (.splash-logo) целиком, без своих
+           чисел: два свода координат на один знак разойдутся за неделю. -->
+      <svg class="brand-znak" viewBox="0 0 100 100"
            xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-        <g transform="translate(113.58,20.9) scale(0.361)" fill="none"
-           stroke="currentColor" stroke-width="26" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M 121 190 L 256 100 L 391 190"/>
-          <line x1="121" y1="190" x2="121" y2="335"/>
-          <line x1="391" y1="190" x2="391" y2="335"/>
-          <path d="M 197 335 L 197 242 L 314 242 L 314 335"/>
-        </g><line x1="152.57" y1="165.22" x2="259.43" y2="165.22"
-              stroke="var(--orange)" stroke-width="9.4" stroke-linecap="round"/>
+        <rect x="6" y="6" width="88" height="88" rx="13"
+              fill="none" stroke="var(--orange)" stroke-width="2.6"/>
+        <path d="M26 62 L26 37 L50 22 L74 37 L74 62"
+              fill="none" stroke="currentColor" stroke-width="4.6"
+              stroke-linejoin="round" stroke-linecap="round"/>
+        <path d="M40 62 L40 47 L60 47 L60 62"
+              fill="none" stroke="currentColor" stroke-width="4.6"
+              stroke-linejoin="round" stroke-linecap="round"/>
+        <line x1="22" y1="76" x2="78" y2="76"
+              stroke="var(--orange)" stroke-width="5" stroke-linecap="round"/>
       </svg>
       <span class="brand-imya">СМЕТА<i>|</i>РАСЧЁТ</span>
     </div>
@@ -3901,7 +3912,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-05-227';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-05-228';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
