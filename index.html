@@ -518,7 +518,7 @@
      Цвет оранжевый (акцент), размер 18px, всегда слева от названия.
      Новые раскрывающиеся блоки делать только так, своих вариантов не заводить. */
   .chev{
-    color:var(--orange);font-size:18px;line-height:1;flex-shrink:0;
+    color:var(--ink-soft);font-size:18px;line-height:1;flex-shrink:0;
     display:inline-flex;align-items:center;justify-content:center;
     width:24px;height:24px;
     transition:transform .22s ease;
@@ -1152,7 +1152,7 @@
     background:var(--white);color:var(--ink);cursor:pointer;text-align:left;
   }
   .mode-btn:hover{border-color:var(--orange);}
-  .mode-btn .chev{font-size:11px;color:var(--ink-soft);}
+  .mode-btn .chev{font-size:11px;}
   .mode-list{
     display:none;position:absolute;top:100%;right:0;z-index:40;margin-top:4px;
     min-width:210px;padding:6px;
@@ -3751,7 +3751,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-04-185';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-04-186';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -17238,8 +17238,10 @@ function renderSmetaBlock(proj){
 // на кнопке, красный в предупреждении. Палитра остаётся той, что
 // заведена в :root, и ни одного цвета сверх неё не появляется.
 //
-// Приём не новый: так уже нарисованы ICON_SEND и ICON_DL. Третьего
-// способа рисовать значки не заводим (CLAUDE.md).
+// Второго способа рисовать значки не заводим (CLAUDE.md). Самолётик
+// и стрелка выгрузки были заведены раньше набора и жили мимо него —
+// свой размер 15, своя толщина 2; 4 сентября 2026 внесены в набор
+// и выровнены по общей рамке, а старая пара убрана.
 //
 // Типографские знаки — ✕ ▾ → ← ⋯ ⋮ ✓ − ○ ✎ ⌫ ☰ — оставлены как
 // были: они одноцветные по своей природе и цвет текста уже берут.
@@ -17300,6 +17302,8 @@ const ZN_MESYATS  = ZN('<path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5
 // Значок рядом с подписью живёт по правилам подписи — ему нужен отступ
 // и общий размер, а знаку из шрифта их не задать, не разъехавшись
 // на другом устройстве. Значит рисуем и его.
+const ZN_SAMOLYOT = ZN('<path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4z"/>', 0.9, 1.2, 1.2);
+const ZN_SKACHAT  = ZN('<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/>');
 const ZN_SHESTERNYA = ZN('<circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 9 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 4.6 9a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/>', 0.818, 2.18, 2.18);
 const ZN_VNIMANIE = ZN('<path d="M12 4l9 16H3z"/><path d="M12 10v4M12 17.5h.01"/>');
 // РАСКЛАДКА ПЛИТКИ. Дважды переделан, и оба раза по делу.
@@ -17323,7 +17327,7 @@ const ZN_PLITKA   = ZN('<rect x="3.5" y="3.5" width="7" height="7" rx="1"/><rect
 // раз при запуске.
 const ZN_PO_IMENI = {
   schyoty: ZN_SCHYOTY, solnce: ZN_SOLNCE, mesyats: ZN_MESYATS, plitka: ZN_PLITKA,
-  shesternya: ZN_SHESTERNYA,
+  shesternya: ZN_SHESTERNYA, samolyot: ZN_SAMOLYOT, skachat: ZN_SKACHAT,
   zamok: ZN_ZAMOK, vnimanie: ZN_VNIMANIE
 };
 // ПОДПИСЬ ПОСЛЕ ПЕРЕНОСА УЖИМАЕТСЯ ДО САМОЙ ДЛИННОЙ СВОЕЙ СТРОКИ.
@@ -17370,8 +17374,6 @@ function znNapolnit(korn){
   });
 }
 
-const ICON_SEND = `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>`;
-const ICON_DL = `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`;
 
 function renderProjectView(proj){
   // ПУСТОЙ ЭКРАН У МАСТЕРА (наряды, с 2026-08-10-11).
@@ -17458,8 +17460,8 @@ function renderProjectView(proj){
            ссылкой. Мастеру на наряде и смотрящему не показываем: делятся
            сметой с заказчиком те же, кто вправе её править. -->
       ${isNaryad(proj) || proj.myRole === 'viewer' ? '' : `
-      <button class="doc-main-btn" data-podelitsya="${proj.id}">
-        <span class="chev" style="transform:none;">→</span> Поделиться с заказчиком
+      <button class="doc-main-btn zn-ryad" data-podelitsya="${proj.id}">
+        ${ZN_SAMOLYOT}<span>Поделиться с заказчиком</span>
       </button>`}
     </div>
   `;
@@ -17485,13 +17487,13 @@ function docBtns(type, fmt2, fmt2label){
     <div class="docs-btns">
       <button class="btn btn-primary btn-sm" data-doc="${type}|pdf|preview">Просмотр</button>
       <span class="docs-group">
-        <span class="docs-icon" title="Поделиться">${ICON_SEND}</span>
+        <span class="docs-icon" title="Поделиться">${ZN_SAMOLYOT}</span>
         <button class="btn btn-outline btn-sm" data-doc="${type}|pdf|share">PDF</button>
         <button class="btn btn-outline btn-sm${lk}"${tip} data-doc="${type}|${fmt2}|share">${lbl2}</button>
         ${txtBtn}
       </span>
       <span class="docs-group">
-        <span class="docs-icon" title="Скачать">${ICON_DL}</span>
+        <span class="docs-icon" title="Скачать">${ZN_SKACHAT}</span>
         <button class="btn btn-outline btn-sm" data-doc="${type}|pdf|download">PDF</button>
         <button class="btn btn-outline btn-sm${lk}"${tip} data-doc="${type}|${fmt2}|download">${lbl2}</button>
       </span>
