@@ -2897,6 +2897,12 @@
   .sk-chisla span{display:block;font-size:11px;color:var(--ink-soft);
     text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px;}
   .sk-chisla b{font-family:'JetBrains Mono',monospace;font-size:19px;color:var(--orange);}
+  .sk-kuski{margin-top:14px;}
+  .sk-kuski-spisok{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px;}
+  .sk-kusok{display:inline-flex;align-items:center;gap:8px;
+    border:1px solid var(--paper-line);border-radius:8px;padding:6px 10px;
+    font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--ink-soft);}
+  .sk-kusok b{color:var(--ink);font-weight:600;}
   .sel-work.pozicia-isklyuchena .sel-work-name{text-decoration:line-through;opacity:.55;}
   .sel-work.pozicia-isklyuchena .wsum{text-decoration:line-through;opacity:.55;}
   .isk-detali{margin:12px 0;border:1px solid var(--paper-line);border-radius:10px;padding:10px 12px;}
@@ -3607,7 +3613,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-04-166';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-04-167';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -21411,6 +21417,7 @@ function skListyRaschet(d){
   // и она НЕ обещает наилучшего результата — только правдоподобный.
   const ostatki = [];
   let sDokl = 0;
+  // Что из чего резали — чтобы показать человеку размеры подрезков.
   kuski.slice().sort((a,b)=> (b.w*b.h) - (a.w*a.h)).forEach(k=>{
     let i = -1;
     for(let j = 0; j < ostatki.length; j++){
@@ -21430,10 +21437,29 @@ function skListyRaschet(d){
   const ploschadSteny = dlina * vysota / 1e6;
   const ploschadDyr = dyry.reduce((a,o)=> a + o.w*o.h, 0) / 1e6;
 
+  // ПОДРЕЗКА — какие куски придётся отрезать. Целый лист подрезкой
+  // не считается: резать его не надо. Одинаковые складываем в одну
+  // строку: «1000×1200 — 3 шт.» читается, а девять строк подряд нет.
+  const svesti = (spisok)=>{
+    const m = new Map();
+    spisok.forEach(k=>{
+      const klyuch = Math.round(k.w) + '×' + Math.round(k.h);
+      m.set(klyuch, (m.get(klyuch) || 0) + 1);
+    });
+    return Array.from(m, ([razmer, n])=> ({ razmer, n }))
+                .sort((a,b)=> b.n - a.n);
+  };
+  const podrezka = svesti(kuski.filter(k=> k.w < w || k.h < h));
+
   return {
-    setka: setka, dlina: dlina, vysota: vysota, w: w, h: h,
+    setka: setka, dyry: dyry, dlina: dlina, vysota: vysota, w: w, h: h,
     bez: sZapasom(bez), sDokl: sZapasom(sDokl),
     bezGolyh: bez, sDoklGolyh: sDokl,
+    podrezka: podrezka,
+    // Остатки после докладки — то, что реально останется на объекте,
+    // если обрезки пускать в дело. Мелочь меньше 100 мм по любой
+    // стороне отбрасываем: она в дело не идёт, а список замусорит.
+    ostatki: svesti(ostatki.filter(o=> o.w >= 100 && o.h >= 100)),
     sloyov: sloyov, zapas: zapas,
     ploschad: Math.max(0, ploschadSteny - ploschadDyr),
     ploschadSteny: ploschadSteny
@@ -21565,18 +21591,65 @@ function skListyKartinka(r){
   const W = 640, ots = 8;
   const k = (W - ots*2) / r.dlina;
   const H = Math.round(r.vysota * k) + ots*2;
+  // Стена рисуется снизу вверх: y в разметке считается сверху, а высота
+  // проёма задаётся от пола. Перевернуть надо один раз и здесь, иначе
+  // дверь окажется под потолком.
+  const naEkran = (x, y, w, h)=> ({
+    x: ots + x*k, y: ots + (r.vysota - y - h)*k, w: w*k, h: h*k });
+
   const kletki = r.setka.map(c=>{
-    const x = ots + c.x*k, y = ots + (r.vysota - c.y - c.h)*k;
-    const w = c.w*k, h = c.h*k;
-    return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}"
+    const g = naEkran(c.x, c.y, c.w, c.h);
+    const celyy = (c.w >= r.w && c.h >= r.h);
+    // РАЗМЕР ПИШЕМ ТОЛЬКО НА ПОДРЕЗАННЫХ. На целых он и так известен
+    // из поля ввода, а надписи на каждой клетке превратили бы схему
+    // в кашу (владелец 4 сентября: «должна быть возможность увидеть
+    // размер подрезков»).
+    const podpis = (!c.pusto && !celyy && g.w > 46 && g.h > 16)
+      ? `<text x="${(g.x + g.w/2).toFixed(1)}" y="${(g.y + g.h/2 + 4).toFixed(1)}"
+              text-anchor="middle" font-size="11" fill="var(--ink-soft)"
+              font-family="monospace">${Math.round(c.w)}×${Math.round(c.h)}</text>`
+      : '';
+    return `<rect x="${g.x.toFixed(1)}" y="${g.y.toFixed(1)}" width="${g.w.toFixed(1)}" height="${g.h.toFixed(1)}"
       fill="${c.pusto ? 'var(--paper-line)' : 'var(--white)'}"
-      stroke="${c.pusto ? 'var(--paper-line)' : 'var(--ink-soft)'}" stroke-width="1"/>`;
+      stroke="${c.pusto ? 'var(--paper-line)' : 'var(--ink-soft)'}" stroke-width="1"/>${podpis}`;
   }).join('');
+
+  // ПРОЁМЫ РИСУЕМ ОТДЕЛЬНО И ПОВЕРХ КЛЕТОК. Раньше их не было видно
+  // вовсе: серым помечались только клетки, попавшие в проём ЦЕЛИКОМ,
+  // а дверь, не накрывшая ни одной клетки полностью, не оставляла
+  // на схеме следа. Владелец 4 сентября: «проём не отобразился
+  // на картинке».
+  const proyomy = (r.dyry || []).map(o=>{
+    const g = naEkran(o.x, o.y, o.w, o.h);
+    return `<rect x="${g.x.toFixed(1)}" y="${g.y.toFixed(1)}" width="${g.w.toFixed(1)}" height="${g.h.toFixed(1)}"
+      fill="var(--paper)" fill-opacity="0.92" stroke="var(--orange)"
+      stroke-width="2" stroke-dasharray="6 4"/>${
+      g.w > 60 && g.h > 20
+        ? `<text x="${(g.x + g.w/2).toFixed(1)}" y="${(g.y + g.h/2 + 4).toFixed(1)}"
+                text-anchor="middle" font-size="11" fill="var(--orange)"
+                font-family="monospace">${Math.round(o.w)}×${Math.round(o.h)}</text>`
+        : ''}`;
+  }).join('');
+
   return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-width:640px;display:block;margin-top:10px;">
     ${kletki}
+    ${proyomy}
     <rect x="${ots}" y="${ots}" width="${(r.dlina*k).toFixed(1)}" height="${(r.vysota*k).toFixed(1)}"
           fill="none" stroke="var(--ink)" stroke-width="2"/>
   </svg>`;
+}
+
+// Список кусков одним видом на оба случая: и подрезка, и остатки —
+// одно и то же по смыслу (размер и сколько штук), значит и выглядеть
+// должны одинаково.
+function skSpisokKuskov(zagolovok, spisok, poyasnenie){
+  if(!spisok || !spisok.length) return '';
+  return `<div class="sk-kuski">
+    <div class="sk-podzag">${escapeHtml(zagolovok)}</div>
+    <div class="sk-kuski-spisok">${spisok.map(x=>
+      `<span class="sk-kusok">${escapeHtml(x.razmer)} мм<b>${x.n} шт.</b></span>`).join('')}</div>
+    <div class="mat-note">${escapeHtml(poyasnenie)}</div>
+  </div>`;
 }
 
 function skItogListy(){
@@ -21596,7 +21669,11 @@ function skItogListy(){
       <div class="mat-note">Приложение не знает, как режут на вашем объекте, поэтому не выбирает за вас. Разница между числами — цена аккуратности бригады.</div>
     </div>
     ${skListyKartinka(r)}
-    <div class="mat-note">Серым — места, целиком попавшие в проём: там лист не нужен. Задетый проёмом лист расходуется целиком — вырезанное в дело не идёт.</div>`;
+    <div class="mat-note">Серым — места, целиком попавшие в проём: там лист не нужен. Оранжевым пунктиром — сами проёмы. Задетый проёмом лист расходуется целиком: вырезанное в дело не идёт.</div>
+    ${skSpisokKuskov('Подрезка — что резать', r.podrezka,
+        'Размеры кусков, которые придётся отрезать от листа. Целые листы сюда не идут.')}
+    ${skSpisokKuskov('Остатки после докладки', r.ostatki,
+        'Что останется, если обрезки пускать в дело. Мельче 100 мм по стороне не показываем — такое в дело не идёт.')}`;
 }
 
 function skItogBloki(){
