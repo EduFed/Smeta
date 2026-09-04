@@ -3901,7 +3901,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-05-218';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-05-219';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -13073,25 +13073,27 @@ function razmeryKontura(p, sr){
       const mesto = Math.abs(c2-c1);
       let glub = 0;                          // 0 — число остаётся снаружи
       let naPolku = null;                    // не null — число уехало на полку
-      if(mesto < w + 4){
-        // число повёрнуто вдоль линии, поэтому на экране у вертикальных
-        // цепей ширина и высота меняются местами
-        const shir = gorizont ? w : h, vys = gorizont ? h : w;
-        const gde = g => gorizont ? [seredina, kray - g*storonaZnak]
-                                  : [kray - g*storonaZnak, seredina];
-        // ЗА ГРАНИЦЕЙ ГАБАРИТА НЕ ВСЕГДА КОМНАТА. Цепь идёт по краю
-        // габарита, но отрезок цепи может стоять над выемкой — тогда
-        // прямо под ним пусто, и заведённое «внутрь» число повисает
-        // за контуром. Поэтому каждое место проверяем на самом деле
-        // и уходим глубже, пока не попадём в комнату и в свободное.
-        for(let g = GL_TXT; g <= GL_TXT + GL_SHAG*7; g += GL_SHAG){
-          const [x,y] = gde(g);
-          if(!korobkaVnutri(x, y, shir, vys)) continue;   // тут не комната
-          if(!svobodno(x, y, shir, vys)) continue;
-          glub = g; break;
-        }
-        if(glub){ const [x,y] = gde(glub); zanyat(x, y, shir, vys); }
-        else {
+      // НЕ ВЛЕЗЛО МЕЖДУ ЗАСЕЧКАМИ — НА ПОЛКУ. Не «внутрь контура»:
+      // заведённое внутрь число висит само по себе, и к какому отрезку
+      // оно относится, приходится угадывать. Владелец 5 сентября 2026:
+      // «где поле не вмещается в размерную линию, делаем на полке.
+      // Сейчас присутствуют вообще оторванные поля от полок».
+      // Полка — единственный способ показать связь, когда число ушло
+      // от своего места.
+      //
+      // Проверяем и то, что влезло: снаружи числа соседних отрезков
+      // раньше вставали без всякой проверки и налезали друг на друга
+      // («0,585» и «0,8» на снимке владельца).
+      const shir = gorizont ? w : h, vys = gorizont ? h : w;
+      const gde = g => gorizont ? [seredina, kray - g*storonaZnak]
+                                : [kray - g*storonaZnak, seredina];
+      const snaruzhiX = gorizont ? seredina : kray + (sr.ZAZOR + h/2)*storonaZnak;
+      const snaruzhiY = gorizont ? kray + (sr.ZAZOR + h/2)*storonaZnak : seredina;
+      const vlezaet = mesto >= w + 4 && svobodno(snaruzhiX, snaruzhiY, shir, vys);
+      if(vlezaet){
+        zanyat(snaruzhiX, snaruzhiY, shir, vys);
+      }else{
+        {
           // ВНУТРИ НЕ ПОМЕСТИЛОСЬ — на полочку. Владелец про верхний
           // левый угол: «выносные линии завести ещё глубже внутрь,
           // а поле с числом на полочку с краю чуть ниже».
@@ -13100,7 +13102,9 @@ function razmeryKontura(p, sr){
           // и вести её надо от того, что меряли.
           const [ax0, ay0] = gde(0);
           const p2 = polka(ax0, ay0, txt, w, h);
-          if(p2){ naPolku = p2; glub = GL_TXT; }
+          // glub оставляем нулевым: внутрь контура больше ничего
+          // не заводим, связь показывает полка.
+          if(p2) naPolku = p2;
         }
       }
       otrezki.push({ k, v1, v2, txt, w, h, seredina, glub, svoya, naPolku });
@@ -13263,16 +13267,19 @@ function razmeryKontura(p, sr){
     dobavLiniyu(svoyaLiniya[0], svoyaLiniya[1]);
     const txt = fmtLen(L);
     const w = sr.shirina(txt), h = sr.vys;
-    // короткая стена — число не уводим вбок: там оно липнет к соседнему
-    // и спорит с ним. Ставим ГЛУБЖЕ ВНУТРЬ, напротив своей стены.
+    // Короткая стена: число вдоль неё не помещается. Прежде его
+    // заводили глубже внутрь — и оно повисало без связи со своей стеной.
+    // Теперь такие идут на полку, как и у цепей (владелец 5 сентября
+    // 2026).
     const tesno = lp < w + 6;
     const sx = (bx-ax)/lp, sy = (by-ay)/lp;
     // ориентация числа по линии — как у цепей: вертикальные читаются снизу вверх
     const vert = Math.abs(by-ay) > Math.abs(bx-ax);
     const shir = vert ? h : w, vys = vert ? w : h;
-    const glubNach = otstup + sr.ZAZOR + h/2 + (tesno ? h + 3 : 0);
+    const glubNach = otstup + sr.ZAZOR + h/2;
     let glub = glubNach, nashli = false;
-    for(let g = glubNach; g <= glubNach + (h+3)*5; g += h + 3){
+    // Тесной стене место у линии не ищем вовсе — сразу полка.
+    for(let g = tesno ? Infinity : glubNach; g <= glubNach + (h+3)*5; g += h + 3){
       const x = mX + ux*g, y = mY + uy*g;
       const vKontureLi = korobkaVnutri(x, y, shir, vys);
       if(naruzhu){
