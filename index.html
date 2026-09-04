@@ -371,20 +371,33 @@
     max-height:86vh; overflow-y:auto; -webkit-overflow-scrolling:touch;
     background:var(--white); color:var(--ink);
     border-top-left-radius:18px; border-top-right-radius:18px;
-    padding:26px 22px calc(22px + env(safe-area-inset-bottom, 0px));
+    padding:0 22px calc(22px + env(safe-area-inset-bottom, 0px));
     box-shadow:var(--ten-okno);
     transform:translateY(100%); transition:transform .26s ease;
   }
   .novosti-fon.vidno .novosti-list{ transform:translateY(0); }
-  .novosti-krest{ position:absolute; top:12px; right:12px; }
+  /* Шапка липнет к верху листа. Крестик прежде стоял absolute внутри
+     прокручиваемого листа и уезжал вместе с текстом: человек листал вниз
+     за кнопкой, а крестик оставался наверху, за краем. Владелец
+     4 сентября 2026: «через три секунды не появляется ни крестика,
+     и нет возможности закрыть даже через кнопку». */
+  .novosti-shapka{
+    position:sticky; top:0; z-index:1; background:var(--white);
+    padding:22px 0 10px; margin:0 -22px; padding-left:22px; padding-right:22px;
+    display:flex; align-items:flex-start; gap:12px;
+  }
+  .novosti-shapka > div{ flex:1 1 auto; min-width:0; }
+  .novosti-krest{ flex:0 0 auto; }
   .novosti-zag{
     font-family:'Space Grotesk','Inter',sans-serif;
-    font-size:24px; font-weight:700; margin-bottom:4px;
+    font-size:26px; font-weight:700; margin-bottom:4px;
   }
-  .novosti-pod{ font-size:13px; color:var(--ink-soft); margin-bottom:16px; }
-  .novosti-punkty{ margin:0 0 20px; padding-left:20px; }
-  .novosti-punkty li{ font-size:14px; line-height:1.5; margin-bottom:12px; }
-  .novosti-ok{ width:100%; padding:13px; min-height:44px; }
+  .novosti-pod{ font-size:14px; color:var(--ink-soft); }
+  /* Текст нарочно крупный: список читают один раз, и лучше пусть
+     до кнопки придётся долистать (решение владельца 4 сентября 2026). */
+  .novosti-punkty{ margin:6px 0 22px; padding-left:22px; }
+  .novosti-punkty li{ font-size:16px; line-height:1.55; margin-bottom:16px; }
+  .novosti-ok{ width:100%; padding:15px; min-height:48px; font-size:15px; }
 
   /* ЗНАЧОК И ПОДПИСЬ — ДВА ОТДЕЛЬНЫХ МЕСТА, А НЕ ОДНА СТРОКА ТЕКСТА.
      Правило общее, на все места сразу (владелец 4 сентября 2026:
@@ -3884,7 +3897,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-04-204';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-04-205';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -13990,7 +14003,7 @@ function num(v){
 // изменений, а ответ на вопрос «что мне с этого».
 const NOVOSTI_KLYUCH = 'novosti-videl-v1';
 const NOVOSTI = [
-  { sborka: '2026-09-04-204', punkty: [
+  { sborka: '2026-09-04-205', punkty: [
     'Строительный калькулятор — отдельной кнопкой в панели. Считает листовой материал с раскладкой, кирпич и блоки, расход смесей и площади поверхностей любой формы.',
     'Раскладка плитки теперь и на бесплатном тарифе — одна поверхность. В полном считается весь санузел разом, и обрезок от пола идёт в подрезку стены.',
     'Отметка готовности у работ: ставите процент, приложение считает готовность по объекту с учётом стоимости.',
@@ -14029,15 +14042,22 @@ function novostiPokazat(){
   ov.className = 'novosti-fon no-print';
   ov.innerHTML = `
     <div class="novosti-list" role="dialog" aria-label="Что нового">
-      <button type="button" class="plan-close novosti-krest" id="novostiKrest"
-              aria-label="Закрыть" hidden>✕</button>
-      <div class="novosti-zag">Привет!</div>
-      <div class="novosti-pod">Появилось вот что:</div>
+      <div class="novosti-shapka">
+        <div>
+          <div class="novosti-zag">Привет!</div>
+          <div class="novosti-pod">Появилось вот что:</div>
+        </div>
+        <button type="button" class="plan-close novosti-krest" id="novostiKrest"
+                aria-label="Закрыть" hidden>✕</button>
+      </div>
       <ul class="novosti-punkty">${punkty.map(t=>`<li>${escapeHtml(t)}</li>`).join('')}</ul>
       <button type="button" class="btn btn-primary novosti-ok" id="novostiOk">Понятно</button>
     </div>`;
   document.body.appendChild(ov);
-  requestAnimationFrame(()=> ov.classList.add('vidno'));
+  // Через кадр, а не через requestAnimationFrame: кадр может не прийти
+  // (свёрнутое приложение, экономия батареи), и тогда лист остался бы
+  // за нижним краем — с прозрачностью 0 и сдвигом на свою высоту.
+  setTimeout(()=> ov.classList.add('vidno'), 20);
 
   // Кнопка «Понятно» работает сразу — она в конце списка, до неё надо
   // долистать. А крестик, Escape и щелчок мимо включаются через три
