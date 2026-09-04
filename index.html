@@ -3912,7 +3912,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-05-228';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-05-229';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -12896,29 +12896,73 @@ function razmeryKontura(p, sr){
     const d4 = storonaOt(a2[0],a2[1], b1[0],b1[1], b2[0],b2[1]);
     return ((d1>0) !== (d2>0)) && ((d3>0) !== (d4>0));
   };
+  // КОРОБКА ЧИСЛА ПОВОРАЧИВАЕТСЯ ВМЕСТЕ С ЧИСЛОМ.
+  //
+  // Прежде место под число мерилось прямоугольником по осям картинки:
+  // «3,481» шириной 40 и высотой 15, положенное вдоль наклонной стены,
+  // считалось коробкой 15×40 — вчетверо толще, чем оно есть. Из-за
+  // этого число не помещалось на своём месте и уезжало на шаг глубже:
+  // у прямых стен просвет до размерной линии выходил один, у наклонных
+  // втрое больше. Владелец 5 сентября 2026: «поля наклонных линий
+  // слишком далеко от самой размерной линии, пусть отступ будет таким
+  // же, как например у 2,7».
+  //
+  // Углы коробки: середина, полуразмеры, поворот. `pol` — припуск,
+  // на сколько раздуть коробку со всех сторон.
+  const ugly = (x,y,w,h,ug,pol)=>{
+    const a = (ug||0)*Math.PI/180, co = Math.cos(a), si = Math.sin(a);
+    const pw = w/2 + (pol||0), ph = h/2 + (pol||0);
+    return [[-pw,-ph],[pw,-ph],[pw,ph],[-pw,ph]]
+      .map(g=>[x + g[0]*co - g[1]*si, y + g[0]*si + g[1]*co]);
+  };
+  const rebra = u => [[u[0],u[1]],[u[1],u[2]],[u[2],u[3]],[u[3],u[0]]];
   // Коробка числа против отрезка: пересекает ли он хоть одну её сторону.
   // Целиком внутри коробки отрезок оказаться не может — линии чертежа
   // длиннее числа, — поэтому четырёх сторон достаточно.
-  const korobkaRezhet = (x,y,w,h, a, b)=>{
-    const l = x-w/2-2, r = x+w/2+2, t = y-h/2-2, d = y+h/2+2;
-    return otrezkiPeresek(a, b, [l,t],[r,t]) || otrezkiPeresek(a, b, [r,t],[r,d]) ||
-           otrezkiPeresek(a, b, [r,d],[l,d]) || otrezkiPeresek(a, b, [l,d],[l,t]);
-  };
-  const naLinii = (x,y,w,h)=> linii.some(([a,b])=> korobkaRezhet(x,y,w,h, a, b));
+  const korobkaRezhet = (x,y,w,h,ug, a, b)=>
+    rebra(ugly(x,y,w,h,ug,2)).some(r=> otrezkiPeresek(a, b, r[0], r[1]));
+  const naLinii = (x,y,w,h,ug)=> linii.some(([a,b])=> korobkaRezhet(x,y,w,h,ug, a, b));
 
-  const svobodno = (x,y,w,h)=>
-    !vnutriZanyato.some(z =>
-      Math.abs(z.x - x) < (z.w + w)/2 + 3 && Math.abs(z.y - y) < (z.h + h)/2 + 3)
-    && !naLinii(x,y,w,h);
-  const zanyat = (x,y,w,h)=> vnutriZanyato.push({x,y,w,h});
+  // ПРОСВЕТ МЕЖДУ ПОЛЯМИ — ОДНО ЧИСЛО НА ВЕСЬ ЧЕРТЁЖ.
+  // Владелец 5 сентября 2026: «может, логика нужна следующая: отступ
+  // между полями не менее стольки-то». Так и есть: «не пересекаются» —
+  // условие слишком слабое, два числа могут стоять вплотную и читаться
+  // как одно длинное. Держим между ними просвет и меняем его в одном
+  // месте, а не подбираем на каждом виде размера.
+  // Просвет между числом и ЛИНИЕЙ задаёт `sr.ZAZOR` — он свой, потому
+  // что число нарочно стоит близко к своей размерной линии: это и есть
+  // связь размера с местом.
+  const PROSVET = 6;
+  // Две повёрнутые коробки — разделяющая ось. Для коробок по осям это
+  // ровно прежняя проверка на просвет, для повёрнутых — единственная
+  // верная.
+  const nakryvayut = (z, x,y,w,h,ug)=>{
+    const u1 = ugly(z.x, z.y, z.w, z.h, z.ug, PROSVET/2),
+          u2 = ugly(x,y,w,h,ug, PROSVET/2);
+    for(const u of [u1, u2]){
+      for(const par of [[u[0],u[1]],[u[0],u[3]]]){
+        const ax = par[1][0]-par[0][0], ay = par[1][1]-par[0][1];
+        const dl = Math.hypot(ax,ay);
+        if(dl < 1e-9) continue;
+        const nx = ax/dl, ny = ay/dl;
+        const pr = q => q.map(g=> g[0]*nx + g[1]*ny);
+        const A = pr(u1), B = pr(u2);
+        if(Math.max.apply(null,A) <= Math.min.apply(null,B) ||
+           Math.max.apply(null,B) <= Math.min.apply(null,A)) return false;
+      }
+    }
+    return true;
+  };
+  const svobodno = (x,y,w,h,ug)=>
+    !vnutriZanyato.some(z => nakryvayut(z, x,y,w,h,ug)) && !naLinii(x,y,w,h,ug);
+  const zanyat = (x,y,w,h,ug)=> vnutriZanyato.push({x,y,w,h,ug: ug||0});
 
   // ВСЕЙ КОРОБКОЙ, А НЕ СЕРЕДИНОЙ. Проверять одну точку мало: «0,149»
   // повёрнуто вдоль стены и занимает 43 точки в длину, а полоса
   // у верхнего левого угла — 13. Середина попадает внутрь, а число
   // ложится поверх стен. Смотрим все четыре угла.
-  const korobkaVnutri = (x,y,w,h)=>
-    vnutriEkr(x-w/2+1, y-h/2+1) && vnutriEkr(x+w/2-1, y-h/2+1) &&
-    vnutriEkr(x-w/2+1, y+h/2-1) && vnutriEkr(x+w/2-1, y+h/2-1);
+  const korobkaVnutri = (x,y,w,h,ug)=>
+    ugly(x,y,w,h,ug,-1).every(g=> vnutriEkr(g[0], g[1]));
 
   // ПОЛОЧКА — выноска для числа, которому негде встать.
   // Референс владельца — чертёж пробки, размеры «Ø50» и «3x45°»:
@@ -12933,7 +12977,7 @@ function razmeryKontura(p, sr){
   // спокойно перечёркивала соседний размер. Владелец 5 сентября 2026:
   // «линии полок пересекают поля с размерами».
   const otrezokRezhetChisla = (a, b)=> vnutriZanyato.some(z=>
-    korobkaRezhet(z.x, z.y, z.w, z.h, a, b));
+    korobkaRezhet(z.x, z.y, z.w, z.h, z.ug, a, b));
 
   // ПОЛКА НАХОДИТСЯ ВСЕГДА.
   // Правило владельца: всё, что не влезает по ширине между засечками,
@@ -12950,12 +12994,12 @@ function razmeryKontura(p, sr){
   const skolkoMeshaet = (tx, ty, w, h, a1, a2, b1, b2)=>{
     let n = 0;
     vnutriZanyato.forEach(z=>{
-      if(Math.abs(z.x - tx) < (z.w + w)/2 + 3 && Math.abs(z.y - ty) < (z.h + h)/2 + 3) n++;
-      if(korobkaRezhet(z.x, z.y, z.w, z.h, a1, a2)) n++;
-      if(korobkaRezhet(z.x, z.y, z.w, z.h, b1, b2)) n++;
+      if(nakryvayut(z, tx, ty, w, h, 0)) n++;
+      if(korobkaRezhet(z.x, z.y, z.w, z.h, z.ug, a1, a2)) n++;
+      if(korobkaRezhet(z.x, z.y, z.w, z.h, z.ug, b1, b2)) n++;
     });
     linii.forEach(([a,b])=>{
-      if(korobkaRezhet(tx, ty, w, h, a, b)) n++;
+      if(korobkaRezhet(tx, ty, w, h, 0, a, b)) n++;
       if(otrezkiPeresek(a1, a2, a, b)) n++;
       if(otrezkiPeresek(b1, b2, a, b)) n++;
     });
@@ -12963,17 +13007,62 @@ function razmeryKontura(p, sr){
   };
 
   const polka = (x0, y0, txt, w, h, lyuboe)=>{
+    // СНАЧАЛА КОРОТКАЯ ВЫНОСКА ВО ВСЕ СТОРОНЫ, ПОТОМ ДЛИННАЯ.
+    //
+    // Прежде порядок был обратный: первая сторона перебирала все свои
+    // длины до самого края холста и только потом уступала место второй.
+    // Число уезжало в дальний угол чертежа, хотя рядом — чуть ниже
+    // или чуть правее — было пусто. Владелец 5 сентября 2026: «0,14
+    // спокойно можно сместить немного вниз, и всё лезет, места
+    // предостаточно»; «0,585 — почему полка не встала вправо, там
+    // много места хоть куда».
+    //
+    // И сторон теперь не четыре, а шестнадцать: строго вбок, строго
+    // вверх-вниз и наклонно на два лада. Чем больше направлений, тем
+    // короче выходит выноска — а короткая выноска и есть та связь
+    // числа со стеной, ради которой полка заведена.
     const kx = x0 <= sr.W/2 ? 1 : -1, ky = y0 <= sr.H/2 ? 1 : -1;
-    const storony = [[kx,ky],[kx,-ky],[-kx,ky],[-kx,-ky]];
-    let luchshee = null;          // для второго захода: наименее тесное
-    for(const [dx,dy] of storony){
-      // Длин перебираем много и до самого края холста: снаружи контура
-      // места вдоволь, и лучше увести число подальше, чем оставить его
-      // висеть у стены без связи. Владелец 5 сентября 2026: «снаружи
-      // много места, лучше подобные выносить за контур».
-      for(const L of [20, 28, 36, 44, 56, 68, 82, 96, 112, 130]){
+    const storony = [[kx,ky],[kx,0],[0,ky],[kx*2,ky],[kx,ky*2],
+                     [kx,-ky],[0,-ky],[kx*2,-ky],[kx,-ky*2],
+                     [-kx,ky],[-kx,0],[-kx*2,ky],[-kx,ky*2],
+                     [-kx,-ky],[-kx*2,-ky],[-kx,-ky*2]]
+      .map(g=>{ const d = Math.hypot(g[0],g[1]); return [g[0]/d, g[1]/d]; });
+    // ОДНА ПОПЫТКА, ОДНИ ПРАВИЛА. Выноска (x0,y0)→(lx,ly), полка
+    // (lx,ly)→(px,ly), число на полке в (tx,ty). Годится — ставим.
+    // Правило одно на все способы поиска: просвет от чужих полей
+    // и от любой линии чертежа. Владелец 5 сентября 2026: «полка
+    // с полем ищет любое свободное место по правилу минимального
+    // отступа от других полей и линий».
+    const poprobovat = (lx, ly, px, tx, ty)=>{
+      if(tx - w/2 < 2 || tx + w/2 > sr.W - 2) return null;
+      if(ty - h/2 < 2 || ty + h/2 > sr.H - 2) return null;
+      if(Math.min(lx,px) < 2 || Math.max(lx,px) > sr.W - 2) return null;
+      if(!svobodno(tx, ty, w, h, 0)) return null;
+      // Сама выноска тоже ничего не должна пересекать: наклонная идёт
+      // от стены через весь чертёж, и пересечь ей есть что.
+      if(linii.some(([a,b])=> otrezkiPeresek([x0,y0],[lx,ly], a, b))) return null;
+      if(linii.some(([a,b])=> otrezkiPeresek([lx,ly],[px,ly], a, b))) return null;
+      if(otrezokRezhetChisla([x0,y0],[lx,ly])) return null;
+      if(otrezokRezhetChisla([lx,ly],[px,ly])) return null;
+      zanyat(tx, ty, w, h, 0);
+      dobavLiniyu([x0,y0],[lx,ly]); dobavLiniyu([lx,ly],[px,ly]);
+      return { tx, ty, liniya:
+        `<line x1="${x0}" y1="${y0}" x2="${lx}" y2="${ly}" class="${kl.ext}"/>` +
+        `<line x1="${lx}" y1="${ly}" x2="${px}" y2="${ly}" class="${kl.ext}"/>` };
+    };
+    let luchshee = null;          // для последнего захода: наименее тесное
+    // Длин перебираем много и до самого края холста: снаружи контура
+    // места вдоволь, и лучше увести число подальше, чем оставить его
+    // висеть у стены без связи. Владелец 5 сентября 2026: «снаружи
+    // много места, лучше подобные выносить за контур».
+    for(const L of [18, 24, 30, 38, 48, 60, 74, 90, 108, 130]){
+      for(const [dx,dy] of storony){
         const lx = x0 + dx*L, ly = y0 + dy*L;       // конец наклонной
-        const px = lx + dx*(w + 8);                  // конец полки
+        // Полка всегда горизонтальная и уходит в ту же сторону, что
+        // и выноска; у строго вертикальной выноски стороны нет —
+        // тогда в сторону ближнего края холста.
+        const sh = dx > 0.05 ? 1 : (dx < -0.05 ? -1 : kx);
+        const px = lx + sh*(w + 8);                  // конец полки
         const tx = (lx + px)/2, ty = ly - h/2 - 2;   // число лежит НА полке
         if(tx - w/2 < 2 || tx + w/2 > sr.W - 2) continue;
         if(ty - h/2 < 2 || ty + h/2 > sr.H - 2) continue;
@@ -12985,31 +13074,44 @@ function razmeryKontura(p, sr){
           if(!luchshee || pl < luchshee.pl) luchshee = { tx, ty, lx, ly, px, pl };
           continue;
         }
-        {
-          if(!svobodno(tx, ty, w, h)) continue;
-          // Сама выноска тоже ничего не должна пересекать: наклонная идёт
-          // от стены через весь чертёж, и пересечь ей есть что.
-          if(linii.some(([a,b])=> otrezkiPeresek([x0,y0],[lx,ly], a, b))) continue;
-          if(linii.some(([a,b])=> otrezkiPeresek([lx,ly],[px,ly], a, b))) continue;
-          if(otrezokRezhetChisla([x0,y0],[lx,ly])) continue;
-          if(otrezokRezhetChisla([lx,ly],[px,ly])) continue;
-        }
-        zanyat(tx, ty, w, h);
-        dobavLiniyu([x0,y0],[lx,ly]); dobavLiniyu([lx,ly],[px,ly]);
-        return { tx, ty, liniya:
-          `<line x1="${x0}" y1="${y0}" x2="${lx}" y2="${ly}" class="${kl.ext}"/>` +
-          `<line x1="${lx}" y1="${ly}" x2="${px}" y2="${ly}" class="${kl.ext}"/>` };
+        const vyshlo = poprobovat(lx, ly, px, tx, ty);
+        if(vyshlo) return vyshlo;
       }
     }
+
+    // ЛЮБОЕ СВОБОДНОЕ МЕСТО — НО БЛИЖАЙШЕЕ К СВОЕЙ СТЕНЕ.
+    // Лучи выше — быстрый обход ближнего поля, шестнадцать направлений.
+    // Если не встало ни на одном, проходим ВЕСЬ чертёж сеткой: место
+    // есть почти всегда, просто не на луче. Порядок обхода — по
+    // расстоянию до стены, поэтому находится ближайшее из годных:
+    // длинная выноска рвёт связь числа со стеной, ради которой полка
+    // и заведена. Правило годности то же самое — просвет от полей
+    // и от линий, ничего особого для дальних мест.
+    if(!lyuboe){
+      const SHAG = 10, mesta = [];
+      for(let gy = h/2 + 3; gy <= sr.H - h/2 - 3; gy += SHAG)
+        for(let gx = w/2 + 3; gx <= sr.W - w/2 - 3; gx += SHAG)
+          mesta.push([gx, gy, Math.hypot(gx - x0, gy - y0)]);
+      mesta.sort((m,n)=> m[2] - n[2]);
+      for(const [tx, ty] of mesta){
+        // выноска цепляется за тот конец полки, что ближе к стене
+        const sh = tx >= x0 ? 1 : -1;
+        const lx = tx - sh*(w + 8)/2, px = lx + sh*(w + 8), ly = ty + h/2 + 2;
+        const vyshlo = poprobovat(lx, ly, px, tx, ty);
+        if(vyshlo) return vyshlo;
+      }
+    }
+
     if(lyuboe && luchshee){
       const { tx, ty, lx, ly, px } = luchshee;
-      zanyat(tx, ty, w, h);
+      zanyat(tx, ty, w, h, 0);
       dobavLiniyu([x0,y0],[lx,ly]); dobavLiniyu([lx,ly],[px,ly]);
       return { tx, ty, liniya:
         `<line x1="${x0}" y1="${y0}" x2="${lx}" y2="${ly}" class="${kl.ext}"/>` +
         `<line x1="${lx}" y1="${ly}" x2="${px}" y2="${ly}" class="${kl.ext}"/>` };
     }
-    // чистого места не нашлось — идём вторым заходом
+    // свободного места нет нигде на чертеже — идём последним заходом
+    // и становимся туда, где мешаем меньше всего
     return lyuboe ? null : polka(x0, y0, txt, w, h, true);
   };
 
@@ -13082,20 +13184,57 @@ function razmeryKontura(p, sr){
   // и связь числа с отрезком видна глазом, а не додумывается.
   const GL_TXT = sr.GL_TXT;   // на сколько число уходит внутрь контура
   const GL_SHAG = sr.GL_SHAG; // на сколько глубже, если это место уже занято
+  // ЦЕПЬ РАБОТАЕТ В ДВА ПРИЁМА: сперва считает свои линии, потом ставит
+  // числа. Между этими приёмами то же самое успевают сделать остальные
+  // три цепи — и каждое число видит все четыре размерные линии, а не
+  // только линии своей стороны. Прежде цепи шли одна за другой целиком,
+  // и число нижней цепи не знало о линии правой: ложилось прямо на неё.
+  // Владелец 5 сентября 2026: «0,385 нужно вынести немного дальше,
+  // чтобы его поле не перекрывало размерную линию».
   const cep = (steny, gorizont, uroven, storonaZnak)=>{
-    if(!steny.length) return;
+    if(!steny.length) return null;
     const tochki = [];
     steny.forEach(s=>{
       tochki.push(gorizont ? s.a[0] : s.a[1]);
       tochki.push(gorizont ? s.b[0] : s.b[1]);
     });
     const uniq = [...new Set(tochki.map(v=>Math.round(v*1000)/1000))].sort((m,n)=>m-n);
-    if(uniq.length < 2) return;
+    if(uniq.length < 2) return null;
 
     const kray = uroven - OT*storonaZnak;   // сама граница контура
-    // что из двух лежит глубже внутри контура
-    const glubzhe = (c1,c2)=> storonaZnak > 0 ? Math.min(c1,c2) : Math.max(c1,c2);
 
+    // ВЫНОСНЫЕ ЛИНИИ: от контура до размерной линии, с выступом за неё.
+    // Тянем от самой близкой к цепи точки контура с этой координатой —
+    // тогда линия не перечёркивает всю фигуру.
+    const vystup = 5 * storonaZnak;
+    const vynosnye = uniq.map(v=>{
+      const rodnye = p.filter(g=> Math.abs((gorizont ? g[0] : g[1]) - v) < EPS);
+      if(!rodnye.length) return null;
+      // ближайшая к размерной линии точка контура
+      let best = rodnye[0], bestD = Infinity;
+      rodnye.forEach(g=>{
+        const c = gorizont ? sr.Y(g[1]) : sr.X(g[0]);
+        const d = Math.abs(c - uroven);
+        if(d < bestD){ bestD = d; best = g; }
+      });
+      const nach = (gorizont ? sr.Y(best[1]) : sr.X(best[0])) + 3*storonaZnak;
+      const c = gorizont ? sr.X(v) : sr.Y(v);
+      return gorizont
+        ? { a:[c, nach], b:[c, uroven + vystup], sk:[[c, nach],[c, uroven]] }
+        : { a:[nach, c], b:[uroven + vystup, c], sk:[[nach, c],[uroven, c]] };
+    });
+    // В список «нельзя пересекать» выносная идёт ТОЛЬКО до размерной
+    // линии, без выступа за неё: сразу за линией стоят числа этой же
+    // цепи, и выступ отбирал бы у них законное место.
+    vynosnye.forEach(l=>{ if(l) dobavLiniyu(l.sk[0], l.sk[1]); });
+    dobavLiniyu(gorizont ? [sr.X(uniq[0]), uroven] : [uroven, sr.Y(uniq[0])],
+                gorizont ? [sr.X(uniq[uniq.length-1]), uroven]
+                         : [uroven, sr.Y(uniq[uniq.length-1])]);
+
+    // Точки, которые цепи нужны: концы отрезков, подписанных на месте.
+    const nuzhna = new Array(uniq.length).fill(false);
+
+    return ()=>{
     // РАЗМЕТКА ОТРЕЗКОВ — раньше выносных линий.
     // Выносная обязана дотянуться до числа, а куда уйдёт число —
     // ясно только после разбора всех отрезков стороны.
@@ -13134,7 +13273,7 @@ function razmeryKontura(p, sr){
       // отнимает место у настоящего размера — там должен был стоять
       // 1,05 от стены короба. Засечка на этом месте остаётся: она
       // показывает, где кончилась одна стена и началась другая.
-      if(!svoya) continue;
+      if(!svoya){ nuzhna[k] = true; nuzhna[k+1] = true; continue; }
       const txt = fmtLen(dl);
       // число всегда повёрнуто вдоль размерной линии, поэтому вдоль неё
       // оно занимает w, а поперёк h — на любой из четырёх сторон
@@ -13142,7 +13281,6 @@ function razmeryKontura(p, sr){
       const c1 = gorizont ? sr.X(v1) : sr.Y(v1), c2 = gorizont ? sr.X(v2) : sr.Y(v2);
       const seredina = (c1+c2)/2;
       const mesto = Math.abs(c2-c1);
-      let glub = 0;                          // 0 — число остаётся снаружи
       let naPolku = null;                    // не null — число уехало на полку
       // НЕ ВЛЕЗЛО МЕЖДУ ЗАСЕЧКАМИ — НА ПОЛКУ. Не «внутрь контура»:
       // заведённое внутрь число висит само по себе, и к какому отрезку
@@ -13155,14 +13293,19 @@ function razmeryKontura(p, sr){
       // Проверяем и то, что влезло: снаружи числа соседних отрезков
       // раньше вставали без всякой проверки и налезали друг на друга
       // («0,585» и «0,8» на снимке владельца).
-      const shir = gorizont ? w : h, vys = gorizont ? h : w;
+      // Место числа считаем ОТ РАЗМЕРНОЙ ЛИНИИ (`uroven`), а не от края
+      // контура (`kray`). Прежде здесь стоял `kray` — и место занималось
+      // на восемнадцать точек ближе к стене, чем число потом вставало.
+      // Числа проверялись и запоминались не там, где их видно, поэтому
+      // и налезали друг на друга при «свободно».
+      const ug = gorizont ? 0 : -90;      // вертикальные читаются снизу вверх
       const gde = g => gorizont ? [seredina, kray - g*storonaZnak]
                                 : [kray - g*storonaZnak, seredina];
-      const snaruzhiX = gorizont ? seredina : kray + (sr.ZAZOR + h/2)*storonaZnak;
-      const snaruzhiY = gorizont ? kray + (sr.ZAZOR + h/2)*storonaZnak : seredina;
-      const vlezaet = mesto >= w + 4 && svobodno(snaruzhiX, snaruzhiY, shir, vys);
+      const snaruzhiX = gorizont ? seredina : uroven + (sr.ZAZOR + h/2)*storonaZnak;
+      const snaruzhiY = gorizont ? uroven + (sr.ZAZOR + h/2)*storonaZnak : seredina;
+      const vlezaet = mesto >= w + 4 && svobodno(snaruzhiX, snaruzhiY, w, h, ug);
       if(vlezaet){
-        zanyat(snaruzhiX, snaruzhiY, shir, vys);
+        zanyat(snaruzhiX, snaruzhiY, w, h, ug);
       }else{
         {
           // ВНУТРИ НЕ ПОМЕСТИЛОСЬ — на полочку. Владелец про верхний
@@ -13173,64 +13316,46 @@ function razmeryKontura(p, sr){
           // и вести её надо от того, что меряли.
           const [ax0, ay0] = gde(0);
           const p2 = polka(ax0, ay0, txt, w, h);
-          // glub оставляем нулевым: внутрь контура больше ничего
-          // не заводим, связь показывает полка.
+          // Внутрь контура больше ничего не заводим: связь показывает полка.
           if(p2) naPolku = p2;
         }
       }
-      otrezki.push({ k, v1, v2, txt, w, h, seredina, glub, svoya, naPolku });
+      if(!naPolku){ nuzhna[k] = true; nuzhna[k+1] = true; }
+      otrezki.push({ k, v1, v2, txt, w, h, seredina, svoya, naPolku });
     }
 
-    // до какой глубины внутри контура тянуть выносную в каждой точке
-    const vnutrDo = new Array(uniq.length).fill(0);
-    otrezki.forEach(o=>{
-      if(!o.glub) return;
-      const d = o.glub + o.h/2 + 4;
-      vnutrDo[o.k]   = Math.max(vnutrDo[o.k],   d);
-      vnutrDo[o.k+1] = Math.max(vnutrDo[o.k+1], d);
-    });
-
-    // ВЫНОСНЫЕ ЛИНИИ: от контура до размерной линии, с выступом за неё.
-    // Тянем от самой близкой к цепи точки контура с этой координатой —
-    // тогда линия не перечёркивает всю фигуру.
-    uniq.forEach((v,k)=>{
-      const rodnye = p.filter(g=> Math.abs((gorizont ? g[0] : g[1]) - v) < EPS);
-      if(!rodnye.length) return;
-      // ближайшая к размерной линии точка контура
-      let best = rodnye[0], bestD = Infinity;
-      rodnye.forEach(g=>{
-        const c = gorizont ? sr.Y(g[1]) : sr.X(g[0]);
-        const d = Math.abs(c - uroven);
-        if(d < bestD){ bestD = d; best = g; }
-      });
-      const vystup = 5 * storonaZnak;
-      const uSteny = (gorizont ? sr.Y(best[1]) : sr.X(best[0])) + 3*storonaZnak;
-      // размер заведён внутрь — линия начинается внутри контура
-      const nachalo = vnutrDo[k]
-        ? glubzhe(uSteny, kray - vnutrDo[k]*storonaZnak)
-        : uSteny;
-      if(gorizont){
-        const x = sr.X(v);
-        lbls += `<line x1="${x}" y1="${nachalo}" x2="${x}" y2="${uroven + vystup}" class="${kl.ext}"/>`;
-      }else{
-        const y = sr.Y(v);
-        lbls += `<line x1="${nachalo}" y1="${y}" x2="${uroven + vystup}" y2="${y}" class="${kl.ext}"/>`;
+    // ЗНАЧЕНИЕ НА ПОЛКЕ — ВЫНОСНОЙ ЛИНИИ НЕ ДОЛЖНО БЫТЬ.
+    // Правило владельца 5 сентября 2026: «0,149 и на полке, и есть
+    // выносная линия; если значение на полке, выносной линии быть
+    // не должно». Полка ведёт к числу сама, и вторая линия к тому же
+    // месту читается как чужая, потерявшая свой размер.
+    //
+    // Отрезаем именно КОНЦЫ цепи: засечка в середине разделяет двух
+    // соседей и нужна им обоим, а крайняя не делит ничего — за ней
+    // пусто. Так у контура «Арфы» пропадает огрызок цепи сверху слева:
+    // отрезок на 0,149, чьё число давно уехало на полку.
+    if(nuzhna.some(Boolean)){
+      let n1 = 0, n2 = uniq.length - 1;
+      while(n1 < n2 && !nuzhna[n1]) n1++;
+      while(n2 > n1 && !nuzhna[n2]) n2--;
+      for(let k = n1; k <= n2; k++){
+        const l = vynosnye[k];
+        if(l) lbls += `<line x1="${l.a[0]}" y1="${l.a[1]}" x2="${l.b[0]}" y2="${l.b[1]}" class="${kl.ext}"/>`;
       }
-    });
-
-    const L1 = gorizont ? sr.X(uniq[0]) : sr.Y(uniq[0]);
-    const L2 = gorizont ? sr.X(uniq[uniq.length-1]) : sr.Y(uniq[uniq.length-1]);
-    lbls += gorizont
-      ? `<line x1="${L1}" y1="${uroven}" x2="${L2}" y2="${uroven}" class="${kl.line}"/>`
-      : `<line x1="${uroven}" y1="${L1}" x2="${uroven}" y2="${L2}" class="${kl.line}"/>`;
-    uniq.forEach(v=>{
-      const c = gorizont ? sr.X(v) : sr.Y(v);
+      const L1 = gorizont ? sr.X(uniq[n1]) : sr.Y(uniq[n1]);
+      const L2 = gorizont ? sr.X(uniq[n2]) : sr.Y(uniq[n2]);
       lbls += gorizont
-        ? `<line x1="${c-4}" y1="${uroven+4}" x2="${c+4}" y2="${uroven-4}" class="${kl.tick}"/>`
-        : `<line x1="${uroven-4}" y1="${c+4}" x2="${uroven+4}" y2="${c-4}" class="${kl.tick}"/>`;
-    });
+        ? `<line x1="${L1}" y1="${uroven}" x2="${L2}" y2="${uroven}" class="${kl.line}"/>`
+        : `<line x1="${uroven}" y1="${L1}" x2="${uroven}" y2="${L2}" class="${kl.line}"/>`;
+      for(let k = n1; k <= n2; k++){
+        const c = gorizont ? sr.X(uniq[k]) : sr.Y(uniq[k]);
+        lbls += gorizont
+          ? `<line x1="${c-4}" y1="${uroven+4}" x2="${c+4}" y2="${uroven-4}" class="${kl.tick}"/>`
+          : `<line x1="${uroven-4}" y1="${c+4}" x2="${uroven+4}" y2="${c-4}" class="${kl.tick}"/>`;
+      }
+    }
 
-    otrezki.forEach(({ txt, w, h, seredina, glub, svoya, naPolku })=>{
+    otrezki.forEach(({ txt, w, h, seredina, svoya, naPolku })=>{
       // ЧИСЛО НАД ЛИНИЕЙ — С НАРУЖНОЙ СТОРОНЫ, отступ 9 точек.
       // Прежде оно стояло между линией и контуром: там теснее — с одной
       // стороны стена, с другой размерная линия, — и число липло к обеим.
@@ -13246,14 +13371,17 @@ function razmeryKontura(p, sr){
       // лежит поперёк, у наклонных вдоль, и «отступ 9 от середины» давал
       // им разный просвет. Владелец 4 сентября 2026: «на прямых линиях
       // у полей отступ есть, а при наклонных нет».
-      const poz = glub ? kray - glub*storonaZnak
-                       : uroven + (sr.ZAZOR + h/2)*storonaZnak;
+      const poz = uroven + (sr.ZAZOR + h/2)*storonaZnak;
       let tx, ty;
       if(gorizont){ tx = seredina; ty = poz; }
       else        { ty = seredina; tx = poz; }
       if(naPolku){ lbls += naPolku.liniya; tx = naPolku.tx; ty = naPolku.ty; }
-      tx = Math.min(Math.max(tx, w/2 + 2), sr.W - w/2 - 2);
-      ty = Math.min(Math.max(ty, h/2 + 2), sr.H - h/2 - 2);
+      // Внутрь холста загоняем по НАСТОЯЩИМ размерам числа: повёрнутое
+      // на бок занимает по ширине h, а не w.
+      const povernuto = !gorizont && !naPolku;
+      const pw = povernuto ? h : w, ph = povernuto ? w : h;
+      tx = Math.min(Math.max(tx, pw/2 + 2), sr.W - pw/2 - 2);
+      ty = Math.min(Math.max(ty, ph/2 + 2), sr.H - ph/2 - 2);
       // ПОВОРОТ вдоль линии: вертикальные размеры читаются снизу вверх.
       // На полке не поворачиваем — она для того и есть.
       const povorot = (gorizont || naPolku) ? '' : ` transform="rotate(-90, ${tx}, ${ty})"`;
@@ -13274,13 +13402,18 @@ function razmeryKontura(p, sr){
 
       lbls += sr.chislo({ i: svoya.i, txt, tx, ty, w, h, povorot, on });
     });
+    };
   };
 
-  // четыре цепи по сторонам габарита, каждая на своём отступе
-  cep(gorNiz,  true,  sr.Y(minYm) + OT,  1);   // цепь ниже контура
-  cep(gorVerh, true,  sr.Y(maxYm) - OT, -1);   // выше контура
-  cep(vertLev, false, sr.X(minXm) - OT, -1);   // слева
-  cep(vertPrav,false, sr.X(maxXm) + OT,  1);   // справа
+  // Четыре цепи по сторонам габарита, каждая на своём отступе.
+  // Сначала ВСЕ четыре заносят свои линии в общий список, и только
+  // потом ставятся числа — иначе число одной цепи ложится на линию
+  // другой, которую ещё не нарисовали.
+  [ cep(gorNiz,  true,  sr.Y(minYm) + OT,  1),    // цепь ниже контура
+    cep(gorVerh, true,  sr.Y(maxYm) - OT, -1),    // выше контура
+    cep(vertLev, false, sr.X(minXm) - OT, -1),    // слева
+    cep(vertPrav,false, sr.X(maxXm) + OT,  1)     // справа
+  ].forEach(risovat=>{ if(risovat) risovat(); });
 
   // СТЕНЫ В ГЛУБИНЕ — своей размерной линией рядом с собой,
   // И ВСЕГДА ВНУТРЬ КОНТУРА.
@@ -13294,6 +13427,28 @@ function razmeryKontura(p, sr){
   // а ветка уводила число внутрь — потому наклонные и «прятались».
   // Владелец 4 сентября 2026: «на линии под углом прячутся внутрь,
   // нужно тоже наружу».
+  // РАЗМЕРНЫЕ ЛИНИИ ПРЯМЫХ СТЕН В ГЛУБИНЕ ИЗВЕСТНЫ ЗАРАНЕЕ.
+  // Они не выбирают себе сторону: у стены в глубине размер всегда уходит
+  // внутрь комнаты, на один и тот же отступ. Значит их место известно
+  // ещё до того, как хоть одно число нашло себе угол, — и заносить его
+  // в общий список надо сразу, как это делают цепи. Иначе число стены,
+  // разобранной раньше, ложится на линию стены, разобранной позже:
+  // на контуре «Арфы» так вышло с «0,2», уехавшим на полку прямо
+  // поперёк размерной линии соседней стены в 1,05.
+  //
+  // Наклонные сюда не входят: они выбирают сторону сами, глядя на уже
+  // занятое, и до перебора их линия неизвестна.
+  const liniyaVglub = new Map();
+  vglubine.forEach(({i,a,b})=>{
+    if(cepPodpisala.has(i)) return;
+    const ax=sr.X(a[0]), ay=sr.Y(a[1]), bx=sr.X(b[0]), by=sr.Y(b[1]);
+    const lp = Math.hypot(bx-ax,by-ay) || 1;
+    const n = vnutrNormal((a[0]+b[0])/2, (a[1]+b[1])/2, -(by-ay)/lp, (bx-ax)/lp);
+    const l = [[ax+n[0]*sr.OT2, ay+n[1]*sr.OT2], [bx+n[0]*sr.OT2, by+n[1]*sr.OT2]];
+    liniyaVglub.set(i, l);
+    dobavLiniyu(l[0], l[1]);
+  });
+
   vglubine.concat(kosye.map(k=>({ ...k, kosaya:true }))).forEach(({i,a,b,L,kosaya})=>{
     if(cepPodpisala.has(i)) return;         // число уже стоит на цепи
     const ax=sr.X(a[0]), ay=sr.Y(a[1]), bx=sr.X(b[0]), by=sr.Y(b[1]);
@@ -13314,6 +13469,18 @@ function razmeryKontura(p, sr){
     const OT2 = sr.OT2;
     const liniyaPri = (nx,ny,d)=> [[ax+nx*d, ay+ny*d],[bx+nx*d, by+ny*d]];
     const chisto = (l)=> !linii.some(([a,b])=> otrezkiPeresek(l[0], l[1], a, b));
+    // ЧИСЛО И ЕГО ПОВОРОТ СЧИТАЕМ ЗАРАНЕЕ: от них зависит выбор стороны.
+    // Число лежит вдоль своей стены — у прямых это 0 или −90 (снизу
+    // вверх, как принято на чертежах), у наклонной её настоящий угол.
+    // Перевёрнутое вверх ногами разворачиваем на 180: читать надо слева
+    // направо, а не как повезёт.
+    const txt = fmtLen(L);
+    const w = sr.shirina(txt), h = sr.vys;
+    let ugChisla = 0;
+    if(kosaya){
+      ugChisla = Math.atan2(by - ay, bx - ax) * 180 / Math.PI;
+      if(ugChisla > 90 || ugChisla < -90) ugChisla += 180;
+    }else if(Math.abs(by-ay) > Math.abs(bx-ax)) ugChisla = -90;
     // ПОРЯДОК ВЫБОРА МЕСТА ДЛЯ РАЗМЕРНОЙ ЛИНИИ.
     // Снаружи места больше — начинаем оттуда; не вышло — отодвигаемся
     // дальше наружу; и только потом уводим внутрь контура. Годным
@@ -13322,31 +13489,47 @@ function razmeryKontura(p, sr){
     // контура — вынести за контур, 1,5 лучше внутрь, тогда вообще
     // ничего пересекаться не будет»; «снаружи много места, лучше
     // подобные выносить за контур».
+    //
+    // СТОРОНУ ВЫБИРАЕМ ПО ТОМУ, ГДЕ ВСТАНЕТ ЧИСЛО, А НЕ ТОЛЬКО ЛИНИЯ.
+    // Прежде годной считалась первая сторона, где ничего не пересекала
+    // сама размерная линия; число потом искало место как придётся
+    // и оказывалось в тесном углу между двумя соседними наклонными.
+    // Владелец 5 сентября 2026 про контур Ttt: «1,5 в идеале должна
+    // уйти внутрь контура, и было бы всё отлично» — внутри для неё
+    // место есть, снаружи угол.
     let otstup = OT2, naruzhu = !!kosaya;
     if(kosaya){
       const varianty = [[false, OT2], [false, OT2*2], [false, OT2*3], [true, OT2], [true, OT2*2]];
-      let vybran = null;
+      let vybran = null, zapas = null;
       for(const [vnutriLi, d] of varianty){
         const n = vnutriLi ? vnutr : [-vnutr[0], -vnutr[1]];
-        if(chisto(liniyaPri(n[0], n[1], d))){ vybran = [vnutriLi, d]; break; }
+        if(!chisto(liniyaPri(n[0], n[1], d))) continue;
+        if(!zapas) zapas = [vnutriLi, d];      // линия чистая — уже годится
+        const g = d + sr.ZAZOR + h/2;
+        const cx = mX + n[0]*g, cy = mY + n[1]*g;
+        // число должно оказаться там, куда вели: снаружи — снаружи,
+        // внутри — внутри, и на свободном месте
+        if(korobkaVnutri(cx, cy, w, h, ugChisla) !== vnutriLi) continue;
+        if(!svobodno(cx, cy, w, h, ugChisla)) continue;
+        vybran = [vnutriLi, d]; break;
       }
+      if(!vybran) vybran = zapas;
       if(vybran){ naruzhu = !vybran[0]; otstup = vybran[1]; }
     }
     ux = naruzhu ? -vnutr[0] : vnutr[0];
     uy = naruzhu ? -vnutr[1] : vnutr[1];
-    const svoyaLiniya = liniyaPri(ux, uy, otstup);
-    dobavLiniyu(svoyaLiniya[0], svoyaLiniya[1]);
-    const txt = fmtLen(L);
-    const w = sr.shirina(txt), h = sr.vys;
+    // Прямая стена свою линию уже занесла (см. выше); наклонная выбрала
+    // сторону только что и заносит здесь.
+    if(!liniyaVglub.has(i)){
+      const svoyaLiniya = liniyaPri(ux, uy, otstup);
+      dobavLiniyu(svoyaLiniya[0], svoyaLiniya[1]);
+    }
     // Короткая стена: число вдоль неё не помещается. Прежде его
     // заводили глубже внутрь — и оно повисало без связи со своей стеной.
     // Теперь такие идут на полку, как и у цепей (владелец 5 сентября
     // 2026).
     const tesno = lp < w + 6;
     const sx = (bx-ax)/lp, sy = (by-ay)/lp;
-    // ориентация числа по линии — как у цепей: вертикальные читаются снизу вверх
-    const vert = Math.abs(by-ay) > Math.abs(bx-ax);
-    const shir = vert ? h : w, vys = vert ? w : h;
     const glubNach = otstup + sr.ZAZOR + h/2;
     let glub = glubNach, nashli = false;
     // Тесной стене место у линии не ищем вовсе — сразу полка.
@@ -13355,7 +13538,7 @@ function razmeryKontura(p, sr){
     // не влезает на размерную линию, ставим на полку».
     for(let g = tesno ? Infinity : glubNach; g <= glubNach + (h+3)*5; g += h + 3){
       const x = mX + ux*g, y = mY + uy*g;
-      const vKontureLi = korobkaVnutri(x, y, shir, vys);
+      const vKontureLi = korobkaVnutri(x, y, w, h, ugChisla);
       if(naruzhu){
         // идём наружу: пока коробка ещё в контуре — не место
         if(vKontureLi) continue;
@@ -13364,7 +13547,7 @@ function razmeryKontura(p, sr){
         // дальше искать нечего, остаёмся на первой глубине
         if(!vKontureLi) break;
       }
-      if(svobodno(x, y, shir, vys)){ glub = g; nashli = true; break; }
+      if(svobodno(x, y, w, h, ugChisla)){ glub = g; nashli = true; break; }
     }
     // Не поместилось — на полочку. Наклонная тянется ОТ СЕРЕДИНЫ САМОЙ
     // СТЕНЫ, а не от размерной линии: у полки размерной линии нет вовсе,
@@ -13380,7 +13563,7 @@ function razmeryKontura(p, sr){
     if(!nashli && !polkaSt){
       for(let k=1;k<=4;k++){
         const zn = k%2 ? 1 : -1, d = Math.ceil(k/2)*(w/2 + 6);
-        if(svobodno(mX+ux*glub+sx*zn*d, mY+uy*glub+sy*zn*d, shir, vys)){ vbok = zn*d; break; }
+        if(svobodno(mX+ux*glub+sx*zn*d, mY+uy*glub+sy*zn*d, w, h, ugChisla)){ vbok = zn*d; break; }
       }
     }
     const tx = polkaSt ? polkaSt.tx : mX + ux*glub + sx*vbok;
@@ -13388,23 +13571,11 @@ function razmeryKontura(p, sr){
     const on = sr.sel === i;
     if(!on && uzhe(txt, mX, mY)) return;      // такая же стена рядом уже подписана
     napisano.push({ txt, x:mX, y:mY });
-    if(polkaSt) lbls += polkaSt.liniya; else zanyat(tx, ty, shir, vys);
-    // Число лежит вдоль своей стены. У прямых это ноль или −90 (снизу
-    // вверх, как принято на чертежах), у наклонной — её настоящий угол.
-    // Перевёрнутое вверх ногами разворачиваем на 180: читать надо слева
-    // направо, а не как повезёт.
+    if(polkaSt) lbls += polkaSt.liniya; else zanyat(tx, ty, w, h, ugChisla);
+    // Поворот посчитан выше, вместе с самим числом.
     // На полке поворота нет — её для того и придумали.
-    let povorot = '';
-    if(!polkaSt){
-      if(kosaya){
-        // наклонная читается вдоль своей стены, куда бы ни ушёл размер
-        let ugol = Math.atan2(by - ay, bx - ax) * 180 / Math.PI;
-        if(ugol > 90 || ugol < -90) ugol += 180;
-        povorot = ` transform="rotate(${ugol.toFixed(1)}, ${tx}, ${ty})"`;
-      }else if(vert){
-        povorot = ` transform="rotate(-90, ${tx}, ${ty})"`;
-      }
-    }
+    const povorot = (!polkaSt && ugChisla)
+      ? ` transform="rotate(${ugChisla.toFixed(1)}, ${tx}, ${ty})"` : '';
     // Размерную линию с выносными и засечками рисуем ТОЛЬКО когда число
     // стоит у своей стены. Ушло на полку — линия остаётся ни к чему
     // не привязанной: полка уже показывает, к чему относится число.
