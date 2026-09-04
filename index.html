@@ -3613,7 +3613,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-04-167';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-04-168';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -21417,17 +21417,33 @@ function skListyRaschet(d){
   // и она НЕ обещает наилучшего результата — только правдоподобный.
   const ostatki = [];
   let sDokl = 0;
-  // Что из чего резали — чтобы показать человеку размеры подрезков.
+  // ОБРЕЗОК МОЖНО ПОВЕРНУТЬ. Владелец 4 сентября 2026: «лист гипсокартона
+  // после отрезки можно располагать как вертикально, так и горизонтально,
+  // я про обрезки».
+  //
+  // Сначала обрезок примерялся только как лежит: полоса 1200×500
+  // не бралась под кусок 500×1200, хотя это тот же самый обрезок,
+  // повёрнутый на четверть. Из-за этого «с докладкой» показывало
+  // больше листов, чем нужно на деле, — то есть врало в невыгодную
+  // сторону.
+  //
+  // Кусок на стене повернуть нельзя: его место задано раскладкой.
+  // А обрезок в руках — можно, и это разные вещи.
   kuski.slice().sort((a,b)=> (b.w*b.h) - (a.w*a.h)).forEach(k=>{
-    let i = -1;
+    let i = -1, povernut = false;
     for(let j = 0; j < ostatki.length; j++){
-      if(ostatki[j].w >= k.w && ostatki[j].h >= k.h){ i = j; break; }
+      const o = ostatki[j];
+      if(o.w >= k.w && o.h >= k.h){ i = j; povernut = false; break; }
+      if(o.w >= k.h && o.h >= k.w){ i = j; povernut = true;  break; }
     }
     let o;
     if(i >= 0){ o = ostatki.splice(i,1)[0]; }
-    else { sDokl++; o = { w: w, h: h }; }
-    if(o.w - k.w > 0) ostatki.push({ w: o.w - k.w, h: o.h });
-    if(o.h - k.h > 0) ostatki.push({ w: k.w, h: o.h - k.h });
+    else { sDokl++; o = { w: w, h: h }; povernut = false; }
+    // Если брали повёрнутым, то и отрезаем по повёрнутым сторонам.
+    const kw = povernut ? k.h : k.w;
+    const kh = povernut ? k.w : k.h;
+    if(o.w - kw > 0) ostatki.push({ w: o.w - kw, h: o.h });
+    if(o.h - kh > 0) ostatki.push({ w: kw, h: o.h - kh });
   });
 
   const sloyov = Math.max(1, Math.round(num(d.sloyov) || 1));
