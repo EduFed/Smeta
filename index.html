@@ -3607,7 +3607,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-04-164';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-04-165';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -21440,14 +21440,32 @@ function skListyRaschet(d){
   };
 }
 
-// ---------- КИРПИЧ И БЛОКИ ----------
+// ---------- КИРПИЧ И ЛЮБЫЕ БЛОКИ ----------
 // Владелец 4 сентября: считаем «от площади стены и её толщины».
-// Толщина — в блоках (в полкирпича, в кирпич), как говорят на объекте.
+//
+// ТОЛЩИНУ СПРАШИВАЕМ В МИЛЛИМЕТРАХ, А НЕ «В БЛОКАХ» (поправка того же
+// дня). Сначала было «в блоках» — так говорят про кирпич: в полкирпича,
+// в кирпич. Владелец: «считать нужно не только кирпичи, но и различные
+// блоки». Про газоблок так не говорят вовсе — там стена 300 мм, и это
+// ширина одного блока.
+//
+// Миллиметры годятся и туда, и туда: рядов по толщине = толщина стены
+// делить на ширину блока. Кирпич 250×65×120 в стене 250 мм даст два
+// ряда, газоблок шириной 300 в стене 300 мм — один.
+//
+// Ширину блока спрашиваем отдельным полем: без неё «толщина стены»
+// ни о чём не говорит. Это третий размер блока, и он есть у любого —
+// и у кирпича, и у пеноблока, и у керамзитоблока.
 function skBlokiRaschet(d){
   const dlina  = num(d.dlina), vysota = num(d.vysota);
-  const bD = num(d.blokD), bV = num(d.blokV);      // мм
+  const bD = num(d.blokD), bV = num(d.blokV);      // мм: длина и высота
+  const bSh = num(d.blokSh);                        // мм: ширина (толщина) блока
   const shov = Math.max(0, num(d.shov) || 0);       // мм
-  const tolschina = Math.max(1, num(d.tolschina) || 1);   // в блоках
+  // Рядов по толщине стены. Не задали толщину или ширину блока —
+  // считаем один ряд: это самый частый случай и он не врёт в большую
+  // сторону.
+  const stena = num(d.stena);
+  const tolschina = (stena > 0 && bSh > 0) ? Math.max(1, Math.round(stena / bSh)) : 1;
   if(!(dlina > 0 && vysota > 0 && bD > 0 && bV > 0)) return null;
   const proyomy = (d.proyomy || []).reduce((a,o)=>
     a + num(o.w)*num(o.h)*Math.max(1, Math.round(num(o.n)||1)), 0);
@@ -21463,7 +21481,7 @@ function skBlokiRaschet(d){
     ploschad: ploschad,
     shtuk: Math.ceil(vRyadu * tolschina * (1 + zapas/100)),
     shtukGolyh: Math.ceil(vRyadu * tolschina),
-    tolschina: tolschina, zapas: zapas
+    ryadov: tolschina, stena: stena, blokSh: bSh, zapas: zapas
   };
 }
 
@@ -21495,8 +21513,8 @@ let SK = {
   razdel: 'listy',
   listy: { imya:'', dlina:'', vysota:'', listD:'', listSh:'',
            napravlenie:'vdol', sloyov:'', zapas:'', proyomy:[] },
-  bloki: { imya:'', dlina:'', vysota:'', blokD:'', blokV:'', shov:'',
-           tolschina:'1', zapas:'', proyomy:[] },
+  bloki: { imya:'', dlina:'', vysota:'', blokD:'', blokV:'', blokSh:'',
+           shov:'', stena:'', zapas:'', proyomy:[] },
   smes:  { imya:'', ploschad:'', rashod:'', priTolsch:'', faktTolsch:'', zapas:'' }
 };
 
@@ -21588,8 +21606,10 @@ function skItogBloki(){
   return `<div class="sk-itog">
       ${imya ? `<div class="sk-itog-imya">${escapeHtml(imya)}</div>` : ''}
       <div class="sk-chisla"><div><span>всего</span><b>${r.shtuk} шт.</b></div></div>
-      <div class="mat-note">Площадь кладки ${fmt(r.ploschad)} м², толщина ${r.tolschina} ${plural(r.tolschina,'блок','блока','блоков')}.${
+      <div class="mat-note">Площадь кладки ${fmt(r.ploschad)} м², кладка в ${r.ryadov} ${plural(r.ryadov,'ряд','ряда','рядов')}${
+        r.stena > 0 && r.blokSh > 0 ? ` (стена ${fmt(r.stena)} мм при блоке ${fmt(r.blokSh)} мм)` : ''}.${
         r.zapas ? ` Запас ${fmt(r.zapas)} %.` : ''}</div>
+      <div class="mat-note">Считает любой блок: кирпич, газоблок, пеноблок, керамзитоблок — размеры вводите свои. Шов у всех разный: на клей тонкий, на раствор толще — берите у производителя блока или из своей практики. Оставите пусто — посчитаем блоки впритык, без шва, и их выйдет больше.</div>
     </div>`;
 }
 
@@ -21639,8 +21659,9 @@ function renderSkalkView(){
         ${skPole('bloki','vysota','Высота стены, м')}
         ${skPole('bloki','blokD','Блок: длина, мм')}
         ${skPole('bloki','blokV','Блок: высота, мм')}
-        ${skPole('bloki','shov','Шов, мм')}
-        ${skPole('bloki','tolschina','Толщина стены, в блоках')}
+        ${skPole('bloki','blokSh','Блок: ширина, мм')}
+        ${skPole('bloki','shov','Шов, мм', {placeholder:'пусто — без шва'})}
+        ${skPole('bloki','stena','Толщина стены, мм', {placeholder:'пусто — в один блок'})}
       </div>
       ${skProyomyHtml('bloki', false)}
       ${skItogBloki()}`;
