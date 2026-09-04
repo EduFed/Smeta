@@ -1063,7 +1063,7 @@
      Здесь доведено до конца: карточка везде, перенос сам, жёстких
      колонок нет. */
   .sel-work, .pm-row, .mat-row, .opl-row,
-  .opening-row, .floor-row, .wall-row{
+  .opening-row{
     display:flex; align-items:center; gap:10px; flex-wrap:wrap;
     padding:8px 10px; margin-bottom:6px;
     border:1px solid var(--paper-line); border-radius:var(--radius);
@@ -1071,11 +1071,8 @@
   }
   /* Подпись строки: «окно 1», «участок 2», «стена 3». Ширина одна,
      чтобы поля под ней стояли в столбец. */
-  .row-label, .wall-label{ flex:0 0 96px; color:var(--ink-soft); }
-  .opening-row input, .floor-row input, .wall-row input{ flex:0 0 100px; text-align:right; }
-  /* Итог строки прижат вправо — как сумма у работ и материалов. */
-  .floor-area, .wall-area{ margin-left:auto; font-family:'JetBrains Mono',monospace;
-    font-size:12px; color:var(--ink); white-space:nowrap; }
+  .row-label{ flex:0 0 96px; color:var(--ink-soft); }
+  .opening-row input{ flex:0 0 100px; text-align:right; }
   /* Поля — тоже одного вида. Было два: в материалах и оплатах отступ
      8×10 и радиус 7, у видов работ 5×7 и общий радиус. */
   .sel-work input, .sel-work select,
@@ -1391,7 +1388,6 @@
   }
   .calc-mode-btn:hover{border-color:var(--ink-soft);color:var(--ink);}
   .calc-mode-btn.active{background:var(--ink);color:var(--white);border-color:var(--ink);}
-  .calc-mode-hint{font-size:13px;color:var(--ink-soft);font-style:italic;padding:6px 0;}
   .dims-hint{font-size:12px;color:var(--ink-soft);margin:0 0 10px;}
   .dims-warn{color:var(--red);font-size:12px;margin:6px 0;min-height:14px;}
 
@@ -1457,7 +1453,6 @@
   .viewer-mode canvas,
   .viewer-mode svg,
   .viewer-mode [data-poly-close],
-  .viewer-mode [data-wall-preview],
   .viewer-mode [data-drag-handle]{ pointer-events:none !important; }
   .viewer-mode [data-drag-handle]{ display:none !important; }
   /* Выключенные поля перехватывают нажатие и «съедают» его. Из-за этого
@@ -1688,15 +1683,10 @@
   .wall-hint{font-size:11px;color:var(--ink-soft);margin:-4px 0 10px;font-style:italic;}
 
   /* СТЕНЫ */
-  .wall-list{display:flex;flex-direction:column;gap:6px;margin-bottom:10px;}
   /* .wall-row — вид из общего правила строки позиции. Своя сетка здесь
      стояла ещё до того, как вид свели: карточка уже была, а раскладка
      жёсткой. Это и есть тот случай, когда «почти как у всех» хуже,
      чем «не как у всех»: расхождение незаметно, пока не сравнишь. */
-  .wall-row .wall-label{color:var(--ink);}
-  .wall-row .wall-area{font-family:'JetBrains Mono',monospace;font-weight:600;color:var(--ink);}
-  .wall-empty{font-size:12px;color:var(--ink-soft);margin-bottom:10px;font-style:italic;}
-  .wall-builder{border:1px dashed var(--paper-line);border-radius:var(--radius);padding:12px;}
   .wall-field{display:flex;flex-direction:column;gap:4px;margin-bottom:8px;}
   .wall-field label{font-family:'JetBrains Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:0.06em;color:var(--ink-soft);}
   .wall-field input,.wall-field select{
@@ -1704,29 +1694,15 @@
     border-radius:var(--radius);padding:6px 8px;background:var(--white);color:var(--ink);
   }
   .wall-field input:focus,.wall-field select:focus{outline:none;border-color:var(--blue);}
-  .wall-fields{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;}
-  .wall-preview-row{display:flex;justify-content:space-between;align-items:center;margin-top:8px;gap:10px;flex-wrap:wrap;}
-  .wall-preview{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--ink-soft);}
-  .wall-preview b{color:var(--ink);font-size:14px;}
-  .wall-error{color:var(--red);font-size:12px;margin-top:6px;min-height:14px;}
 
   /* УЧАСТКИ ПОЛА */
-  /* .floor-row — вид из общего правила строки позиции. */
-  .floor-row input{
-    font-family:'Inter',sans-serif;font-size:13px;border:1px solid var(--paper-line);
-    border-radius:var(--radius);padding:6px 8px;background:var(--white);color:var(--ink);
-  }
-  .floor-row input:focus{outline:none;border-color:var(--blue);}
-  .floor-area{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--ink-soft);text-align:right;white-space:nowrap;}
   .floor-total{
     margin-top:8px;font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--ink-soft);
   }
   .floor-total b{color:var(--ink);font-size:14px;}
   @media (max-width:520px){
-    .floor-row{grid-template-columns:1fr 64px 64px auto 22px;gap:6px;}
   }
   @media (max-width:520px){
-    .wall-fields{grid-template-columns:1fr;}
   }
 
   .add-room-btn{
@@ -3877,7 +3853,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-04-202';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-04-203';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -3934,7 +3910,7 @@ function emptyRoom(){
     id: uid('r'), name:'Новое помещение',
     length:'', width:'', height:'',
     shape:'rect', dims:{},
-    windows:[], doors:[], walls:[], floorSections:[],
+    windows:[], doors:[],
     works:[] // {workId, manualQty}
   };
 }
@@ -6757,9 +6733,9 @@ function applyViewerMode(){
 
   // Добавление помещений и разделов — прячем совсем, чтобы не мозолили глаза
   main.querySelectorAll(
-    '#addRoom,[data-del-work],[data-del-wall],[data-del-room],[data-del-opening],' +
+    '#addRoom,[data-del-work],[data-del-room],[data-del-opening],' +
     '[data-del-floor],[data-del-extra],[data-remove-work],[data-mat-del],' +
-    '[data-add-opening],[data-add-work-item],[data-add-wall],' +
+    '[data-add-opening],[data-add-work-item],' +
     '[data-add-floor],[data-add-extra],[data-poly-draw],[data-sel-del],[data-sel-arch]'
   ).forEach(el=>{ el.style.display = 'none'; });
 
@@ -7530,7 +7506,7 @@ const DB = {
           dims: r.dims || {},
           doors:   ops.filter(o=>o.kind === 'door').map(o=>({ _id:o.id, w:o.w||'', h:o.h||'', qty:o.qty||'' })),
           windows: ops.filter(o=>o.kind === 'window').map(o=>({ _id:o.id, w:o.w||'', h:o.h||'', qty:o.qty||'' })),
-          walls: [], floorSections: [],
+
           works: (r.room_works || []).slice().sort(bySort)
                    .map(w=> DB.workFromRow(w, workPrice.get(w.lid)))
         };
@@ -13924,12 +13900,6 @@ function computeWallArea(w){
     default:          return 0;
   }
 }
-// черновик добавляемой стены по помещению (в пределах сессии)
-const uiWallDraft = {};
-function wallDraft(roomId){
-  if(!uiWallDraft[roomId]) uiWallDraft[roomId] = { shape:'rect' };
-  return uiWallDraft[roomId];
-}
 // режим расчёта помещения: 'dims' (по размерам) или 'walls' (по стенам)
 function normalizeProjects(){
   if(!state.executor) state.executor = {};
@@ -13959,30 +13929,16 @@ function normalizeProjects(){
       // поэтому одна работа не могла стоять в помещении дважды. Настроенная
       // укладка (пол и стены разной плиткой) как раз этого требует.
       (r.works||[]).forEach(rw=>{ if(!rw.lid) rw.lid = uid('l'); });
-      if(!Array.isArray(r.walls)) r.walls = [];
       if(!Array.isArray(r.windows)) r.windows = [];
       if(!Array.isArray(r.doors)) r.doors = [];
       if(!r.shape) r.shape = 'rect';
       if(!r.dims) r.dims = { a: r.length||'', b: r.width||'', h: r.height||'' };
-      if(!Array.isArray(r.floorSections)){
-        // участки пола нужны только комнатам в режиме "стены"
-        r.floorSections = (r.calcMode==='walls' && (r.length||r.width)) ? [{ l:r.length||'', w:r.width||'' }] : [];
-      }
       // старые комнаты с размерами, но без явного режима → режим "помещение"
       if(r.calcMode!=='walls' && r.calcMode!=='dims' && (r.length||r.width||r.height)){
         r.calcMode = 'dims';
       }
     });
   });
-}
-
-// Способ счёта теперь один. В базе у двух помещений осталось
-// calc_mode='walls' — их не трогаем: значение просто перестало
-// на что-либо влиять, а данные внутри у них и так от размеров
-// помещения. Отдельная миграция ради стирания слова была бы
-// правкой боевой базы без нужды.
-function roomCalcMode(room){
-  return 'dims';
 }
 
 function num(v){
@@ -14055,22 +14011,11 @@ function wallBase(w){
 }
 function calcRoomGeometry(room){
   const L = num(room.length), W = num(room.width), H = num(room.height);
-  const mode = roomCalcMode(room);
   const windowsArea = (room.windows||[]).reduce((s,o)=> s + num(o.w)*num(o.h)*(num(o.qty)||0), 0);
   const doorsArea = (room.doors||[]).reduce((s,o)=> s + num(o.w)*num(o.h)*(num(o.qty)||0), 0);
   const doorsWidthSum = (room.doors||[]).reduce((s,o)=> s + num(o.w)*(num(o.qty)||0), 0);
-  const wallsSum = (room.walls||[]).reduce((s,w)=> s + computeWallArea(w), 0);
-
   let perimeter, floorArea, ceilingArea, grossWall;
-  if(mode === 'walls'){
-    const sections = room.floorSections||[];
-    floorArea = sections.length
-      ? sections.reduce((s,f)=> s + num(f.l)*num(f.w), 0)
-      : L*W; // запасной вариант для старых данных
-    ceilingArea = floorArea;
-    perimeter = (room.walls||[]).reduce((s,w)=> s + wallBase(w), 0);
-    grossWall = wallsSum;
-  } else {
+  {
     const shape = room.shape || 'rect';
     const d = room.dims || {};
     // Пока контур не сошёлся, площадь неизвестна. Показать правдоподобное
@@ -14091,7 +14036,7 @@ function calcRoomGeometry(room){
   const avgHeight = perimeter > 0 ? grossWall / perimeter : 0;
   const volume = floorArea * avgHeight;
 
-  return {perimeter, floorArea, ceilingArea, wallArea, perimeterForSkirting, volume, mode};
+  return {perimeter, floorArea, ceilingArea, wallArea, perimeterForSkirting, volume};
 }
 
 function appliesArr(work){
@@ -19020,67 +18965,7 @@ function renderDimsBlock(room){
     <div class="floor-total">Площадь пола: <b data-dimarea="${room.id}">${fmt(shapeArea(shape, d))}</b> м² · Периметр: <b data-dimperim="${room.id}">${fmt(shapePerimeter(shape, d))}</b> м.п.</div>`;
 }
 
-function renderFloorSections(room){
-  const secs = room.floorSections||[];
-  const rows = secs.map((f,i)=>`
-    <div class="floor-row">
-      <span class="row-label">участок ${i+1}</span>
-      <input type="text" inputmode="decimal" placeholder="длина" value="${escapeAttr(f.l)}" data-floor="${room.id}|${i}|l">
-      <input type="text" inputmode="decimal" placeholder="ширина" value="${escapeAttr(f.w)}" data-floor="${room.id}|${i}|w">
-      <span class="floor-area" data-floor-area="${room.id}|${i}">${fmt(num(f.l)*num(f.w))} м²</span>
-      <button class="btn-icon" data-del-floor="${room.id}|${i}" title="Удалить">✕</button>
-    </div>`).join('');
-  const total = secs.reduce((s,f)=> s + num(f.l)*num(f.w), 0);
-  return `
-    <div class="subsection">
-      <div class="subsection-title">Пол и потолок <span class="hint-inline">разбейте на прямоугольные участки</span></div>
-      ${rows || `<div class="wall-empty">Участки пола не заданы — площадь пола 0. Добавьте участки (напр. Т-образная комната — 2 прямоугольника).</div>`}
-      <button class="add-link" data-add-floor="${room.id}">+ Добавить участок</button>
-      <div class="floor-total">Площадь пола: <b data-floor-total="${room.id}">${fmt(total)}</b> м²</div>
-    </div>`;
-}
 
-function renderWallsSection(room){
-  const draft = wallDraft(room.id);
-  const shape = draft.shape || 'rect';
-  const cfg = WALL_SHAPES[shape] || WALL_SHAPES.rect;
-  const wallsList = (room.walls||[]).map((w,i)=>{
-    const label = WALL_SHAPES[w.shape] ? WALL_SHAPES[w.shape].label : 'Стена';
-    return `
-      <div class="wall-row">
-        <span class="wall-label">${escapeHtml(label)}</span>
-        <span class="wall-area">${fmt(computeWallArea(w))} м²</span>
-        <button class="btn-icon" data-del-wall="${room.id}|${i}" title="Удалить">✕</button>
-      </div>`;
-  }).join('');
-  const fieldsHtml = cfg.fields.map(([key,label])=>`
-    <div class="wall-field">
-      <label>${label}</label>
-      <input type="text" inputmode="decimal" placeholder="0" value="${escapeAttr(draft[key]||'')}" data-wall-draft="${room.id}|${key}">
-    </div>`).join('');
-  const optionsHtml = Object.keys(WALL_SHAPES).map(k=>
-    `<option value="${k}" ${k===shape?'selected':''}>${WALL_SHAPES[k].label}</option>`).join('');
-  return `
-    <div class="subsection">
-      <div class="subsection-title">Стены</div>
-      ${wallsList ? `<div class="wall-list">${wallsList}</div>`
-        : `<div class="wall-empty">Стены пока не добавлены — площадь стен равна 0. Добавьте хотя бы одну.</div>`}
-      <div class="wall-builder">
-        <div class="wall-field">
-          <label>Тип стены</label>
-          <select data-wall-shape="${room.id}">${optionsHtml}</select>
-        </div>
-        <div class="wall-diagram">${wallShapeSVG(shape)}</div>
-        ${(shape==='recttrap'||shape==='rectrtrap') ? `<div class="wall-hint">h₁ — высота только нижней прямоугольной части, h₂ — высота только верхней трапециевидной части (не общая высота стены).</div>` : ''}
-        <div class="wall-fields" data-wall-fields="${room.id}">${fieldsHtml}</div>
-        <div class="wall-preview-row">
-          <span class="wall-preview">S = <b data-wall-preview="${room.id}">${fmt(computeWallArea(draft))}</b> м²</span>
-          <button class="add-link" data-add-wall="${room.id}">+ Добавить поверхность</button>
-        </div>
-        <div class="wall-error" data-wall-error="${room.id}"></div>
-      </div>
-    </div>`;
-}
 
 // Схемы форм помещения (вид сверху) с подписями сторон
 function roomShapeSVG(shape){
@@ -20511,34 +20396,6 @@ function attachHandlers(){
   });
 
   // --- Участки пола ---
-  main.querySelectorAll('[data-add-floor]').forEach(el=>{
-    el.onclick = ()=>{
-      const roomId = el.getAttribute('data-add-floor');
-      const r = proj.rooms.find(x=>x.id===roomId);
-      if(r){ r.floorSections = r.floorSections||[]; r.floorSections.push({l:'', w:''}); scheduleSave(); render(); }
-    };
-  });
-  main.querySelectorAll('[data-del-floor]').forEach(el=>{
-    el.onclick = ()=>{
-      const [roomId, idx] = el.getAttribute('data-del-floor').split('|');
-      const r = proj.rooms.find(x=>x.id===roomId);
-      if(r && r.floorSections){ r.floorSections.splice(parseInt(idx),1); scheduleSave(); render(); }
-    };
-  });
-  main.querySelectorAll('[data-floor]').forEach(el=>{
-    el.addEventListener('input', ()=>{
-      const [roomId, idx, field] = el.getAttribute('data-floor').split('|');
-      const r = proj.rooms.find(x=>x.id===roomId);
-      if(!r || !r.floorSections || !r.floorSections[idx]) return;
-      r.floorSections[idx][field] = el.value;
-      const f = r.floorSections[idx];
-      const areaEl = main.querySelector(`[data-floor-area="${roomId}|${idx}"]`);
-      if(areaEl) areaEl.textContent = fmt(num(f.l)*num(f.w)) + ' м²';
-      const totalEl = main.querySelector(`[data-floor-total="${roomId}"]`);
-      if(totalEl) totalEl.textContent = fmt((r.floorSections||[]).reduce((s,x)=> s + num(x.l)*num(x.w), 0));
-      scheduleSave(); updateDerived(proj);
-    });
-  });
 
   // --- Режим расчёта помещения ---
   main.querySelectorAll('[data-calc-mode]').forEach(el=>{
@@ -20550,46 +20407,6 @@ function attachHandlers(){
   });
 
   // --- Стены ---
-  main.querySelectorAll('[data-wall-shape]').forEach(el=>{
-    el.addEventListener('change', ()=>{
-      const roomId = el.getAttribute('data-wall-shape');
-      uiWallDraft[roomId] = { shape: el.value };
-      render();
-    });
-  });
-  main.querySelectorAll('[data-wall-draft]').forEach(el=>{
-    el.addEventListener('input', ()=>{
-      const [roomId, field] = el.getAttribute('data-wall-draft').split('|');
-      const d = wallDraft(roomId);
-      d[field] = el.value;
-      const prev = main.querySelector(`[data-wall-preview="${roomId}"]`);
-      if(prev) prev.textContent = fmt(computeWallArea(d));
-      const err = main.querySelector(`[data-wall-error="${roomId}"]`);
-      if(err) err.textContent = '';
-    });
-  });
-  main.querySelectorAll('[data-add-wall]').forEach(el=>{
-    el.onclick = ()=>{
-      const roomId = el.getAttribute('data-add-wall');
-      const r = proj.rooms.find(x=>x.id===roomId);
-      const d = wallDraft(roomId);
-      const area = computeWallArea(d);
-      const err = main.querySelector(`[data-wall-error="${roomId}"]`);
-      if(!r) return;
-      if(!(area > 0)){ if(err) err.textContent = 'Заполните размеры стены (площадь должна быть больше 0).'; return; }
-      r.walls = r.walls || [];
-      r.walls.push({ ...d });
-      uiWallDraft[roomId] = { shape: d.shape };
-      scheduleSave(); render();
-    };
-  });
-  main.querySelectorAll('[data-del-wall]').forEach(el=>{
-    el.onclick = ()=>{
-      const [roomId, idx] = el.getAttribute('data-del-wall').split('|');
-      const r = proj.rooms.find(x=>x.id===roomId);
-      if(r && r.walls){ r.walls.splice(parseInt(idx),1); scheduleSave(); render(); }
-    };
-  });
 
   main.querySelectorAll('[data-worksearch-input]').forEach(el=>{
     const roomId = el.getAttribute('data-worksearch-input');
