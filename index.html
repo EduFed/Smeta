@@ -3901,7 +3901,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-04-213';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-04-215';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -12881,6 +12881,20 @@ function razmeryKontura(p, sr){
   //
   // Куда вести: сначала в сторону середины чертежа — там место есть
   // почти всегда, а у краёв и углов его нет по определению.
+  // Пересекаются ли два отрезка. Нужно, чтобы понять, влезает ли
+  // размерная линия снаружи: у соседних наклонных стен, сходящихся
+  // во вогнутом углу, наружные линии идут навстречу друг другу
+  // и перекрещиваются.
+  const storonaOt = (px,py, x1,y1, x2,y2)=> (x2-x1)*(py-y1) - (y2-y1)*(px-x1);
+  const otrezkiPeresek = (a1,a2,b1,b2)=>{
+    const d1 = storonaOt(b1[0],b1[1], a1[0],a1[1], a2[0],a2[1]);
+    const d2 = storonaOt(b2[0],b2[1], a1[0],a1[1], a2[0],a2[1]);
+    const d3 = storonaOt(a1[0],a1[1], b1[0],b1[1], b2[0],b2[1]);
+    const d4 = storonaOt(a2[0],a2[1], b1[0],b1[1], b2[0],b2[1]);
+    return ((d1>0) !== (d2>0)) && ((d3>0) !== (d4>0));
+  };
+  const postavlennye = [];        // размерные линии, уже нарисованные
+
   const polka = (x0, y0, txt, w, h)=>{
     const kx = x0 <= sr.W/2 ? 1 : -1, ky = y0 <= sr.H/2 ? 1 : -1;
     const storony = [[kx,ky],[kx,-ky],[-kx,ky],[-kx,-ky]];
@@ -13181,15 +13195,30 @@ function razmeryKontura(p, sr){
     const vnutr = vnutrNormal((a[0]+b[0])/2, (a[1]+b[1])/2, ux, uy);
     // Стена в глубине — внутрь (снаружи от неё другая часть той же
     // комнаты). Наклонная стена контура — наружу.
-    ux = kosaya ? -vnutr[0] : vnutr[0];
-    uy = kosaya ? -vnutr[1] : vnutr[1];
+    //
+    // НО СНАРУЖИ НЕ ВСЕГДА ЕСТЬ МЕСТО. У наклонных, сходящихся
+    // во вогнутом углу, наружные размерные линии идут навстречу
+    // и перекрещиваются — на чертеже это каша. Проверяем пересечение
+    // с уже поставленными и, если мешает, уводим эту стену внутрь
+    // контура. Владелец 4 сентября 2026: «размерные линии пересекаются,
+    // при таком сценарии линия должна уходить внутрь контура, чтобы
+    // не пересекаться с соседними».
+    const OT2 = sr.OT2;
+    const liniyaPri = (nx,ny)=> [[ax+nx*OT2, ay+ny*OT2],[bx+nx*OT2, by+ny*OT2]];
+    let naruzhu = !!kosaya;
+    if(naruzhu){
+      const proba = liniyaPri(-vnutr[0], -vnutr[1]);
+      if(postavlennye.some(l=> otrezkiPeresek(proba[0], proba[1], l[0], l[1]))) naruzhu = false;
+    }
+    ux = naruzhu ? -vnutr[0] : vnutr[0];
+    uy = naruzhu ? -vnutr[1] : vnutr[1];
+    postavlennye.push(liniyaPri(ux, uy));
     const txt = fmtLen(L);
     const w = sr.shirina(txt), h = sr.vys;
     // короткая стена — число не уводим вбок: там оно липнет к соседнему
     // и спорит с ним. Ставим ГЛУБЖЕ ВНУТРЬ, напротив своей стены.
     const tesno = lp < w + 6;
     const sx = (bx-ax)/lp, sy = (by-ay)/lp;
-    const OT2 = sr.OT2;
     // ориентация числа по линии — как у цепей: вертикальные читаются снизу вверх
     const vert = Math.abs(by-ay) > Math.abs(bx-ax);
     const shir = vert ? h : w, vys = vert ? w : h;
@@ -13198,7 +13227,7 @@ function razmeryKontura(p, sr){
     for(let g = glubNach; g <= glubNach + (h+3)*5; g += h + 3){
       const x = mX + ux*g, y = mY + uy*g;
       const vKontureLi = korobkaVnutri(x, y, shir, vys);
-      if(kosaya){
+      if(naruzhu){
         // идём наружу: пока коробка ещё в контуре — не место
         if(vKontureLi) continue;
       }else{
@@ -13239,6 +13268,7 @@ function razmeryKontura(p, sr){
     let povorot = '';
     if(!polkaSt){
       if(kosaya){
+        // наклонная читается вдоль своей стены, куда бы ни ушёл размер
         let ugol = Math.atan2(by - ay, bx - ax) * 180 / Math.PI;
         if(ugol > 90 || ugol < -90) ugol += 180;
         povorot = ` transform="rotate(${ugol.toFixed(1)}, ${tx}, ${ty})"`;
@@ -13250,7 +13280,14 @@ function razmeryKontura(p, sr){
     // стоит у своей стены. Ушло на полку — линия остаётся ни к чему
     // не привязанной: полка уже показывает, к чему относится число.
     if(!polkaSt){
-      const doTochki = glub > OT2 + h/2 ? glub + h/2 + 4 : OT2 + 4;
+      // Выносная всегда одной длины: до размерной линии и чуть за неё,
+      // ровно как у цепей (там этот выступ равен 5). Прежде она тянулась
+      // до числа, а число уходит на разную глубину — и выносные у соседних
+      // стен получались разной длины. Владелец 4 сентября 2026: «заметил,
+      // что расстояние выносных линий относительно замеряемой разные».
+      // Дотягиваться до числа выносной незачем: её дело — показать точки,
+      // между которыми меряли, а к числу ведёт полка, если оно ушло.
+      const doTochki = OT2 + 5;
       const zas = (x,y)=>`<line x1="${x-(sx+ux)*4}" y1="${y-(sy+uy)*4}"
                                 x2="${x+(sx+ux)*4}" y2="${y+(sy+uy)*4}" class="${kl.tick}"/>`;
       lbls += `<line x1="${ax+ux*OT2}" y1="${ay+uy*OT2}" x2="${bx+ux*OT2}" y2="${by+uy*OT2}" class="${kl.line}"/>
