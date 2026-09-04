@@ -3901,7 +3901,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-05-220';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-05-221';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -12924,7 +12924,16 @@ function razmeryKontura(p, sr){
   const otrezokRezhetChisla = (a, b)=> vnutriZanyato.some(z=>
     korobkaRezhet(z.x, z.y, z.w, z.h, a, b));
 
-  const polka = (x0, y0, txt, w, h)=>{
+  // ПОЛКА НАХОДИТСЯ ВСЕГДА.
+  // Правило владельца: всё, что не влезает по ширине между засечками,
+  // стоит на полке. Значит полка не имеет права «не найтись»: не нашлась
+  // — число осталось бы у линии, и правило нарушено ровно там, где оно
+  // и нужно. Поэтому проход два: сперва ищем чистое место, и только
+  // если чистого нет во всех направлениях и на всех длинах — ставим
+  // на первое, что помещается на холсте. Тесно, но со связью.
+  // (5 сентября 2026, после вопроса владельца «почему правило не
+  // работает».)
+  const polka = (x0, y0, txt, w, h, lyuboe)=>{
     const kx = x0 <= sr.W/2 ? 1 : -1, ky = y0 <= sr.H/2 ? 1 : -1;
     const storony = [[kx,ky],[kx,-ky],[-kx,ky],[-kx,-ky]];
     for(const [dx,dy] of storony){
@@ -12938,13 +12947,15 @@ function razmeryKontura(p, sr){
         const tx = (lx + px)/2, ty = ly - h/2 - 2;   // число лежит НА полке
         if(tx - w/2 < 2 || tx + w/2 > sr.W - 2) continue;
         if(ty - h/2 < 2 || ty + h/2 > sr.H - 2) continue;
-        if(!svobodno(tx, ty, w, h)) continue;
-        // Сама выноска тоже ничего не должна пересекать: наклонная идёт
-        // от стены через весь чертёж, и пересечь ей есть что.
-        if(linii.some(([a,b])=> otrezkiPeresek([x0,y0],[lx,ly], a, b))) continue;
-        if(linii.some(([a,b])=> otrezkiPeresek([lx,ly],[px,ly], a, b))) continue;
-        if(otrezokRezhetChisla([x0,y0],[lx,ly])) continue;
-        if(otrezokRezhetChisla([lx,ly],[px,ly])) continue;
+        if(!lyuboe){
+          if(!svobodno(tx, ty, w, h)) continue;
+          // Сама выноска тоже ничего не должна пересекать: наклонная идёт
+          // от стены через весь чертёж, и пересечь ей есть что.
+          if(linii.some(([a,b])=> otrezkiPeresek([x0,y0],[lx,ly], a, b))) continue;
+          if(linii.some(([a,b])=> otrezkiPeresek([lx,ly],[px,ly], a, b))) continue;
+          if(otrezokRezhetChisla([x0,y0],[lx,ly])) continue;
+          if(otrezokRezhetChisla([lx,ly],[px,ly])) continue;
+        }
         zanyat(tx, ty, w, h);
         dobavLiniyu([x0,y0],[lx,ly]); dobavLiniyu([lx,ly],[px,ly]);
         return { tx, ty, liniya:
@@ -12952,7 +12963,8 @@ function razmeryKontura(p, sr){
           `<line x1="${lx}" y1="${ly}" x2="${px}" y2="${ly}" class="${kl.ext}"/>` };
       }
     }
-    return null;                                     // места нет и на полку
+    // чистого места не нашлось — берём любое, лишь бы на холсте
+    return lyuboe ? null : polka(x0, y0, txt, w, h, true);
   };
 
   // разложим стены: осевые идут в цепи, наклонные — отдельно
