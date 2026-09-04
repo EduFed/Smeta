@@ -3877,7 +3877,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-04-201';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-04-202';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -13976,10 +13976,12 @@ function normalizeProjects(){
   });
 }
 
+// Способ счёта теперь один. В базе у двух помещений осталось
+// calc_mode='walls' — их не трогаем: значение просто перестало
+// на что-либо влиять, а данные внутри у них и так от размеров
+// помещения. Отдельная миграция ради стирания слова была бы
+// правкой боевой базы без нужды.
 function roomCalcMode(room){
-  if(room.calcMode === 'walls' || room.calcMode === 'dims') return room.calcMode;
-  if(room.length || room.width || room.height) return 'dims';
-  if((room.walls||[]).length) return 'walls';
   return 'dims';
 }
 
@@ -18789,10 +18791,6 @@ function roomBrief(room, g){
 
 function wallAreaHint(room, g){
   if(g.wallArea > 0 || g.floorArea <= 0) return '';
-  if(g.mode === 'walls'){
-    if(!(room.walls||[]).length) return 'Стены не добавлены — работы по стенам посчитаются как 0. Добавьте стены во вкладке «Размеры поверхности» выше.';
-    return '';
-  }
   const d = room.dims||{};
   if(!num(d.h)) return 'Не заполнена высота помещения — площадь стен и все работы по стенам считаются как 0.';
   return '';
@@ -18970,27 +18968,29 @@ async function photoFillThumbs(roomId){
   }
 }
 
+// ОДИН СПОСОБ СЧЁТА, А НЕ ДВА.
+// Здесь стоял выбор: «Размеры помещения» или «Размеры поверхности».
+// Второй способ убран 4 сентября 2026, и вот почему.
+//
+// · Им не посчитали ничего. В боевой базе 19 помещений, ни в одном
+//   нет ни стены, ни куска пола. Два помещения стоят в этом режиме
+//   и держат внутри данные первого — то есть человек нажал кнопку,
+//   увидел пустой экран и вернулся.
+// · Он и не мог работать: список стен не сохранялся в базу вовсе.
+//   В помещении уходит семь полей, стен среди них нет, при загрузке
+//   список всегда пустой. Посчитанное пропадало при перезагрузке молча,
+//   вместе с площадью стен в смете.
+// · Выбор стоял первым, что человек видит в новом помещении, —
+//   и требовал решения, которого он ещё не мог принять.
+// · Непрямая форма комнаты, ради которой всё затевалось, давно закрыта
+//   контуром по сетке: им посчитано 7 помещений из 19.
+//
+// Замер по отдельным поверхностям (мансарда, стена с фронтоном) переехал
+// в строительный калькулятор, раздел «Площади»: там ручная прикидка
+// по своей природе, и там ничего не хранится по решению владельца —
+// значит и терять нечего.
 function renderGeometryBlock(room){
-  let mode = room.calcMode;
-  if(mode !== 'dims' && mode !== 'walls'){
-    if(room.length || room.width || room.height || (room.dims && Object.values(room.dims).some(v=>v))) mode = 'dims';
-    else if((room.walls||[]).length || (room.floorSections||[]).length) mode = 'walls';
-    else mode = '';
-  }
-  const seg = `
-    <div class="calc-mode no-print">
-      <button type="button" class="calc-mode-btn zn-ryad po-centru ${mode==='dims'?'active':''}" data-calc-mode="${room.id}|dims">${ZN_UGOLNIK}<span>Размеры помещения</span></button>
-      <button type="button" class="calc-mode-btn zn-ryad po-centru ${mode==='walls'?'active':''}" data-calc-mode="${room.id}|walls">${ZN_KOROBKA}<span>Размеры поверхности</span></button>
-    </div>`;
-  let body;
-  if(mode === 'dims'){
-    body = renderDimsBlock(room);
-  } else if(mode === 'walls'){
-    body = renderWallsSection(room);
-  } else {
-    body = `<div class="calc-mode-hint">Выберите способ расчёта: по размерам помещения или по размерам стен.</div>`;
-  }
-  return `<div class="geometry-block">${seg}${body}</div>`;
+  return `<div class="geometry-block">${renderDimsBlock(room)}</div>`;
 }
 
 function renderDimsBlock(room){
@@ -22136,6 +22136,25 @@ function skBlokiRaschet(d){
   };
 }
 
+// ---------- ПЛОЩАДИ ----------
+// Складываем поверхности как они замерены, проёмы вычитаем. Периметр
+// считаем по нижним сторонам — по ним кладут плинтус и им же меряют пол.
+function skPloschadiRaschet(d){
+  let ploschad = 0, perimetr = 0, n = 0, dyr = 0;
+  (d.steny || []).forEach(pv=>{
+    const s = computeWallArea(pv);
+    if(!(s > 0)) return;
+    const proyomy = (pv.proyomy || []).reduce((a,o)=>
+      a + num(o.w)*num(o.h)*Math.max(1, Math.round(num(o.n)||1)), 0);
+    ploschad += Math.max(0, s - proyomy);
+    perimetr += wallBase(pv);
+    dyr += proyomy;
+    n++;
+  });
+  if(!n) return null;
+  return { ploschad: ploschad, perimetr: perimetr, poverhnostey: n, dyry: dyr };
+}
+
 // ---------- СМЕСИ ----------
 // Владелец 4 сентября: «как написано у производителя, толщину слоя они
 // тоже учитывают. Там расход на м² при такой-то толщине слоя».
@@ -22172,7 +22191,18 @@ let SK = {
            // ровно под это (владелец 4 сентября 2026, «по аналогии
            // с листами»).
            steny: [ { imya:'', dlina:'', vysota:'', proyomy:[] } ] },
-  smes:  { imya:'', ploschad:'', rashod:'', priTolsch:'', faktTolsch:'', zapas:'' }
+  smes:  { imya:'', ploschad:'', rashod:'', priTolsch:'', faktTolsch:'', zapas:'' },
+  // ПЛОЩАДИ. Замер по факту: поверхность за поверхностью, у каждой своя
+  // форма. Раньше это жило во вкладке помещения вторым способом счёта,
+  // и жило плохо: список стен не сохранялся в базу вовсе (уходило семь
+  // полей, стен среди них не было), так что посчитанное пропадало при
+  // перезагрузке. За всё время им не посчитали ни одной стены — 19
+  // помещений в боевой базе, ни одной записи.
+  //
+  // Здесь ему место: калькулятор и есть ручная прикидка, он ничего
+  // не хранит по решению владельца, и никто этого от него не ждёт.
+  // Перенесено 4 сентября 2026.
+  ploschadi: { imya:'', steny: [ { imya:'', shape:'rect', proyomy:[] } ] }
 };
 
 // Поле с подсказкой последнего введённого. Подсказка — В ПУСТОМ ПОЛЕ,
@@ -22222,6 +22252,46 @@ function skStenyHtml(razdel, sPolozheniem){
     ${isPro()
       ? `<button type="button" class="add-link" data-sk-st-add="${razdel}">+ Стена</button>`
       : `<button type="button" class="add-link btn-locked" data-sk-st-zamok="${razdel}">+ Стена ${ZN_ZAMOK}</button>`}
+  </div>`;
+}
+
+// Поверхности с формой. Устройство то же, что у стен (та же коробка,
+// та же шапка с названием, те же проёмы), но поля задаёт форма:
+// у трапеции два основания, у треугольника основание и высота.
+// Формы и площади берём готовые — те самые, что были в помещении.
+function skPloschadiHtml(){
+  const spisok = SK.ploschadi.steny || [];
+  const opcii = (tek)=> Object.keys(WALL_SHAPES).map(k=>
+    `<option value="${k}" ${k===tek?'selected':''}>${escapeHtml(WALL_SHAPES[k].label)}</option>`).join('');
+  return `<div class="sk-steny">${spisok.map((pv,i)=>{
+    const cfg = WALL_SHAPES[pv.shape] || WALL_SHAPES.rect;
+    const s = computeWallArea(pv);
+    return `
+    <div class="sk-stena">
+      <div class="sk-stena-shapka">
+        <input type="text" class="ownw-inp sk-stena-imya" placeholder="${escapeAttr('поверхность ' + (i+1))}"
+               value="${escapeAttr(pv.imya||'')}" data-sk-st="ploschadi|${i}|imya">
+        ${spisok.length > 1
+          ? `<button type="button" class="btn-icon" data-sk-st-del="ploschadi|${i}" title="Убрать поверхность">✕</button>`
+          : ''}
+      </div>
+      <div class="cust-grid">
+        <div class="cust-field"><label>Форма</label>
+          <select class="ownw-inp" data-sk-forma="${i}">${opcii(pv.shape)}</select></div>
+        <div class="wall-diagram">${wallShapeSVG(pv.shape)}</div>
+      </div>
+      <div class="cust-grid">${cfg.fields.map(([k,l])=>`
+        <div class="cust-field"><label>${escapeHtml(l)}, м</label>
+          <input type="text" inputmode="decimal" class="ownw-inp"
+                 value="${escapeAttr(pv[k]||'')}" data-sk-st="ploschadi|${i}|${k}"></div>`).join('')}
+      </div>
+      ${skProyomyHtml('ploschadi', false, i)}
+      ${s > 0 ? `<div class="mat-note">Площадь этой поверхности ${fmt(s)} м² до вычета проёмов.</div>` : ''}
+    </div>`;
+  }).join('')}
+    ${isPro()
+      ? `<button type="button" class="add-link" data-sk-st-add="ploschadi">+ Поверхность</button>`
+      : `<button type="button" class="add-link btn-locked" data-sk-st-zamok="ploschadi">+ Поверхность ${ZN_ZAMOK}</button>`}
   </div>`;
 }
 
@@ -22364,6 +22434,22 @@ function skItogBloki(){
     </div>`;
 }
 
+function skItogPloschadi(){
+  const r = skPloschadiRaschet(SK.ploschadi);
+  if(!r) return `<div class="mat-note">Задайте форму и размеры поверхности — посчитаем.</div>`;
+  const imya = (SK.ploschadi.imya||'').trim();
+  return `<div class="sk-itog">
+      ${imya ? `<div class="sk-itog-imya">${escapeHtml(imya)}</div>` : ''}
+      <div class="sk-chisla">
+        <div><span>площадь</span><b>${fmt(r.ploschad)} м²</b></div>
+        <div><span>по низу</span><b>${fmt(r.perimetr)} м</b></div>
+      </div>
+      <div class="mat-note">Посчитано ${r.poverhnostey} ${plural(r.poverhnostey,'поверхность','поверхности','поверхностей')}${
+        r.dyry > 0 ? `, из площади вычтено ${fmt(r.dyry)} м² проёмов` : ''}. «По низу» — сумма нижних сторон: по ним кладут плинтус и меряют пол.</div>
+      <div class="mat-note">Число отсюда в смету не переносится само — впишите его в строку работ руками.</div>
+    </div>`;
+}
+
 function skItogSmes(){
   const r = skSmesRaschet(SK.smes);
   if(!r) return `<div class="mat-note">Введите площадь и расход с мешка — посчитаем.</div>`;
@@ -22418,6 +22504,14 @@ function renderSkalkView(){
       </div>
       ${skStenyHtml('bloki', false)}
       <div id="skItog">${skItogBloki()}</div>`;
+  } else if(r === 'ploschadi'){
+    telo = `
+      <div class="cust-grid">
+        ${skPole('ploschadi','imya','Что считаем', {text:true, placeholder:'напр. стены санузла'})}
+        <div></div>
+      </div>
+      ${skPloschadiHtml()}
+      <div id="skItog">${skItogPloschadi()}</div>`;
   } else {
     telo = `
       <div class="cust-grid">
@@ -22445,6 +22539,7 @@ function renderSkalkView(){
       <div class="calc-mode sk-vkladki">
         ${vkladka('listy','Листовой материал')}
         ${vkladka('bloki','Кирпич и блоки')}
+        ${vkladka('ploschadi','Площади')}
         ${vkladka('smes','Смеси')}
       </div>
       <div class="section">${telo}</div>
@@ -22469,6 +22564,7 @@ function skItogObnovit(){
   if(!box) return;
   box.innerHTML = SK.razdel === 'listy' ? skItogListy()
                 : SK.razdel === 'bloki' ? skItogBloki()
+                : SK.razdel === 'ploschadi' ? skItogPloschadi()
                 : skItogSmes();
 }
 
@@ -22505,12 +22601,22 @@ function skAttach(){
     el.addEventListener('input', prinyat);
     el.addEventListener('change', prinyat);
   });
+  // Смена формы поверхности перестраивает поля, поэтому здесь нужна
+  // полная отрисовка, а не только пересчёт итога.
+  main.querySelectorAll('[data-sk-forma]').forEach(el=>{
+    el.addEventListener('change', ()=>{
+      const pv = SK.ploschadi.steny[parseInt(el.getAttribute('data-sk-forma'))];
+      if(pv){ pv.shape = el.value; render(); }
+    });
+  });
   main.querySelectorAll('[data-sk-st-add]').forEach(el=>{
     el.onclick = ()=>{ SK[el.getAttribute('data-sk-st-add')].steny.push(pustayaStena()); render(); };
   });
   main.querySelectorAll('[data-sk-st-zamok]').forEach(el=>{
     el.onclick = ()=> showLimit('Несколько стен — в полном тарифе',
-      el.getAttribute('data-sk-st-zamok') === 'bloki'
+      el.getAttribute('data-sk-st-zamok') === 'ploschadi'
+        ? 'На бесплатном считается одна поверхность. В полном — весь замер разом: площади складываются в один итог, и не надо держать промежуточные числа в голове.'
+        : el.getAttribute('data-sk-st-zamok') === 'bloki'
         ? 'На бесплатном калькулятор считает одну стену. В полном — весь объект разом: стены складываются в один итог, и запас на бой берётся от общего объёма, а не отдельно от каждой стены.'
         : 'На бесплатном калькулятор считает одну стену. В полном стены считаются вместе: обрезок от одной идёт на другую, и листов выходит меньше.');
   });
