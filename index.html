@@ -3639,6 +3639,7 @@
           <li class="lim"><span class="ic">3</span><span>До трёх помещений в проекте</span></li>
           <li class="lim"><span class="ic">10</span><span>До 10 позиций в своём прайсе</span></li>
           <li class="lim"><span class="ic">5</span><span>До 5 материалов в справочнике</span></li>
+          <li class="lim"><span class="ic">1</span><span>Строительный калькулятор: одна стена</span></li>
           <li class="no"><span class="ic"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M7 7l10 10M17 7L7 17" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>Раскладка плитки недоступна</span></li>
           <li class="no"><span class="ic"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M7 7l10 10M17 7L7 17" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>PDF с водяным знаком, без вашего логотипа</span></li>
           <li class="no"><span class="ic"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M7 7l10 10M17 7L7 17" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>Экспорт в Excel и Word недоступен</span></li>
@@ -3659,6 +3660,7 @@
           <li class="yes"><span class="ic"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>Чистый PDF с вашим логотипом и реквизитами</span></li>
           <li class="yes"><span class="ic"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>Экспорт сметы в Excel и Word</span></li>
           <li class="yes"><span class="ic"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>Раскладка плитки: точный расчёт на помещение</span></li>
+          <li class="yes"><span class="ic"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>Калькулятор на несколько стен: обрезки идут в дело</span></li>
           <li class="yes"><span class="ic"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>Договор и акт с вашими данными исполнителя</span></li>
           <li class="yes"><span class="ic"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>Приоритетная поддержка</span></li>
         </ul>
@@ -3875,7 +3877,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-04-197';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-04-198';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -22086,7 +22088,9 @@ function skStenyHtml(){
       </div>
       ${skProyomyHtml('listy', true, i)}
     </div>`).join('')}
-    <button type="button" class="add-link" data-sk-st-add="1">+ Стена</button>
+    ${isPro()
+      ? `<button type="button" class="add-link" data-sk-st-add="1">+ Стена</button>`
+      : `<button type="button" class="add-link btn-locked" data-sk-st-zamok="1">+ Стена ${ZN_ZAMOK}</button>`}
   </div>`;
 }
 
@@ -22367,6 +22371,10 @@ function skAttach(){
   });
   main.querySelectorAll('[data-sk-st-add]').forEach(el=>{
     el.onclick = ()=>{ SK.listy.steny.push({ imya:'', dlina:'', vysota:'', proyomy:[] }); render(); };
+  });
+  main.querySelectorAll('[data-sk-st-zamok]').forEach(el=>{
+    el.onclick = ()=> showLimit('Несколько стен — в полном тарифе',
+      'На бесплатном калькулятор считает одну стену. В полном стены считаются вместе: обрезок от одной идёт на другую, и листов выходит меньше.');
   });
   main.querySelectorAll('[data-sk-st-del]').forEach(el=>{
     el.onclick = ()=>{
