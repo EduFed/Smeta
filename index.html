@@ -3901,7 +3901,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-05-219';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-05-220';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -12917,11 +12917,22 @@ function razmeryKontura(p, sr){
   //
   // Куда вести: сначала в сторону середины чертежа — там место есть
   // почти всегда, а у краёв и углов его нет по определению.
+  // Отрезок против уже написанных чисел: выноска не должна проходить
+  // сквозь чужое число. Прежде проверялись только линии, и полка
+  // спокойно перечёркивала соседний размер. Владелец 5 сентября 2026:
+  // «линии полок пересекают поля с размерами».
+  const otrezokRezhetChisla = (a, b)=> vnutriZanyato.some(z=>
+    korobkaRezhet(z.x, z.y, z.w, z.h, a, b));
+
   const polka = (x0, y0, txt, w, h)=>{
     const kx = x0 <= sr.W/2 ? 1 : -1, ky = y0 <= sr.H/2 ? 1 : -1;
     const storony = [[kx,ky],[kx,-ky],[-kx,ky],[-kx,-ky]];
     for(const [dx,dy] of storony){
-      for(const L of [20, 32, 44]){
+      // Длин перебираем много и до самого края холста: снаружи контура
+      // места вдоволь, и лучше увести число подальше, чем оставить его
+      // висеть у стены без связи. Владелец 5 сентября 2026: «снаружи
+      // много места, лучше подобные выносить за контур».
+      for(const L of [20, 28, 36, 44, 56, 68, 82, 96, 112, 130]){
         const lx = x0 + dx*L, ly = y0 + dy*L;       // конец наклонной
         const px = lx + dx*(w + 8);                  // конец полки
         const tx = (lx + px)/2, ty = ly - h/2 - 2;   // число лежит НА полке
@@ -12932,6 +12943,8 @@ function razmeryKontura(p, sr){
         // от стены через весь чертёж, и пересечь ей есть что.
         if(linii.some(([a,b])=> otrezkiPeresek([x0,y0],[lx,ly], a, b))) continue;
         if(linii.some(([a,b])=> otrezkiPeresek([lx,ly],[px,ly], a, b))) continue;
+        if(otrezokRezhetChisla([x0,y0],[lx,ly])) continue;
+        if(otrezokRezhetChisla([lx,ly],[px,ly])) continue;
         zanyat(tx, ty, w, h);
         dobavLiniyu([x0,y0],[lx,ly]); dobavLiniyu([lx,ly],[px,ly]);
         return { tx, ty, liniya:
@@ -13279,6 +13292,9 @@ function razmeryKontura(p, sr){
     const glubNach = otstup + sr.ZAZOR + h/2;
     let glub = glubNach, nashli = false;
     // Тесной стене место у линии не ищем вовсе — сразу полка.
+    // «Тесно» — это когда число не помещается ВДОЛЬ стены между её
+    // концами: ровно тот случай, о котором владелец сказал «где поле
+    // не влезает на размерную линию, ставим на полку».
     for(let g = tesno ? Infinity : glubNach; g <= glubNach + (h+3)*5; g += h + 3){
       const x = mX + ux*g, y = mY + uy*g;
       const vKontureLi = korobkaVnutri(x, y, shir, vys);
