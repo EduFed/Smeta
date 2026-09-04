@@ -320,11 +320,25 @@
     z-index:6;
   }
   body.nav-open .sidebar{ transform:translateX(0); }
+  /* Бургер стоит отдельно и приклеен к углу окна (position:fixed),
+     поэтому шапку опускаем под него отступом сверху, а не ставим рядом.
+     36 точек слева больше не нужны: они были нужны, чтобы картинка
+     не залезала под бургер. */
   .brand{
     display:flex;
     align-items:center;
-    padding-left:36px;
+    gap:10px;
+    /* Отступ подобран замером: низ бургера на 52-й точке, шапка панели
+       начинается на 24-й — значит 38 дают ровно 10 точек просвета
+       под кнопкой. Больше не нужно: место в панели дефицитное. */
+    padding-top:calc(38px + env(safe-area-inset-top, 0px));
   }
+  .brand-znak{flex:0 0 auto;color:inherit;}
+  .brand-imya{
+    font-family:'Space Grotesk','Inter',sans-serif;
+    font-weight:700;font-size:15px;letter-spacing:.5px;white-space:nowrap;
+  }
+  .brand-imya i{color:var(--orange);font-style:normal;margin:0 4px;}
   .full-logo{flex-shrink:0;color:inherit;}
   .auth-logo{display:block;margin:0 auto;color:var(--ink);}
   .sb-section{display:flex;flex-direction:column;gap:8px;}
@@ -508,6 +522,32 @@
     box-shadow:var(--ten-knopka);
   }
   body.app-ready .nav-toggle{ display:flex; }
+
+  /* РАСТВОРЕНИЕ У ВЕРХНЕГО КРАЯ.
+     На iPhone страница прокручивается целиком, и заголовок проекта
+     уезжает под системные часы: «Каспийская» и «17:16» наложились
+     друг на друга (владелец 4 сентября 2026, снимок с телефона).
+     Прилипающая шапка есть не у всех экранов — из десяти у трёх,
+     и чинить каждый по отдельности значило бы разойтись снова.
+     Поэтому лечим не шапки, а сам край: полоса поверх содержимого,
+     сверху сплошная под цвет страницы, книзу растворяется. Что
+     подъезжает к верху — гаснет, не доезжая до часов.
+     Высота считает чёлку сама: env(safe-area-inset-top) на телефоне
+     равен высоте часов, на компьютере равен нулю — там остаётся
+     мягкий край в 22 точки.
+     Слой ниже панели (1000) и кнопки меню (1100): гасить надо
+     прокручиваемое содержимое, а не то, что закреплено. */
+  .verh-tuman{
+    position:fixed; top:0; left:0; right:0; z-index:900;
+    height:calc(env(safe-area-inset-top, 0px) + 22px);
+    pointer-events:none;
+    background:linear-gradient(to bottom, var(--paper) 55%, transparent 100%);
+    -webkit-backdrop-filter:blur(7px); backdrop-filter:blur(7px);
+    /* Маска гасит и размытие тоже: без неё нижний край полосы виден
+       ступенькой — резкая граница между «размыто» и «нет». */
+    -webkit-mask-image:linear-gradient(to bottom, #000 55%, transparent 100%);
+    mask-image:linear-gradient(to bottom, #000 55%, transparent 100%);
+  }
   .scroll-bottom-btn{
     position:fixed; bottom:calc(20px + env(safe-area-inset-bottom, 0px)); right:20px; z-index:1050;
     width:44px; height:44px; border:none; border-radius:50%;
@@ -3297,30 +3337,39 @@
   </div>
 </div>
 <button class="nav-toggle no-print" id="navToggle" aria-label="Меню">☰</button>
+<!-- Растворение у верхнего края. Ничего не делает, кроме как гасит
+     то, что подъезжает к самому верху окна. -->
+<div class="verh-tuman no-print" aria-hidden="true"></div>
 <div class="nav-backdrop no-print" id="navBackdrop"></div>
 <button class="scroll-bottom-btn no-print" id="scrollBottomBtn" aria-label="Прокрутить в самый низ" title="В самый низ">↓</button>
 <div class="app">
   <aside class="sidebar">
+    <!-- ШАПКА ПАНЕЛИ. Прежде здесь стояла картинка целиком: домик,
+         название мелкими буквами внутри неё и оранжевая рамка вокруг.
+         Владелец 4 сентября 2026: «данный баннер как будто мне
+         не нравится», выбран вариант со знаком и названием в строку.
+         Что это чинит:
+         · рамка повторяла очертание кнопки-бургера рядом — две
+           скруглённые коробки одна возле другой, и обе просились,
+           чтобы на них нажали, а нажимается только одна;
+         · название было нарисовано ВНУТРИ картинки и потому мелким:
+           крупнее его было не сделать, не растянув всю картинку.
+           Теперь это обычный текст нашим шрифтом;
+         · шапка стала ниже примерно втрое, освободившееся место
+           ушло списку проектов — в панели оно дефицитное. -->
     <div class="brand">
-      <svg class="full-logo" viewBox="0 0 412 276" width="150" height="100.5"
+      <svg class="brand-znak" viewBox="145 45 125 130" width="34" height="35"
            xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-        <rect x="20" y="20" width="372" height="236" rx="30" ry="30"
-              fill="none" stroke="var(--orange)" stroke-width="4.5"/>
         <g transform="translate(113.58,20.9) scale(0.361)" fill="none"
            stroke="currentColor" stroke-width="26" stroke-linecap="round" stroke-linejoin="round">
           <path d="M 121 190 L 256 100 L 391 190"/>
           <line x1="121" y1="190" x2="121" y2="335"/>
           <line x1="391" y1="190" x2="391" y2="335"/>
           <path d="M 197 335 L 197 242 L 314 242 L 314 335"/>
-        </g>
-        <line x1="152.57" y1="165.22" x2="259.43" y2="165.22"
+        </g><line x1="152.57" y1="165.22" x2="259.43" y2="165.22"
               stroke="var(--orange)" stroke-width="9.4" stroke-linecap="round"/>
-        <g style="font-family:'Space Grotesk','Inter',sans-serif;font-weight:700;font-size:30px;letter-spacing:0.5px;">
-          <text x="192" y="223.7" text-anchor="end"   fill="currentColor">СМЕТА</text>
-          <text x="220" y="223.7" text-anchor="start" fill="currentColor">РАСЧЁТ</text>
-        </g>
-        <line x1="206" y1="202.22" x2="206" y2="223.7" stroke="var(--orange)" stroke-width="3"/>
       </svg>
+      <span class="brand-imya">СМЕТА<i>|</i>РАСЧЁТ</span>
     </div>
 
     <div class="sb-section">
@@ -3803,7 +3852,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-04-190';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-04-192';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
