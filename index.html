@@ -3877,7 +3877,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-04-198';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-04-199';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -21984,8 +21984,19 @@ function skListyRaschet(d){
 // Ширину блока спрашиваем отдельным полем: без неё «толщина стены»
 // ни о чём не говорит. Это третий размер блока, и он есть у любого —
 // и у кирпича, и у пеноблока, и у керамзитоблока.
+// НЕСКОЛЬКО СТЕН, И БОЙ ОТ ВСЕГО ОБЪЁМА.
+// Стены складываем по площади, а запас на бой берём один раз, от суммы.
+//
+// Сразу оговорка, чтобы не обещать лишнего: в деньгах это почти ничего
+// не даёт. Считая по стенам, округляем вверх столько раз, сколько стен,
+// — на замере 4 сентября 2026 (четыре стены, блок 600×300, запас 5 %)
+// вышло 118 блоков против 117. Один блок.
+//
+// Смысл не в экономии, а в ответе: человеку нужно число на объект,
+// а не четыре числа, которые он складывает на бумаге. Ради этого
+// стены и считаются вместе — как в листовом, только там к тому же
+// экономятся обрезки, а здесь блок либо целый, либо колотый.
 function skBlokiRaschet(d){
-  const dlina  = num(d.dlina), vysota = num(d.vysota);
   const bD = num(d.blokD), bV = num(d.blokV);      // мм: длина и высота
   const bSh = num(d.blokSh);                        // мм: ширина (толщина) блока
   const shov = Math.max(0, num(d.shov) || 0);       // мм
@@ -21994,10 +22005,17 @@ function skBlokiRaschet(d){
   // сторону.
   const stena = num(d.stena);
   const tolschina = (stena > 0 && bSh > 0) ? Math.max(1, Math.round(stena / bSh)) : 1;
-  if(!(dlina > 0 && vysota > 0 && bD > 0 && bV > 0)) return null;
-  const proyomy = (d.proyomy || []).reduce((a,o)=>
-    a + num(o.w)*num(o.h)*Math.max(1, Math.round(num(o.n)||1)), 0);
-  const ploschad = Math.max(0, dlina*vysota - proyomy);
+  if(!(bD > 0 && bV > 0)) return null;
+  let ploschad = 0, sten = 0;
+  (d.steny || []).forEach(st=>{
+    const dlina = num(st.dlina), vysota = num(st.vysota);
+    if(!(dlina > 0 && vysota > 0)) return;
+    const proyomy = (st.proyomy || []).reduce((a,o)=>
+      a + num(o.w)*num(o.h)*Math.max(1, Math.round(num(o.n)||1)), 0);
+    ploschad += Math.max(0, dlina*vysota - proyomy);
+    sten++;
+  });
+  if(!sten) return null;
   // Блок со швом занимает больше места, чем сам блок: шов кладут
   // с двух сторон, но считают его один раз на блок — иначе он войдёт
   // в расчёт дважды.
@@ -22006,7 +22024,7 @@ function skBlokiRaschet(d){
   const vRyadu = ploschad / naBlok;
   const zapas = Math.max(0, num(d.zapas) || 0);
   return {
-    ploschad: ploschad,
+    ploschad: ploschad, sten: sten,
     shtuk: Math.ceil(vRyadu * tolschina * (1 + zapas/100)),
     shtukGolyh: Math.ceil(vRyadu * tolschina),
     ryadov: tolschina, stena: stena, blokSh: bSh, zapas: zapas
@@ -22043,8 +22061,12 @@ let SK = {
            // Стены списком: обрезки ходят между ними, поэтому считаются
            // они вместе, а не по одной (владелец 4 сентября 2026).
            steny: [ { imya:'', dlina:'', vysota:'', proyomy:[] } ] },
-  bloki: { imya:'', dlina:'', vysota:'', blokD:'', blokV:'', blokSh:'',
-           shov:'', stena:'', zapas:'', proyomy:[] },
+  bloki: { imya:'', blokD:'', blokV:'', blokSh:'', shov:'', stena:'', zapas:'',
+           // Стены списком — то же устройство, что у листового.
+           // Не «по образцу», а тем же кодом: `skStenyHtml` писался
+           // ровно под это (владелец 4 сентября 2026, «по аналогии
+           // с листами»).
+           steny: [ { imya:'', dlina:'', vysota:'', proyomy:[] } ] },
   smes:  { imya:'', ploschad:'', rashod:'', priTolsch:'', faktTolsch:'', zapas:'' }
 };
 
@@ -22067,37 +22089,43 @@ function skPole(razdel, klyuch, podpis, opts){
 // Стены списком. У каждой своё название, свои размеры и свои проёмы —
 // но лист, направление, слои и запас общие: это про материал, а не
 // про стену.
-function skStenyHtml(){
-  const steny = SK.listy.steny || [];
+// Стены списком. Раздел передаём: устройство одно и то же у листового
+// и у блоков, различаются только поля материала выше и то, нужно ли
+// проёму положение (у листа нужно — по нему строится раскладка,
+// у кладки нет — там считается площадь).
+function skStenyHtml(razdel, sPolozheniem){
+  const steny = SK[razdel].steny || [];
   return `<div class="sk-steny">${steny.map((st,i)=>`
     <div class="sk-stena">
       <div class="sk-stena-shapka">
         <input type="text" class="ownw-inp sk-stena-imya" placeholder="${escapeAttr('стена ' + (i+1))}"
-               value="${escapeAttr(st.imya||'')}" data-sk-st="${i}|imya">
+               value="${escapeAttr(st.imya||'')}" data-sk-st="${razdel}|${i}|imya">
         ${steny.length > 1
-          ? `<button type="button" class="btn-icon" data-sk-st-del="${i}" title="Убрать стену">✕</button>`
+          ? `<button type="button" class="btn-icon" data-sk-st-del="${razdel}|${i}" title="Убрать стену">✕</button>`
           : ''}
       </div>
       <div class="cust-grid">
         <div class="cust-field"><label>Длина, м</label>
           <input type="text" inputmode="decimal" class="ownw-inp"
-                 value="${escapeAttr(st.dlina||'')}" data-sk-st="${i}|dlina"></div>
+                 value="${escapeAttr(st.dlina||'')}" data-sk-st="${razdel}|${i}|dlina"></div>
         <div class="cust-field"><label>Высота, м</label>
           <input type="text" inputmode="decimal" class="ownw-inp"
-                 value="${escapeAttr(st.vysota||'')}" data-sk-st="${i}|vysota"></div>
+                 value="${escapeAttr(st.vysota||'')}" data-sk-st="${razdel}|${i}|vysota"></div>
       </div>
-      ${skProyomyHtml('listy', true, i)}
+      ${skProyomyHtml(razdel, sPolozheniem, i)}
     </div>`).join('')}
     ${isPro()
-      ? `<button type="button" class="add-link" data-sk-st-add="1">+ Стена</button>`
-      : `<button type="button" class="add-link btn-locked" data-sk-st-zamok="1">+ Стена ${ZN_ZAMOK}</button>`}
+      ? `<button type="button" class="add-link" data-sk-st-add="${razdel}">+ Стена</button>`
+      : `<button type="button" class="add-link btn-locked" data-sk-st-zamok="${razdel}">+ Стена ${ZN_ZAMOK}</button>`}
   </div>`;
 }
 
 function skProyomyHtml(razdel, sPolozheniem, iSteny){
   const vStene = (iSteny !== undefined && iSteny !== null);
-  const spisok = vStene ? (SK.listy.steny[iSteny].proyomy || []) : (SK[razdel].proyomy || []);
-  const adr = vStene ? ('st' + iSteny) : razdel;
+  const spisok = vStene ? (SK[razdel].steny[iSteny].proyomy || []) : (SK[razdel].proyomy || []);
+  // Адрес проёма несёт и раздел: стены теперь есть и у листового,
+  // и у блоков, и по одному номеру их уже не различить.
+  const adr = vStene ? ('st:' + razdel + ':' + iSteny) : razdel;
   const stroki = spisok.map((o,i)=>`
     <div class="sk-proyom">
       <input type="text" inputmode="decimal" class="ownw-inp" placeholder="ширина, м"
@@ -22218,12 +22246,13 @@ function skItogListy(){
 
 function skItogBloki(){
   const r = skBlokiRaschet(SK.bloki);
-  if(!r) return `<div class="mat-note">Введите размеры стены и блока — посчитаем.</div>`;
+  if(!r) return `<div class="mat-note">Введите размеры стен и блока — посчитаем.</div>`;
   const imya = (SK.bloki.imya||'').trim();
   return `<div class="sk-itog">
       ${imya ? `<div class="sk-itog-imya">${escapeHtml(imya)}</div>` : ''}
       <div class="sk-chisla"><div><span>всего</span><b>${r.shtuk} шт.</b></div></div>
-      <div class="mat-note">Площадь кладки ${fmt(r.ploschad)} м², кладка в ${r.ryadov} ${plural(r.ryadov,'ряд','ряда','рядов')}${
+      <div class="mat-note">Площадь кладки ${fmt(r.ploschad)} м²${
+        r.sten > 1 ? ` по ${r.sten} ${plural(r.sten,'стене','стенам','стенам')}` : ''}, кладка в ${r.ryadov} ${plural(r.ryadov,'ряд','ряда','рядов')}${
         r.stena > 0 && r.blokSh > 0 ? ` (стена ${fmt(r.stena)} мм при блоке ${fmt(r.blokSh)} мм)` : ''}.${
         r.zapas ? ` Запас ${fmt(r.zapas)} %.` : ''}</div>
       <div class="mat-note">Считает любой блок: кирпич, газоблок, пеноблок, керамзитоблок — размеры вводите свои. Шов у всех разный: на клей тонкий, на раствор толще — берите у производителя блока или из своей практики. Оставите пусто — посчитаем блоки впритык, без шва, и их выйдет больше.</div>
@@ -22269,22 +22298,20 @@ function renderSkalkView(){
             <option value="poperyok"${SK.listy.napravlenie==='poperyok'?' selected':''}>вертикально</option>
           </select></div>
       </div>
-      ${skStenyHtml()}
+      ${skStenyHtml('listy', true)}
       <div id="skItog">${skItogListy()}</div>`;
   } else if(r === 'bloki'){
     telo = `
       <div class="cust-grid">
         ${skPole('bloki','imya','Что считаем', {text:true, placeholder:'напр. газоблок'})}
         ${skPole('bloki','zapas','Запас на бой, %')}
-        ${skPole('bloki','dlina','Длина стены, м')}
-        ${skPole('bloki','vysota','Высота стены, м')}
         ${skPole('bloki','blokD','Блок: длина, мм')}
         ${skPole('bloki','blokV','Блок: высота, мм')}
         ${skPole('bloki','blokSh','Блок: ширина, мм')}
         ${skPole('bloki','shov','Шов, мм', {placeholder:'пусто — без шва'})}
         ${skPole('bloki','stena','Толщина стены, мм', {placeholder:'пусто — в один блок'})}
       </div>
-      ${skProyomyHtml('bloki', false)}
+      ${skStenyHtml('bloki', false)}
       <div id="skItog">${skItogBloki()}</div>`;
   } else {
     telo = `
@@ -22356,30 +22383,37 @@ function skAttach(){
     el.addEventListener('change', prinyat);
   });
   // Куда писать проём: в стену листового или в общий список раздела.
-  const proyomySpiska = (adr)=> adr.indexOf('st') === 0
-    ? SK.listy.steny[parseInt(adr.slice(2))].proyomy
-    : SK[adr].proyomy;
+  const proyomySpiska = (adr)=>{
+    if(adr.indexOf('st:') !== 0) return SK[adr].proyomy;
+    const [, razdel, i] = adr.split(':');
+    return SK[razdel].steny[parseInt(i)].proyomy;
+  };
+
+  const pustayaStena = ()=> ({ imya:'', dlina:'', vysota:'', proyomy:[] });
 
   main.querySelectorAll('[data-sk-st]').forEach(el=>{
-    const [i, pole] = el.getAttribute('data-sk-st').split('|');
+    const [razdel, i, pole] = el.getAttribute('data-sk-st').split('|');
     const prinyat = ()=>{
-      const st = SK.listy.steny[parseInt(i)];
+      const st = SK[razdel].steny[parseInt(i)];
       if(st){ st[pole] = el.value; skItogObnovit(); }
     };
     el.addEventListener('input', prinyat);
     el.addEventListener('change', prinyat);
   });
   main.querySelectorAll('[data-sk-st-add]').forEach(el=>{
-    el.onclick = ()=>{ SK.listy.steny.push({ imya:'', dlina:'', vysota:'', proyomy:[] }); render(); };
+    el.onclick = ()=>{ SK[el.getAttribute('data-sk-st-add')].steny.push(pustayaStena()); render(); };
   });
   main.querySelectorAll('[data-sk-st-zamok]').forEach(el=>{
     el.onclick = ()=> showLimit('Несколько стен — в полном тарифе',
-      'На бесплатном калькулятор считает одну стену. В полном стены считаются вместе: обрезок от одной идёт на другую, и листов выходит меньше.');
+      el.getAttribute('data-sk-st-zamok') === 'bloki'
+        ? 'На бесплатном калькулятор считает одну стену. В полном — весь объект разом: стены складываются в один итог, и запас на бой берётся от общего объёма, а не отдельно от каждой стены.'
+        : 'На бесплатном калькулятор считает одну стену. В полном стены считаются вместе: обрезок от одной идёт на другую, и листов выходит меньше.');
   });
   main.querySelectorAll('[data-sk-st-del]').forEach(el=>{
     el.onclick = ()=>{
-      SK.listy.steny.splice(parseInt(el.getAttribute('data-sk-st-del')), 1);
-      if(!SK.listy.steny.length) SK.listy.steny.push({ imya:'', dlina:'', vysota:'', proyomy:[] });
+      const [razdel, i] = el.getAttribute('data-sk-st-del').split('|');
+      SK[razdel].steny.splice(parseInt(i), 1);
+      if(!SK[razdel].steny.length) SK[razdel].steny.push(pustayaStena());
       render();
     };
   });
