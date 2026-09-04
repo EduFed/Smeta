@@ -514,6 +514,13 @@
      покрасило схемы почти в цвет фона (грабля 38). */
   .ph-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px;margin-bottom:10px;}
   .ph-item{position:relative;}
+  /* СНИМОК ЖДЁТ ОТПРАВКИ. Показываем прямо, а не прячем: снимок,
+     который человек считает сделанным, обязан быть сделан, и пока он
+     не уехал, врать об этом нельзя (задача 2026-09-03-03). */
+  .foto-zhdyot::after{content:"ждёт отправки";position:absolute;left:4px;right:4px;bottom:4px;
+    background:rgba(0,0,0,.72);color:#fff;font-size:9px;line-height:1.3;
+    text-align:center;padding:3px 2px;border-radius:5px;pointer-events:none;}
+  .foto-zhdyot img{opacity:.75;}
   /* ЗНАЧОК РАЗГОВОРА НА ПЛИТКЕ (с 2026-08-25).
      Владелец: «как я должен узнать, что кто-то добавил комментарий?»
      Ответ до этого дня был — никак: число было видно только внутри
@@ -3582,7 +3589,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-03-162';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-04-163';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -9321,6 +9328,176 @@ async function fotoDlyaPlitok(ids, gotov){
 // читает её из базы пропуском пришедшего и этим же проверяет право.
 // Если файл не доехал — строку убираем, иначе в галерее останется
 // снимок, которого нет в хранилище.
+// ============================================================
+//  ОЧЕРЕДЬ СНИМКОВ БЕЗ СВЯЗИ (задача 2026-09-03-03)
+// ============================================================
+//
+// Владелец 3 сентября 2026, после вопроса «офлайн тоже будет всё
+// работать?»: завести очередь отложенных действий со снимками.
+//
+// До этой правки без связи со снимками нельзя было НИЧЕГО: ни добавить,
+// ни повернуть, ни удалить. Приложение при этом офлайн работает — смета
+// правится, правки копятся и уходят, когда связь появится. Снимки были
+// единственным исключением, и мастер в подвале оставался без
+// фотофиксации.
+//
+// ГЛАВНОЕ ПРАВИЛО: снимок, который человек считает сделанным, обязан
+// быть сделан. Очередь, способная молча потерять снимок, хуже честного
+// отказа: сегодня мастер видит «не вышло» и снимает заново, а с плохой
+// очередью увидит «готово» и узнает правду при споре с заказчиком.
+// Поэтому пометка «ждёт отправки» видна, пока дело не сделано.
+//
+// ЧТО ХРАНИМ. Байты — в том же складе Cache API, что и обычные снимки:
+// он уже есть, уже переживает перезапуск и уже не привязан к версии
+// сборки. Очередь дел — списком в localStorage. Своего хранилища
+// не заводим.
+//
+// ТРИ ДЕЛА, А НЕ ЧЕТЫРЕ:
+//   zalit   — строки в базе ещё нет: завести её и отправить файл;
+//   obnovit — строка есть, изменились байты (поворот);
+//   udalit  — убрать строку из базы.
+// Поворот НЕ отдельное дело со своим углом: в складе всегда лежат
+// ТЕКУЩИЕ байты, поэтому и «залить», и «обновить» значат одно —
+// «сделай на сервере так, как у меня сейчас». Отсюда даром выходит
+// схлопывание: десять поворотов подряд дают одно дело, а не десять.
+const FOTO_OCHERED = 'foto-ochered-v1';
+
+function ocheredVzyat(){
+  try{
+    const s = localStorage.getItem(FOTO_OCHERED);
+    const a = s ? JSON.parse(s) : null;
+    return Array.isArray(a) ? a : [];
+  }catch(_){ return []; }
+}
+function ocheredPisat(a){
+  try{ localStorage.setItem(FOTO_OCHERED, JSON.stringify(a)); }catch(_){}
+}
+function ocheredSkolko(){ return ocheredVzyat().length; }
+function ocheredZhdyot(id){
+  return ocheredVzyat().some(d=> d.id === id && d.delo !== 'udalit');
+}
+
+// Поставить дело в очередь, схлопнув повторы по тому же снимку.
+//
+// Правила схлопывания — не оптимизация, а верность порядку:
+//   · «залить» после чего угодно  → остаётся «залить» (файла на сервере нет);
+//   · «обновить» после «залить»   → остаётся «залить»;
+//   · «обновить» после «обновить» → одно дело;
+//   · «удалить» после «залить»    → НИ ОДНОГО: на сервере его и не было;
+//   · «удалить» после «обновить»  → остаётся «удалить».
+function ocheredDobavit(delo){
+  const a = ocheredVzyat();
+  const bylo = a.filter(d=> d.id === delo.id);
+  const proch = a.filter(d=> d.id !== delo.id);
+  if(delo.delo === 'udalit' && bylo.some(d=> d.delo === 'zalit')){
+    // Сняли и тут же удалили, не отправив. На сервер идти незачем;
+    // байты со склада уберёт сам photoDelete.
+    ocheredPisat(proch);
+    return;
+  }
+  if(delo.delo === 'obnovit' && bylo.some(d=> d.delo === 'zalit')){
+    ocheredPisat(a);          // «залить» уже отправит текущие байты
+    return;
+  }
+  proch.push(Object.assign({ kogda: Date.now(), popytok: 0 }, delo));
+  ocheredPisat(proch);
+}
+
+// Отправить накопленное. Идём ПО ПОРЯДКУ и останавливаемся на первом
+// же обрыве связи: дела зависимы (снял → повернул → удалил), и пропуск
+// одного сделал бы следующее бессмысленным.
+let ocheredIdyot = false;
+
+async function ocheredOtpravit(){
+  if(ocheredIdyot) return;
+  if(!currentUser || !sb || authLost) return;
+  if(!navigator.onLine) return;
+  ocheredIdyot = true;
+  try{
+    let a = ocheredVzyat();
+    while(a.length){
+      const d = a[0];
+      try{
+        if(d.delo === 'zalit')        await ocheredZalit(d);
+        else if(d.delo === 'obnovit') await ocheredObnovit(d);
+        else if(d.delo === 'udalit')  await ocheredUdalit(d);
+      }catch(e){
+        const msg = (e && e.message) || '';
+        const svyaz = !navigator.onLine || /failed to fetch|networkerror|load failed/i.test(msg);
+        if(svyaz) break;              // связь пропала — вернёмся позже
+        // ОТКАЗ СЕРВЕРА — НЕ ОБРЫВ. Лимит тарифа, отозванные права,
+        // удалённый проект: повторять такое вечно нельзя, иначе очередь
+        // не разберётся никогда и утащит за собой всё, что за ней стоит.
+        d.popytok = (d.popytok || 0) + 1;
+        if(d.popytok < 3){
+          ocheredPisat(a);
+          break;
+        }
+        console.error('Снимок не уехал, бросаем', d, e);
+        toast('Снимок не удалось отправить: ' + (msg || 'сервер отказал'));
+        a.shift();
+        ocheredPisat(a);
+        continue;
+      }
+      a.shift();
+      ocheredPisat(a);
+    }
+  }finally{
+    ocheredIdyot = false;
+    render();
+  }
+}
+
+async function ocheredZalit(d){
+  // Строки в базе может уже не быть (проект удалили) — тогда вставка
+  // отобьётся внешним ключом, и это отказ сервера, а не обрыв.
+  const ins = await sb.from('attachments').insert(d.row, { returning: 'minimal' });
+  if(ins.error) throw ins.error;
+  await ocheredFayly(d.id);
+}
+
+async function ocheredObnovit(d){
+  await ocheredFayly(d.id);
+  if(d.w && d.h){
+    try{ await sb.from('attachments').update({ width: d.w, height: d.h }).eq('id', d.id); }catch(_){}
+  }
+}
+
+async function ocheredUdalit(d){
+  const del = await sb.from('attachments').delete().eq('id', d.id);
+  if(del.error) throw del.error;
+}
+
+// Отправить файл и его уменьшенную копию из склада.
+async function ocheredFayly(id){
+  const adres = await fotoSkladVzyat(id);
+  if(!adres) throw new Error('Снимка нет на устройстве — отправлять нечего');
+  const blob = await (await fetch(adres)).blob();
+  const znak = await photoAsk({ action:'upload', attachment_id: id });
+  const kuda = znak && znak.links && znak.links[id];
+  if(!kuda) throw new Error('Обработчик не выдал адрес для загрузки');
+  const put = await fetch(kuda, { method:'PUT',
+    headers:{ 'Content-Type':'image/jpeg' }, body: blob });
+  if(!put.ok) throw new Error('Хранилище отказало: ' + put.status);
+  // Копия — молча: не вышла, плитка возьмёт полный файл.
+  try{
+    const miniAdres = await fotoSkladVzyat(fotoMiniKluch(id));
+    const mini = miniAdres ? await (await fetch(miniAdres)).blob() : await fotoMini(blob);
+    if(mini && mini.size){
+      const zm = await photoAsk({ action:'upload', attachment_id: id, size:'m' });
+      const kudaM = zm && zm.links && zm.links[id];
+      if(kudaM) await fetch(kudaM, { method:'PUT',
+        headers:{ 'Content-Type':'image/jpeg' }, body: mini });
+    }
+  }catch(e){ console.error('Копия из очереди не легла', e); }
+}
+
+// Разбираем очередь тогда же, когда приложение и так проверяет связь.
+window.addEventListener('online', ()=> ocheredOtpravit());
+document.addEventListener('visibilitychange', ()=>{
+  if(document.visibilityState === 'visible') ocheredOtpravit();
+});
+
 async function photoUpload(proj, roomId, file, kind){
   const lim = photoLimit(proj);
   if(lim !== null && projectPhotos(proj).length >= lim){
@@ -9358,6 +9535,13 @@ async function photoUpload(proj, roomId, file, kind){
   // returning:'minimal' — у только что созданной строки политика чтения
   // может не пустить нас к ней обратно, и запись отбилась бы сообщением
   // про «нарушение при вставке» (грабля 1)
+  // БЕЗ СВЯЗИ СНИМОК НЕ ТЕРЯЕТСЯ, А ВСТАЁТ В ОЧЕРЕДЬ (задача 2026-09-03-03).
+  // Ни строку в базе, ни файл в хранилище сейчас не создать — но байты
+  // у нас в руках, номер задан на устройстве, и всё это переживёт
+  // перезапуск в складе. Отправим, когда связь появится.
+  const otlozheno = !navigator.onLine;
+
+  if(!otlozheno){
   const ins = await sb.from('attachments').insert(row, { returning: 'minimal' });
   if(ins.error) throw ins.error;
 
@@ -9412,6 +9596,7 @@ async function photoUpload(proj, roomId, file, kind){
     try{ await sb.from('attachments').delete().eq('id', id); }catch(_){}
     throw e;
   }
+  }
 
   // В общем сохранении снимки НЕ участвуют — ни в saveDiff, ни в projHead.
   // Это нарочно: файл в хранилище и строка в базе — связка, которую
@@ -9438,7 +9623,10 @@ async function photoUpload(proj, roomId, file, kind){
   try{
     const mini = await fotoMini(blob);
     if(mini && mini.size){
-      const znak = await photoAsk({ action:'upload', attachment_id: id, size:'m' });
+      // В СКЛАД — ВСЕГДА, даже без связи: плитке она нужна сразу,
+      // а отправит её потом очередь из этого же склада.
+      try{ await fotoSkladPolozhitBlob(fotoMiniKluch(id), mini); }catch(_){}
+      const znak = otlozheno ? null : await photoAsk({ action:'upload', attachment_id: id, size:'m' });
       const adres = znak && znak.links && znak.links[id];
       if(adres){
         // ТИП ОБЯЗАТЕЛЕН — подпись его не покрывает, а хранилище
@@ -9453,6 +9641,13 @@ async function photoUpload(proj, roomId, file, kind){
     }
   }catch(e){ console.error('Уменьшенная копия не вышла', e); }
 
+  // Дело в очередь ставим ПОСЛЕДНИМ: к этому мгновению снимок уже
+  // на складе и уже виден в списке. Порядок важен — обратный оставил бы
+  // очередь с делом, для которого нет байтов.
+  if(otlozheno){
+    ocheredDobavit({ delo:'zalit', id: id, row: row });
+    toast('Нет связи — снимок сохранён и уйдёт, когда появится интернет');
+  }
   return id;
 }
 
@@ -9817,6 +10012,27 @@ async function fotoPovernut(a){
 
     // 3. Кладём на место старого файла. Путь тот же, значит и все
     //    прежние ссылки останутся верными.
+    //
+    // БЕЗ СВЯЗИ — поворачиваем у себя и ставим дело в очередь.
+    // Раньше здесь был честный отказ; теперь честнее сделать и отложить:
+    // байты уже повёрнуты, терять их незачем.
+    if(!navigator.onLine){
+      try{ await fotoSkladPolozhitBlob(a.id, povernutyy); }catch(_){}
+      try{
+        const mini = await fotoMini(povernutyy);
+        if(mini && mini.size) await fotoSkladPolozhitBlob(fotoMiniKluch(a.id), mini);
+      }catch(_){}
+      a.w = cv.width; a.h = cv.height; a.size = povernutyy.size;
+      // Уже стоит «залить» — значит снимок ещё не уезжал, и очередь
+      // сама отправит текущие байты. Иначе нужно «обновить».
+      ocheredDobavit({ delo:'obnovit', id: a.id, w: cv.width, h: cv.height });
+      pvUrls.set(a.id, URL.createObjectURL(povernutyy));
+      photoUrlCache.delete(a.id);
+      photoUrlCache.delete(fotoMiniKluch(a.id));
+      pvRasstavit();
+      toast('Нет связи — поворот сохранён и уйдёт, когда появится интернет');
+      return;
+    }
     const znak = await photoAsk({ action:'upload', attachment_id: a.id });
     const kuda = znak && znak.links && znak.links[a.id];
     if(!kuda) throw new Error('обработчик не выдал адрес для загрузки');
@@ -10553,8 +10769,14 @@ async function kommUdalit(id){
 }
 
 async function photoDelete(proj, id){
+  // БЕЗ СВЯЗИ убираем у себя и ставим дело в очередь. Обещание «удалено»
+  // должно исполняться сразу: человек нажал и ждёт, что снимка нет.
+  if(!navigator.onLine){
+    ocheredDobavit({ delo:'udalit', id: id });
+  } else {
   const del = await sb.from('attachments').delete().eq('id', id);
   if(del.error) throw del.error;
+  }
   const i = projectPhotos(proj).findIndex(a=>a.id === id);
   if(i >= 0) proj.photos.splice(i,1);
   photoUrlCache.delete(id);
@@ -18195,7 +18417,7 @@ function renderRoomPhotos(room){
       </div>
       <div class="ph-grid" data-ph-grid="${room.id}">
         ${list.map(a=>`
-          <div class="ph-item" data-ph-id="${a.id}" title="${escapeAttr(photoHint(a))}">
+          <div class="ph-item${ocheredZhdyot(a.id)?' foto-zhdyot':''}" data-ph-id="${a.id}" title="${escapeAttr(photoHint(a))}">
             <div class="ph-thumb" data-ph-thumb="${a.id}">${
               // УЖЕ НА УСТРОЙСТВЕ — рисуем сразу, без промежуточной «…».
               // Владелец 27 августа 2026: «фотографии все одновременно
