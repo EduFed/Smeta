@@ -398,6 +398,10 @@
   .novosti-punkty{ margin:6px 0 22px; padding-left:22px; }
   .novosti-punkty li{ font-size:16px; line-height:1.55; margin-bottom:16px; }
   .novosti-ok{ width:100%; padding:15px; min-height:48px; font-size:15px; }
+  /* Запертую кнопку видно, что она заперта: иначе нажимают и решают,
+     что приложение сломалось (грабля 5 — выключенный элемент без стиля
+     выглядит рабочим). */
+  .novosti-ok:disabled{ opacity:.45; cursor:default; }
 
   /* ЗНАЧОК И ПОДПИСЬ — ДВА ОТДЕЛЬНЫХ МЕСТА, А НЕ ОДНА СТРОКА ТЕКСТА.
      Правило общее, на все места сразу (владелец 4 сентября 2026:
@@ -3897,7 +3901,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-04-205';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-04-206';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -14002,8 +14006,15 @@ function num(v){
 // Пишем «что теперь можно», а не «что сделано»: человек читает не журнал
 // изменений, а ответ на вопрос «что мне с этого».
 const NOVOSTI_KLYUCH = 'novosti-videl-v1';
+// Сколько секунд лист нельзя закрыть НИЧЕМ — ни кнопкой, ни крестиком,
+// ни жестом. Смысл в задержке: чтобы человек не отмахнулся рефлексом,
+// а начал читать (владелец 4 сентября 2026). Сперва поставили три,
+// оказалось мало: кнопка стоит в конце списка, и быстрый мах до низа
+// сводил задержку на нет — значит запирать надо и кнопку тоже.
+// Число одно и здесь: менять — только его.
+const NOVOSTI_ZHDAT = 10;
 const NOVOSTI = [
-  { sborka: '2026-09-04-205', punkty: [
+  { sborka: '2026-09-04-206', punkty: [
     'Строительный калькулятор — отдельной кнопкой в панели. Считает листовой материал с раскладкой, кирпич и блоки, расход смесей и площади поверхностей любой формы.',
     'Раскладка плитки теперь и на бесплатном тарифе — одна поверхность. В полном считается весь санузел разом, и обрезок от пола идёт в подрезку стены.',
     'Отметка готовности у работ: ставите процент, приложение считает готовность по объекту с учётом стоимости.',
@@ -14028,7 +14039,7 @@ function novostiOtmetit(){
 // Показываем только тому, кто уже пользовался приложением. Признак —
 // есть хотя бы один проект: у пришедшего впервые сравнивать не с чем,
 // а первое, что он увидел бы, — окно, которое сразу не закрыть.
-let novostiTaymer = null;
+let novostiSchyot = null;
 function novostiPokazat(){
   if(!currentUser) return;
   if(!(state.projects || []).length){ novostiOtmetit(); return; }
@@ -14051,7 +14062,7 @@ function novostiPokazat(){
                 aria-label="Закрыть" hidden>✕</button>
       </div>
       <ul class="novosti-punkty">${punkty.map(t=>`<li>${escapeHtml(t)}</li>`).join('')}</ul>
-      <button type="button" class="btn btn-primary novosti-ok" id="novostiOk">Понятно</button>
+      <button type="button" class="btn btn-primary novosti-ok" id="novostiOk" disabled>Понятно</button>
     </div>`;
   document.body.appendChild(ov);
   // Через кадр, а не через requestAnimationFrame: кадр может не прийти
@@ -14059,22 +14070,31 @@ function novostiPokazat(){
   // за нижним краем — с прозрачностью 0 и сдвигом на свою высоту.
   setTimeout(()=> ov.classList.add('vidno'), 20);
 
-  // Кнопка «Понятно» работает сразу — она в конце списка, до неё надо
-  // долистать. А крестик, Escape и щелчок мимо включаются через три
-  // секунды: это единственное, что удерживает от привычного жеста
-  // «закрыть не глядя». Правило владельца 4 сентября 2026.
-  document.getElementById('novostiOk').onclick = novostiZakryt;
-  clearTimeout(novostiTaymer);
-  novostiTaymer = setTimeout(()=>{
+  // Пока идёт отсчёт, закрыть нельзя ничем. На кнопке при этом видно,
+  // сколько осталось: без счётчика запертая кнопка читается как поломка,
+  // и человек уходит из приложения вместо того, чтобы прочитать.
+  const ok = document.getElementById('novostiOk');
+  let ostalos = NOVOSTI_ZHDAT;
+  ok.textContent = 'Понятно · ' + ostalos;
+  clearInterval(novostiSchyot);
+  novostiSchyot = setInterval(()=>{
+    ostalos--;
+    const k = document.getElementById('novostiOk');
+    if(!k){ clearInterval(novostiSchyot); return; }
+    if(ostalos > 0){ k.textContent = 'Понятно · ' + ostalos; return; }
+    clearInterval(novostiSchyot);
+    k.textContent = 'Понятно';
+    k.disabled = false;
+    k.onclick = novostiZakryt;
     const kr = document.getElementById('novostiKrest');
     if(kr){ kr.hidden = false; kr.onclick = novostiZakryt; }
     const o = document.getElementById('novostiOverlay');
     if(o) o.dataset.zhesty = '1';
-  }, 3000);
+  }, 1000);
 }
 
 function novostiZakryt(){
-  clearTimeout(novostiTaymer);
+  clearInterval(novostiSchyot);
   const ov = document.getElementById('novostiOverlay');
   novostiOtmetit();
   if(!ov) return;
