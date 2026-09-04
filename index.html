@@ -3901,7 +3901,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-05-226';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-05-227';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -12951,59 +12951,55 @@ function razmeryKontura(p, sr){
     return n;
   };
 
-  // ПОЛКА ИЩЕТ МЕСТО ПО ВСЕМУ ЧЕРТЕЖУ, А НЕ В ЧЕТЫРЁХ НАПРАВЛЕНИЯХ.
-  //
-  // Прежде место подбиралось из короткого списка: четыре диагонали
-  // и несколько длин. Свободную середину комнаты алгоритм не
-  // рассматривал вовсе — а владелец 5 сентября 2026 спросил прямо:
-  // «внутри контура куча места, почему они там не могут распределиться,
-  // не закрывая и не пересекая друг друга». Ответ был неприятный:
-  // потому что их никто не распределяет, каждое число ставится само
-  // по себе из заранее заданных точек.
-  //
-  // Теперь чертёж просматривается сеткой целиком, и из всех свободных
-  // клеток берётся ближайшая к своей стене. Свободной клетка считается,
-  // только если ни число, ни его выноска ничего не задевают.
   const polka = (x0, y0, txt, w, h, lyuboe)=>{
-    const shag = Math.max(11, Math.round(h * 0.9));
-    const varianty = [];
-    for(let ty = h/2 + 3; ty <= sr.H - h/2 - 3; ty += shag){
-      for(let tx = w/2 + 3; tx <= sr.W - w/2 - 3; tx += shag){
-        const d = Math.hypot(tx - x0, ty - y0);
-        if(d < h + 6) continue;              // вплотную к стене — это не полка
-        varianty.push({ tx, ty, d });
-      }
-    }
-    varianty.sort((a,b)=> a.d - b.d);        // ближе к своей стене — лучше
-
-    let luchshee = null;                     // на случай, когда чистого нет
-    for(const { tx, ty, d } of varianty){
-      // полочка лежит под числом, выноска идёт к её ближнему концу
-      const storona = tx >= x0 ? -1 : 1;
-      const kx = tx + storona*(w/2 + 4), ky = ty + h/2 + 2;
-      const dx = tx - storona*(w/2 + 4);
-      const pom = skolkoMeshaet(tx, ty, w, h, [x0,y0],[kx,ky], [kx,ky],[dx,ky]);
-      if(pom === 0){
+    const kx = x0 <= sr.W/2 ? 1 : -1, ky = y0 <= sr.H/2 ? 1 : -1;
+    const storony = [[kx,ky],[kx,-ky],[-kx,ky],[-kx,-ky]];
+    let luchshee = null;          // для второго захода: наименее тесное
+    for(const [dx,dy] of storony){
+      // Длин перебираем много и до самого края холста: снаружи контура
+      // места вдоволь, и лучше увести число подальше, чем оставить его
+      // висеть у стены без связи. Владелец 5 сентября 2026: «снаружи
+      // много места, лучше подобные выносить за контур».
+      for(const L of [20, 28, 36, 44, 56, 68, 82, 96, 112, 130]){
+        const lx = x0 + dx*L, ly = y0 + dy*L;       // конец наклонной
+        const px = lx + dx*(w + 8);                  // конец полки
+        const tx = (lx + px)/2, ty = ly - h/2 - 2;   // число лежит НА полке
+        if(tx - w/2 < 2 || tx + w/2 > sr.W - 2) continue;
+        if(ty - h/2 < 2 || ty + h/2 > sr.H - 2) continue;
+        if(lyuboe){
+          // ВТОРОЙ ЗАХОД: чистого места нет нигде. Берём не первое
+          // попавшееся, а то, где мешаем меньше всего — иначе полка
+          // ложится ровно на соседнее число.
+          const pl = skolkoMeshaet(tx, ty, w, h, [x0,y0],[lx,ly], [lx,ly],[px,ly]);
+          if(!luchshee || pl < luchshee.pl) luchshee = { tx, ty, lx, ly, px, pl };
+          continue;
+        }
+        {
+          if(!svobodno(tx, ty, w, h)) continue;
+          // Сама выноска тоже ничего не должна пересекать: наклонная идёт
+          // от стены через весь чертёж, и пересечь ей есть что.
+          if(linii.some(([a,b])=> otrezkiPeresek([x0,y0],[lx,ly], a, b))) continue;
+          if(linii.some(([a,b])=> otrezkiPeresek([lx,ly],[px,ly], a, b))) continue;
+          if(otrezokRezhetChisla([x0,y0],[lx,ly])) continue;
+          if(otrezokRezhetChisla([lx,ly],[px,ly])) continue;
+        }
         zanyat(tx, ty, w, h);
-        dobavLiniyu([x0,y0],[kx,ky]); dobavLiniyu([kx,ky],[dx,ky]);
+        dobavLiniyu([x0,y0],[lx,ly]); dobavLiniyu([lx,ly],[px,ly]);
         return { tx, ty, liniya:
-          `<line x1="${x0}" y1="${y0}" x2="${kx}" y2="${ky}" class="${kl.ext}"/>` +
-          `<line x1="${kx}" y1="${ky}" x2="${dx}" y2="${ky}" class="${kl.ext}"/>` };
+          `<line x1="${x0}" y1="${y0}" x2="${lx}" y2="${ly}" class="${kl.ext}"/>` +
+          `<line x1="${lx}" y1="${ly}" x2="${px}" y2="${ly}" class="${kl.ext}"/>` };
       }
-      // Тесно везде — запоминаем наименее тесное, но ищем дальше.
-      // Вес расстояния маленький: лучше уехать подальше, чем налезть.
-      const ves = pom * 1000 + d;
-      if(!luchshee || ves < luchshee.ves) luchshee = { tx, ty, kx, ky, dx, ves };
     }
-    if(luchshee){
-      const { tx, ty, kx, ky, dx } = luchshee;
+    if(lyuboe && luchshee){
+      const { tx, ty, lx, ly, px } = luchshee;
       zanyat(tx, ty, w, h);
-      dobavLiniyu([x0,y0],[kx,ky]); dobavLiniyu([kx,ky],[dx,ky]);
+      dobavLiniyu([x0,y0],[lx,ly]); dobavLiniyu([lx,ly],[px,ly]);
       return { tx, ty, liniya:
-        `<line x1="${x0}" y1="${y0}" x2="${kx}" y2="${ky}" class="${kl.ext}"/>` +
-        `<line x1="${kx}" y1="${ky}" x2="${dx}" y2="${ky}" class="${kl.ext}"/>` };
+        `<line x1="${x0}" y1="${y0}" x2="${lx}" y2="${ly}" class="${kl.ext}"/>` +
+        `<line x1="${lx}" y1="${ly}" x2="${px}" y2="${ly}" class="${kl.ext}"/>` };
     }
-    return null;
+    // чистого места не нашлось — идём вторым заходом
+    return lyuboe ? null : polka(x0, y0, txt, w, h, true);
   };
 
   // разложим стены: осевые идут в цепи, наклонные — отдельно
@@ -13270,22 +13266,6 @@ function razmeryKontura(p, sr){
   };
 
   // четыре цепи по сторонам габарита, каждая на своём отступе
-  // ЛИНИИ ВСЕХ ЧЕТЫРЁХ ЦЕПЕЙ ЗНАЕМ ЗАРАНЕЕ — регистрируем их до того,
-  // как хоть одно число выберет себе место. Иначе выходит так: верхняя
-  // цепь ставит число, левой цепи ещё нет, число встаёт ровно туда,
-  // где она через мгновение пройдёт. Именно так на боевом контуре
-  // владельца («Санузел (гостевой)», проект «Арфа») четырнадцать чисел
-  // легли на линии.
-  {
-    const nizY = sr.Y(minYm) + OT, verhY = sr.Y(maxYm) - OT;
-    const levX = sr.X(minXm) - OT, pravX = sr.X(maxXm) + OT;
-    const l = sr.X(minXm), r = sr.X(maxXm), v = sr.Y(maxYm), n = sr.Y(minYm);
-    if(gorNiz.length)   dobavLiniyu([l, nizY],  [r, nizY]);
-    if(gorVerh.length)  dobavLiniyu([l, verhY], [r, verhY]);
-    if(vertLev.length)  dobavLiniyu([levX, v],  [levX, n]);
-    if(vertPrav.length) dobavLiniyu([pravX, v], [pravX, n]);
-  }
-
   cep(gorNiz,  true,  sr.Y(minYm) + OT,  1);   // цепь ниже контура
   cep(gorVerh, true,  sr.Y(maxYm) - OT, -1);   // выше контура
   cep(vertLev, false, sr.X(minXm) - OT, -1);   // слева
