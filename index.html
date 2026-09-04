@@ -3901,7 +3901,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-04-217';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-05-218';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -12861,8 +12861,44 @@ function razmeryKontura(p, sr){
   // подписываются повторно, и это был бы дубль.
   const cepPodpisala = new Set();
   const vnutriZanyato = [];
-  const svobodno = (x,y,w,h)=> !vnutriZanyato.some(z =>
-    Math.abs(z.x - x) < (z.w + w)/2 + 3 && Math.abs(z.y - y) < (z.h + h)/2 + 3);
+
+  // ЛИНИИ ЧЕРТЕЖА, КОТОРЫЕ НЕЛЬЗЯ ПЕРЕСЕКАТЬ.
+  // Сперва сюда кладём сам контур, потом — каждую нарисованную
+  // размерную линию и каждую полку. Прежде свободное место искалось
+  // только среди чисел, и число спокойно ложилось поверх стены или
+  // поверх чужого размера. Владелец 4 сентября 2026: «поля перекрывают
+  // либо линии размеров, либо линии контура, нужно исправить и придумать
+  // правило».
+  // Правило одно и простое: НИЧТО НЕ ПЕРЕСЕКАЕТ НИЧЕГО.
+  const linii = [];
+  for(let i = 0; i < p.length; i++){
+    const a = p[i], b = p[(i+1) % p.length];
+    linii.push([[sr.X(a[0]), sr.Y(a[1])], [sr.X(b[0]), sr.Y(b[1])]]);
+  }
+  const dobavLiniyu = (a, b)=> linii.push([a, b]);
+
+  const storonaOt = (px,py, x1,y1, x2,y2)=> (x2-x1)*(py-y1) - (y2-y1)*(px-x1);
+  const otrezkiPeresek = (a1,a2,b1,b2)=>{
+    const d1 = storonaOt(b1[0],b1[1], a1[0],a1[1], a2[0],a2[1]);
+    const d2 = storonaOt(b2[0],b2[1], a1[0],a1[1], a2[0],a2[1]);
+    const d3 = storonaOt(a1[0],a1[1], b1[0],b1[1], b2[0],b2[1]);
+    const d4 = storonaOt(a2[0],a2[1], b1[0],b1[1], b2[0],b2[1]);
+    return ((d1>0) !== (d2>0)) && ((d3>0) !== (d4>0));
+  };
+  // Коробка числа против отрезка: пересекает ли он хоть одну её сторону.
+  // Целиком внутри коробки отрезок оказаться не может — линии чертежа
+  // длиннее числа, — поэтому четырёх сторон достаточно.
+  const korobkaRezhet = (x,y,w,h, a, b)=>{
+    const l = x-w/2-2, r = x+w/2+2, t = y-h/2-2, d = y+h/2+2;
+    return otrezkiPeresek(a, b, [l,t],[r,t]) || otrezkiPeresek(a, b, [r,t],[r,d]) ||
+           otrezkiPeresek(a, b, [r,d],[l,d]) || otrezkiPeresek(a, b, [l,d],[l,t]);
+  };
+  const naLinii = (x,y,w,h)=> linii.some(([a,b])=> korobkaRezhet(x,y,w,h, a, b));
+
+  const svobodno = (x,y,w,h)=>
+    !vnutriZanyato.some(z =>
+      Math.abs(z.x - x) < (z.w + w)/2 + 3 && Math.abs(z.y - y) < (z.h + h)/2 + 3)
+    && !naLinii(x,y,w,h);
   const zanyat = (x,y,w,h)=> vnutriZanyato.push({x,y,w,h});
 
   // ВСЕЙ КОРОБКОЙ, А НЕ СЕРЕДИНОЙ. Проверять одну точку мало: «0,149»
@@ -12881,20 +12917,6 @@ function razmeryKontura(p, sr){
   //
   // Куда вести: сначала в сторону середины чертежа — там место есть
   // почти всегда, а у краёв и углов его нет по определению.
-  // Пересекаются ли два отрезка. Нужно, чтобы понять, влезает ли
-  // размерная линия снаружи: у соседних наклонных стен, сходящихся
-  // во вогнутом углу, наружные линии идут навстречу друг другу
-  // и перекрещиваются.
-  const storonaOt = (px,py, x1,y1, x2,y2)=> (x2-x1)*(py-y1) - (y2-y1)*(px-x1);
-  const otrezkiPeresek = (a1,a2,b1,b2)=>{
-    const d1 = storonaOt(b1[0],b1[1], a1[0],a1[1], a2[0],a2[1]);
-    const d2 = storonaOt(b2[0],b2[1], a1[0],a1[1], a2[0],a2[1]);
-    const d3 = storonaOt(a1[0],a1[1], b1[0],b1[1], b2[0],b2[1]);
-    const d4 = storonaOt(a2[0],a2[1], b1[0],b1[1], b2[0],b2[1]);
-    return ((d1>0) !== (d2>0)) && ((d3>0) !== (d4>0));
-  };
-  const postavlennye = [];        // размерные линии, уже нарисованные
-
   const polka = (x0, y0, txt, w, h)=>{
     const kx = x0 <= sr.W/2 ? 1 : -1, ky = y0 <= sr.H/2 ? 1 : -1;
     const storony = [[kx,ky],[kx,-ky],[-kx,ky],[-kx,-ky]];
@@ -12906,7 +12928,12 @@ function razmeryKontura(p, sr){
         if(tx - w/2 < 2 || tx + w/2 > sr.W - 2) continue;
         if(ty - h/2 < 2 || ty + h/2 > sr.H - 2) continue;
         if(!svobodno(tx, ty, w, h)) continue;
+        // Сама выноска тоже ничего не должна пересекать: наклонная идёт
+        // от стены через весь чертёж, и пересечь ей есть что.
+        if(linii.some(([a,b])=> otrezkiPeresek([x0,y0],[lx,ly], a, b))) continue;
+        if(linii.some(([a,b])=> otrezkiPeresek([lx,ly],[px,ly], a, b))) continue;
         zanyat(tx, ty, w, h);
+        dobavLiniyu([x0,y0],[lx,ly]); dobavLiniyu([lx,ly],[px,ly]);
         return { tx, ty, liniya:
           `<line x1="${x0}" y1="${y0}" x2="${lx}" y2="${ly}" class="${kl.ext}"/>` +
           `<line x1="${lx}" y1="${ly}" x2="${px}" y2="${ly}" class="${kl.ext}"/>` };
@@ -13210,15 +13237,30 @@ function razmeryKontura(p, sr){
     // при таком сценарии линия должна уходить внутрь контура, чтобы
     // не пересекаться с соседними».
     const OT2 = sr.OT2;
-    const liniyaPri = (nx,ny)=> [[ax+nx*OT2, ay+ny*OT2],[bx+nx*OT2, by+ny*OT2]];
-    let naruzhu = !!kosaya;
-    if(naruzhu){
-      const proba = liniyaPri(-vnutr[0], -vnutr[1]);
-      if(postavlennye.some(l=> otrezkiPeresek(proba[0], proba[1], l[0], l[1]))) naruzhu = false;
+    const liniyaPri = (nx,ny,d)=> [[ax+nx*d, ay+ny*d],[bx+nx*d, by+ny*d]];
+    const chisto = (l)=> !linii.some(([a,b])=> otrezkiPeresek(l[0], l[1], a, b));
+    // ПОРЯДОК ВЫБОРА МЕСТА ДЛЯ РАЗМЕРНОЙ ЛИНИИ.
+    // Снаружи места больше — начинаем оттуда; не вышло — отодвигаемся
+    // дальше наружу; и только потом уводим внутрь контура. Годным
+    // считается место, где линия НЕ ПЕРЕСЕКАЕТ НИЧЕГО: ни стену,
+    // ни чужой размер. Владелец 4 сентября 2026: «1,3 пересекает линию
+    // контура — вынести за контур, 1,5 лучше внутрь, тогда вообще
+    // ничего пересекаться не будет»; «снаружи много места, лучше
+    // подобные выносить за контур».
+    let otstup = OT2, naruzhu = !!kosaya;
+    if(kosaya){
+      const varianty = [[false, OT2], [false, OT2*2], [false, OT2*3], [true, OT2], [true, OT2*2]];
+      let vybran = null;
+      for(const [vnutriLi, d] of varianty){
+        const n = vnutriLi ? vnutr : [-vnutr[0], -vnutr[1]];
+        if(chisto(liniyaPri(n[0], n[1], d))){ vybran = [vnutriLi, d]; break; }
+      }
+      if(vybran){ naruzhu = !vybran[0]; otstup = vybran[1]; }
     }
     ux = naruzhu ? -vnutr[0] : vnutr[0];
     uy = naruzhu ? -vnutr[1] : vnutr[1];
-    postavlennye.push(liniyaPri(ux, uy));
+    const svoyaLiniya = liniyaPri(ux, uy, otstup);
+    dobavLiniyu(svoyaLiniya[0], svoyaLiniya[1]);
     const txt = fmtLen(L);
     const w = sr.shirina(txt), h = sr.vys;
     // короткая стена — число не уводим вбок: там оно липнет к соседнему
@@ -13228,7 +13270,7 @@ function razmeryKontura(p, sr){
     // ориентация числа по линии — как у цепей: вертикальные читаются снизу вверх
     const vert = Math.abs(by-ay) > Math.abs(bx-ax);
     const shir = vert ? h : w, vys = vert ? w : h;
-    const glubNach = OT2 + sr.ZAZOR + h/2 + (tesno ? h + 3 : 0);
+    const glubNach = otstup + sr.ZAZOR + h/2 + (tesno ? h + 3 : 0);
     let glub = glubNach, nashli = false;
     for(let g = glubNach; g <= glubNach + (h+3)*5; g += h + 3){
       const x = mX + ux*g, y = mY + uy*g;
@@ -13293,13 +13335,13 @@ function razmeryKontura(p, sr){
       // что расстояние выносных линий относительно замеряемой разные».
       // Дотягиваться до числа выносной незачем: её дело — показать точки,
       // между которыми меряли, а к числу ведёт полка, если оно ушло.
-      const doTochki = OT2 + 5;
+      const doTochki = otstup + 5;
       const zas = (x,y)=>`<line x1="${x-(sx+ux)*4}" y1="${y-(sy+uy)*4}"
                                 x2="${x+(sx+ux)*4}" y2="${y+(sy+uy)*4}" class="${kl.tick}"/>`;
-      lbls += `<line x1="${ax+ux*OT2}" y1="${ay+uy*OT2}" x2="${bx+ux*OT2}" y2="${by+uy*OT2}" class="${kl.line}"/>
+      lbls += `<line x1="${ax+ux*otstup}" y1="${ay+uy*otstup}" x2="${bx+ux*otstup}" y2="${by+uy*otstup}" class="${kl.line}"/>
         <line x1="${ax}" y1="${ay}" x2="${ax+ux*doTochki}" y2="${ay+uy*doTochki}" class="${kl.ext}"/>
         <line x1="${bx}" y1="${by}" x2="${bx+ux*doTochki}" y2="${by+uy*doTochki}" class="${kl.ext}"/>
-        ${zas(ax+ux*OT2, ay+uy*OT2)}${zas(bx+ux*OT2, by+uy*OT2)}`;
+        ${zas(ax+ux*otstup, ay+uy*otstup)}${zas(bx+ux*otstup, by+uy*otstup)}`;
     }
     lbls += sr.chislo({ i, txt, tx, ty, w, h, povorot, on });
   });
