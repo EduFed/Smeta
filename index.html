@@ -82,6 +82,12 @@
     --blue-soft:#DDE7EA;
     /* Акцент один на обе темы — это цвет бренда, он не должен «плавать».
        Проверено: контраст к каждому фону приложения не ниже 3:1. */
+    /* Текст и значки поверх залитого фона — акцентного, тёмного, цветной
+       метки. Это НЕ `--white`: тот в тёмной теме равен #1B2228, цвету
+       карточек и полей (грабля 38), и надпись на оранжевой кнопке им
+       не покрасить. Прежде здесь стояло голое #fff в двадцати местах —
+       ровно потому, что подходящей переменной не было. */
+    --na-akcente:#FFFFFF;
     --orange:#E8622C;
     --orange-hover:#D4551F;      /* тот же, темнее на нажатии */
     --orange-soft:#FBE4D8;       /* подложка — своя для каждой темы */
@@ -158,10 +164,8 @@
   [data-theme="dark"] .btn-ghost{ color:var(--sb-text); border-color:var(--sb-line); }
   [data-theme="dark"] .plan-btn{ color:var(--sb-text); border-color:var(--sb-line); }
   [data-theme="dark"] .plan-btn:hover{ border-color:var(--orange); }
-  [data-theme="dark"] .btn-primary{ color:#fff; }
-  [data-theme="dark"] .proj-item.active{ color:#fff; }
-  [data-theme="dark"] .nav-toggle{ background:var(--sb-surface); color:#fff; }
-  [data-theme="dark"] .smeta-total{ background:#161D22; color:#fff; }
+  [data-theme="dark"] .nav-toggle{ background:var(--sb-surface); color:var(--na-akcente); }
+  [data-theme="dark"] .smeta-total{ background:var(--sb-bg); color:var(--na-akcente); }
   [data-theme="dark"] .auth-overlay{ background:#12171A; }
   [data-theme="dark"] .smeta-wrap, [data-theme="dark"] .catalog-table{ border-color:#2A343B; }
   @media print{
@@ -320,7 +324,7 @@
     transition:transform .08s ease, opacity .12s ease;
   }
   .btn:active{transform:scale(0.98);}
-  .btn-primary{background:var(--orange);color:var(--white);}
+  .btn-primary{background:var(--orange);color:var(--na-akcente);}
   .btn-primary:hover{opacity:0.92;}
   .btn-ghost{background:transparent;color:var(--white);border:1px solid var(--sb-line);}
   .btn-ghost:hover{border-color:var(--orange);}
@@ -363,7 +367,7 @@
   .proj-item-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   .proj-item-no{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--sb-muted);}
   .proj-item:hover{background:var(--sb-surface);}
-  .proj-item.active{background:var(--sb-surface);border-left-color:var(--orange);color:var(--white);font-weight:600;}
+  .proj-item.active{background:var(--sb-surface);border-left-color:var(--orange);color:var(--na-akcente);font-weight:600;}
   .proj-item .del{opacity:0;font-size:12px;color:var(--sb-muted);}
   .proj-item:hover .del{opacity:1;}
   .proj-item .del:hover{color:var(--red);}
@@ -399,13 +403,13 @@
   .sidebar-footer{margin-top:auto;padding-top:16px;border-top:1px solid var(--sb-surface);flex-shrink:0;}
   .sb-legal{margin:8px 0 10px;font-size:11px;line-height:1.4;}
   .sb-legal a{color:var(--sb-muted);text-decoration:none;border-bottom:1px solid var(--sb-line);}
-  .sb-legal a:hover{color:#FFF;border-bottom-color:var(--sb-muted);}
+  .sb-legal a:hover{color:var(--na-akcente);border-bottom-color:var(--sb-muted);}
   .sb-support{
     background:none;border:none;padding:0;margin:0 0 8px;cursor:pointer;
     font-family:inherit;font-size:11px;line-height:1.4;color:var(--sb-muted);
     border-bottom:1px solid var(--sb-line);
   }
-  .sb-support:hover{color:#FFF;border-bottom-color:var(--sb-muted);}
+  .sb-support:hover{color:var(--na-akcente);border-bottom-color:var(--sb-muted);}
 
   /* MAIN */
   .main{padding:36px 44px;overflow-x:clip;transition:margin-left .25s ease;}
@@ -429,7 +433,7 @@
   .scroll-bottom-btn{
     position:fixed; bottom:calc(20px + env(safe-area-inset-bottom, 0px)); right:20px; z-index:1050;
     width:44px; height:44px; border:none; border-radius:50%;
-    background:var(--orange); color:#fff;
+    background:var(--orange); color:var(--na-akcente);
     font-size:20px; line-height:1; cursor:pointer;
     display:none; align-items:center; justify-content:center;
     box-shadow:0 3px 10px rgba(0,0,0,.25);
@@ -1036,7 +1040,7 @@
   .sel-work-assign.on{
     border-color:transparent;
     background:var(--who, var(--orange));
-    color:#fff;
+    color:var(--na-akcente);
     font-weight:600;
   }
   [data-theme="dark"] .sel-work-assign.on{
@@ -1094,7 +1098,7 @@
 
   .who-chip{
     display:inline-block;max-width:100%;padding:3px 9px;border-radius:6px;
-    background:var(--who, var(--orange));color:#fff;
+    background:var(--who, var(--orange));color:var(--na-akcente);
     font-size:12px;font-weight:600;line-height:1.4;
     white-space:normal;overflow-wrap:break-word;
   }
@@ -1177,9 +1181,15 @@
   .wd-empty{padding:10px 12px;color:var(--ink-soft);font-size:12px;}
   /* .opening-row — вид из общего правила строки позиции. */
   .opening-row span{color:var(--ink-soft);font-family:'JetBrains Mono',monospace;font-size:11px;}
+  /* Поле ввода белое, а не под цвет страницы: так записано в палитре
+     («--white — карточки, поля ввода»), и так уже сделано в раскладке
+     плитки и в калькуляторе. Часть полей стояла на цвете страницы
+     и выглядела серой — владелец 4 сентября 2026 показал это на окнах
+     и дверях. Поправлено разом во всех шести местах: поодиночке
+     такой разнобой вылезает снова в следующем экране. */
   .opening-row input{
     font-family:'JetBrains Mono',monospace;font-size:13px;border:1px solid var(--paper-line);
-    border-radius:var(--radius);padding:5px 6px;width:100%;background:var(--paper);color:var(--ink);
+    border-radius:var(--radius);padding:5px 6px;width:100%;background:var(--white);color:var(--ink);
   }
   .opening-row input:focus{outline:none;border-color:var(--blue);}
   /* КНОПКИ ДОБАВЛЕНИЯ — ОДНИ НА ВСЁ ПРИЛОЖЕНИЕ (правка 3 сентября 2026).
@@ -1369,7 +1379,7 @@
   .team-copy{border:1px solid var(--paper-line);background:none;border-radius:8px;padding:6px 10px;cursor:pointer;font-size:13px;}
   .team-form{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;}
   .team-form input{flex:1;min-width:180px;}
-  .team-add{background:var(--orange);color:#fff;border:0;border-radius:10px;padding:10px 16px;font-weight:600;cursor:pointer;}
+  .team-add{background:var(--orange);color:var(--na-akcente);border:0;border-radius:10px;padding:10px 16px;font-weight:600;cursor:pointer;}
   .team-note{font-size:13px;opacity:.7;line-height:1.45;margin-top:10px;}
 
   /* окно выбора рабочего проекта на бесплатном тарифе */
@@ -1410,7 +1420,7 @@
   .cust-field label{font-size:12px;color:var(--ink-soft);}
   .cust-field input,.cust-field textarea{
     font-family:'Inter',sans-serif;font-size:14px;border:1px solid var(--paper-line);
-    border-radius:var(--radius);padding:9px 11px;background:var(--paper);color:var(--ink);resize:vertical;
+    border-radius:var(--radius);padding:9px 11px;background:var(--white);color:var(--ink);resize:vertical;
   }
   .cust-field input:focus,.cust-field textarea:focus{outline:none;border-color:var(--blue);background:var(--white);}
   .cust-err{color:var(--red);font-size:11px;min-height:13px;}
@@ -1511,7 +1521,7 @@
   .extra-froz-qty{ width:90px; text-align:right; }
   .extra-froz-unit{ width:72px; }
   .extra-froz-price{ width:84px; text-align:right; }
-  .extra-row input, .extra-row select{font-family:'Inter',sans-serif;font-size:13px;border:1px solid var(--paper-line);border-radius:var(--radius);padding:6px 8px;background:var(--paper);color:var(--ink);min-width:0;}
+  .extra-row input, .extra-row select{font-family:'Inter',sans-serif;font-size:13px;border:1px solid var(--paper-line);border-radius:var(--radius);padding:6px 8px;background:var(--white);color:var(--ink);min-width:0;}
   .extra-row input:focus, .extra-row select:focus{outline:none;border-color:var(--blue);}
   .extra-sum{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--ink);text-align:right;white-space:nowrap;min-width:80px;}
   @media (max-width:640px){
@@ -1669,7 +1679,7 @@
   .applies-dd.open{position:relative;z-index:45;}
   .catalog-table input, .catalog-table select{
     font-family:'Inter',sans-serif;font-size:13px;border:1px solid var(--paper-line);border-radius:var(--radius);
-    padding:6px 7px;background:var(--paper);color:var(--ink);width:100%;box-sizing:border-box;max-width:100%;
+    padding:6px 7px;background:var(--white);color:var(--ink);width:100%;box-sizing:border-box;max-width:100%;
   }
   .catalog-table select{font-family:'JetBrains Mono',monospace;font-size:12px;}
   .catalog-table input:focus,.catalog-table select:focus{outline:none;border-color:var(--blue);}
@@ -1778,7 +1788,7 @@
   }
   .preview-bar{
     display:flex;align-items:center;justify-content:space-between;gap:12px;
-    padding:10px 14px;background:var(--ink);color:#fff;flex:0 0 auto;
+    padding:10px 14px;background:var(--ink);color:var(--na-akcente);flex:0 0 auto;
     padding-top:max(10px, env(safe-area-inset-top));
   }
   .preview-title{font-family:'Space Grotesk','Inter',sans-serif;font-weight:600;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
@@ -1882,7 +1892,7 @@
 
   .auth-field{display:flex;flex-direction:column;gap:6px;margin-bottom:14px;}
   .auth-field label{font-family:'JetBrains Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:var(--ink-soft);}
-  .auth-field input{font-family:'Inter',sans-serif;font-size:14px;border:1px solid var(--paper-line);border-radius:var(--radius);padding:10px 12px;background:var(--paper);color:var(--ink);}
+  .auth-field input{font-family:'Inter',sans-serif;font-size:14px;border:1px solid var(--paper-line);border-radius:var(--radius);padding:10px 12px;background:var(--white);color:var(--ink);}
   .auth-field input:focus{outline:none;border-color:var(--blue);}
   .auth-actions{display:flex;gap:8px;margin-top:4px;}
   .auth-actions .btn{flex:1;}
@@ -1936,7 +1946,7 @@
   .theme-btns{display:flex;gap:4px;}
   .theme-btns button{flex:1;padding:6px 4px;border:1px solid var(--sb-line);background:transparent;color:var(--sb-text);border-radius:var(--radius);cursor:pointer;font-size:12px;font-family:'Inter',sans-serif;}
   .theme-btns button:hover{border-color:var(--orange);}
-  .theme-btns button.active{background:var(--orange);color:#fff;border-color:var(--orange);}
+  .theme-btns button.active{background:var(--orange);color:var(--na-akcente);border-color:var(--orange);}
   .sync-status{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--sb-muted);display:flex;align-items:center;gap:6px;margin-bottom:8px;}
   .sync-dot{width:7px;height:7px;border-radius:50%;background:var(--sb-muted);flex:0 0 auto;}
   .sync-dot.saved{background:var(--green);}
@@ -2007,7 +2017,7 @@
   .support-text{font-size:13px;line-height:1.6;color:var(--ink-soft);margin-bottom:16px;}
   .support-modal textarea{
     width:100%;min-height:130px;resize:vertical;
-    background:var(--paper);color:var(--ink);
+    background:var(--white);color:var(--ink);
     border:1px solid var(--paper-line);border-radius:var(--radius);
     padding:11px 12px;font-family:inherit;font-size:14px;line-height:1.5;
   }
@@ -2101,8 +2111,8 @@
     padding:3px 6px;border-radius:var(--radius);flex-shrink:0;
   }
   .plan-tag.free{background:var(--sb-surface);color:var(--sb-text);}
-  .plan-tag.trial{background:var(--orange);color:#fff;}
-  .plan-tag.pro{background:var(--green);color:#fff;}
+  .plan-tag.trial{background:var(--orange);color:var(--na-akcente);}
+  .plan-tag.pro{background:var(--green);color:var(--na-akcente);}
 
   /* Выбор срока подписки: месяц или год. */
   .plan-period{display:flex;justify-content:center;gap:8px;margin:0 0 18px;flex-wrap:wrap;}
@@ -2113,7 +2123,7 @@
     font-size:14px;font-weight:600;cursor:pointer;line-height:1.2;
   }
   .plan-period-btn:hover{border-color:var(--orange);color:var(--ink);}
-  .plan-period-btn.on{background:var(--orange);border-color:var(--orange);color:#fff;}
+  .plan-period-btn.on{background:var(--orange);border-color:var(--orange);color:var(--na-akcente);}
   .plan-period-gift{font-size:11px;font-weight:500;opacity:.85;}
 
   /* ---------- ТАРИФ: окно выбора ---------- */
@@ -2149,7 +2159,7 @@
     background:linear-gradient(90deg,
       color-mix(in srgb, var(--orange) 85%, transparent),
       color-mix(in srgb, var(--orange) 62%, transparent));
-    color:#fff;
+    color:var(--na-akcente);
     font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;
     text-transform:uppercase;letter-spacing:0.14em;text-align:center;
     padding:7px 8px;
@@ -2622,7 +2632,7 @@
   .pd-sub{margin-top:3px;font-size:12px;color:var(--ink-soft);line-height:1.45;}
   .pd-steps{display:flex;align-items:center;gap:8px;padding:7px 16px;font-size:12px;color:var(--ink-soft);border-bottom:1px solid var(--paper-line);}
   .pd-step{padding:4px 10px;border:1px solid var(--paper-line);border-radius:7px;background:var(--white);color:var(--ink);font-size:12px;cursor:pointer;}
-  .pd-step.on{background:var(--orange);border-color:var(--orange);color:#fff;}
+  .pd-step.on{background:var(--orange);border-color:var(--orange);color:var(--na-akcente);}
   .pd-canvas{padding:10px;overflow:auto;flex:1;}
   .pd-svg{display:block;width:100%;height:auto;touch-action:none;color:var(--ink);}
   .pd-svg .pd-dot{fill:var(--ink-soft);opacity:.35;cursor:pointer;}
@@ -2647,7 +2657,7 @@
   /* подпись стены, которую дорисовал сам контур */
   .pd-lbl-g.closing .pd-lbl-bg{stroke-dasharray:4 3;fill:var(--paper);}
   .pd-lbl-g.closing .pd-lbl{opacity:.7;}
-  .pd-lbl-g.on .pd-lbl{fill:#fff;}
+  .pd-lbl-g.on .pd-lbl{fill:var(--na-akcente);}
   .pd-svg .pd-lbl-tick{stroke:var(--ink-soft);stroke-width:1;opacity:.4;}
   /* размерная линия по-чертёжному: выноски, сама линия, засечки */
   .pd-svg .pd-dim-ext{stroke:var(--ink-soft);stroke-width:1;opacity:.45;}
@@ -2719,7 +2729,7 @@
     cursor:pointer;-webkit-tap-highlight-color:transparent;}
   .schyoty button:active{background:var(--paper);}
   .schyoty button.ravno{background:var(--orange);border-color:var(--orange);
-    color:#fff;flex:1.3 1 0;font-weight:600;}
+    color:var(--na-akcente);flex:1.3 1 0;font-weight:600;}
   .schyoty button.styor{font-size:16px;}
   .status-menu{display:none;position:fixed;z-index:5300;min-width:190px;padding:4px;
     background:var(--white);border:1px solid var(--paper-line);border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.25);}
@@ -2956,7 +2966,7 @@
     border-radius:8px;background:var(--white);color:var(--ink);
     font-family:'JetBrains Mono',monospace;font-size:14px;padding:11px 6px;cursor:pointer;}
   .otm-bystro button:hover{border-color:var(--orange);}
-  .otm-bystro button.on{background:var(--orange);border-color:var(--orange);color:#fff;font-weight:600;}
+  .otm-bystro button.on{background:var(--orange);border-color:var(--orange);color:var(--na-akcente);font-weight:600;}
   .otm-kogda{font-size:11px;color:var(--ink-soft);margin-top:10px;}
   /* ИСКЛЮЧЁННАЯ ПОЗИЦИЯ. Зачёркнута — работу отменили; это НЕ то же,
      что выполненная (та просто приглушена). Два разных состояния должны
@@ -3715,7 +3725,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-04-183';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-04-184';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -4533,7 +4543,16 @@ const OKNA_ZAKRYVAEMYE = [
   ['dopPodpisOverlay', ()=> dopPodpisClose()],
   ['planOverlay',      ()=> closePlans()],
   ['supportOverlay',   ()=> closeSupport()],
-  ['podelitOverlay',   ()=> podelitClose()]
+  ['podelitOverlay',   ()=> podelitClose()],
+  // Просмотр документа и отметка готовности жили мимо общего правила:
+  // закрывались только своей кнопкой. Окнами решения они не являются —
+  // закрыл случайно, ничего не потерял: документ собирается заново
+  // мгновенно, процент вводится одним числом. Значит закрываются как
+  // все три способами. Найдено 4 сентября 2026 сверкой приложения
+  // с правилами, а не жалобой: правило завели 1 сентября, а эти два
+  // окна к списку тогда не добавили — оба заведены позже.
+  ['previewOverlay',   ()=> hidePreview()],
+  ['otmOverlay',       ()=> otmClose()]
 ];
 
 function oknoOtkryto(id){
@@ -22088,7 +22107,7 @@ function renderSkalkView(){
           </select></div>
       </div>
       ${skStenyHtml()}
-      ${skItogListy()}`;
+      <div id="skItog">${skItogListy()}</div>`;
   } else if(r === 'bloki'){
     telo = `
       <div class="cust-grid">
@@ -22103,7 +22122,7 @@ function renderSkalkView(){
         ${skPole('bloki','stena','Толщина стены, мм', {placeholder:'пусто — в один блок'})}
       </div>
       ${skProyomyHtml('bloki', false)}
-      ${skItogBloki()}`;
+      <div id="skItog">${skItogBloki()}</div>`;
   } else {
     telo = `
       <div class="cust-grid">
@@ -22115,7 +22134,7 @@ function renderSkalkView(){
         ${skPole('smes','faktTolsch','Кладём слоем, мм')}
       </div>
       <div class="mat-note">Все три числа — с мешка и из вашей работы. Ничего не подставляем: у каждого производителя расход свой.</div>
-      ${skItogSmes()}`;
+      <div id="skItog">${skItogSmes()}</div>`;
   }
   return `
     <div class="tc-wrap sk-wrap">
@@ -22137,6 +22156,27 @@ function renderSkalkView(){
     </div>`;
 }
 
+// ПЕРЕСЧЁТ БЕЗ ПЕРЕРИСОВКИ ПОЛЕЙ.
+//
+// Раньше калькулятор пересчитывался по уходу из поля и перерисовывал
+// весь вид. С телефона это незаметно, а с компьютера ломало переход
+// между полями: щелчок по соседнему полю сперва выводит из текущего,
+// вид перерисовывается, поле под курсором исчезает вместе со старой
+// разметкой — и щелчок попадает в пустоту. Приходилось нажимать дважды.
+// Владелец 4 сентября 2026: «первое нажатие просто сбрасывает
+// фокусировку».
+//
+// Теперь как в смете: поля не трогаем вовсе, обновляем только итог.
+// Тогда и считать можно на каждый знак — поле живёт своей жизнью,
+// отнимать у него фокус нечем.
+function skItogObnovit(){
+  const box = document.getElementById('skItog');
+  if(!box) return;
+  box.innerHTML = SK.razdel === 'listy' ? skItogListy()
+                : SK.razdel === 'bloki' ? skItogBloki()
+                : skItogSmes();
+}
+
 function skAttach(){
   const main = document.getElementById('main');
   main.querySelectorAll('[data-sk-razdel]').forEach(el=>{
@@ -22147,13 +22187,10 @@ function skAttach(){
     const prinyat = ()=>{
       SK[razdel][klyuch] = el.value;
       skZapomnit(razdel + '.' + klyuch, el.value);
-      render();
+      skItogObnovit();
     };
-    // Пересчитываем по уходу из поля, а не на каждую цифру: перерисовка
-    // на каждый знак отняла бы фокус — тем же способом, каким это
-    // случилось с окнами и дверями (правка 3 сентября 2026).
+    el.addEventListener('input', prinyat);
     el.addEventListener('change', prinyat);
-    el.addEventListener('blur', prinyat);
   });
   // Куда писать проём: в стену листового или в общий список раздела.
   const proyomySpiska = (adr)=> adr.indexOf('st') === 0
@@ -22164,10 +22201,10 @@ function skAttach(){
     const [i, pole] = el.getAttribute('data-sk-st').split('|');
     const prinyat = ()=>{
       const st = SK.listy.steny[parseInt(i)];
-      if(st){ st[pole] = el.value; render(); }
+      if(st){ st[pole] = el.value; skItogObnovit(); }
     };
+    el.addEventListener('input', prinyat);
     el.addEventListener('change', prinyat);
-    el.addEventListener('blur', prinyat);
   });
   main.querySelectorAll('[data-sk-st-add]').forEach(el=>{
     el.onclick = ()=>{ SK.listy.steny.push({ imya:'', dlina:'', vysota:'', proyomy:[] }); render(); };
@@ -22184,10 +22221,10 @@ function skAttach(){
     const [adr, i, pole] = el.getAttribute('data-sk-pr').split('|');
     const prinyat = ()=>{
       const o = proyomySpiska(adr)[parseInt(i)];
-      if(o){ o[pole] = el.value; render(); }
+      if(o){ o[pole] = el.value; skItogObnovit(); }
     };
+    el.addEventListener('input', prinyat);
     el.addEventListener('change', prinyat);
-    el.addEventListener('blur', prinyat);
   });
   main.querySelectorAll('[data-sk-pr-add]').forEach(el=>{
     el.onclick = ()=>{
