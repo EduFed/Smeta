@@ -3901,7 +3901,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-05-221';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-05-222';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -12933,9 +12933,28 @@ function razmeryKontura(p, sr){
   // на первое, что помещается на холсте. Тесно, но со связью.
   // (5 сентября 2026, после вопроса владельца «почему правило не
   // работает».)
+  // Насколько плохо место: сколько чужих чисел накрыто и сколько линий
+  // перечёркнуто. Нужно для второго захода — там выбираем не первое
+  // попавшееся, а наименее тесное.
+  const skolkoMeshaet = (tx, ty, w, h, a1, a2, b1, b2)=>{
+    let n = 0;
+    vnutriZanyato.forEach(z=>{
+      if(Math.abs(z.x - tx) < (z.w + w)/2 + 3 && Math.abs(z.y - ty) < (z.h + h)/2 + 3) n++;
+      if(korobkaRezhet(z.x, z.y, z.w, z.h, a1, a2)) n++;
+      if(korobkaRezhet(z.x, z.y, z.w, z.h, b1, b2)) n++;
+    });
+    linii.forEach(([a,b])=>{
+      if(korobkaRezhet(tx, ty, w, h, a, b)) n++;
+      if(otrezkiPeresek(a1, a2, a, b)) n++;
+      if(otrezkiPeresek(b1, b2, a, b)) n++;
+    });
+    return n;
+  };
+
   const polka = (x0, y0, txt, w, h, lyuboe)=>{
     const kx = x0 <= sr.W/2 ? 1 : -1, ky = y0 <= sr.H/2 ? 1 : -1;
     const storony = [[kx,ky],[kx,-ky],[-kx,ky],[-kx,-ky]];
+    let luchshee = null;          // для второго захода: наименее тесное
     for(const [dx,dy] of storony){
       // Длин перебираем много и до самого края холста: снаружи контура
       // места вдоволь, и лучше увести число подальше, чем оставить его
@@ -12947,7 +12966,15 @@ function razmeryKontura(p, sr){
         const tx = (lx + px)/2, ty = ly - h/2 - 2;   // число лежит НА полке
         if(tx - w/2 < 2 || tx + w/2 > sr.W - 2) continue;
         if(ty - h/2 < 2 || ty + h/2 > sr.H - 2) continue;
-        if(!lyuboe){
+        if(lyuboe){
+          // ВТОРОЙ ЗАХОД: чистого места нет нигде. Берём не первое
+          // попавшееся, а то, где мешаем меньше всего — иначе полка
+          // ложится ровно на соседнее число.
+          const pl = skolkoMeshaet(tx, ty, w, h, [x0,y0],[lx,ly], [lx,ly],[px,ly]);
+          if(!luchshee || pl < luchshee.pl) luchshee = { tx, ty, lx, ly, px, pl };
+          continue;
+        }
+        {
           if(!svobodno(tx, ty, w, h)) continue;
           // Сама выноска тоже ничего не должна пересекать: наклонная идёт
           // от стены через весь чертёж, и пересечь ей есть что.
@@ -12963,7 +12990,15 @@ function razmeryKontura(p, sr){
           `<line x1="${lx}" y1="${ly}" x2="${px}" y2="${ly}" class="${kl.ext}"/>` };
       }
     }
-    // чистого места не нашлось — берём любое, лишь бы на холсте
+    if(lyuboe && luchshee){
+      const { tx, ty, lx, ly, px } = luchshee;
+      zanyat(tx, ty, w, h);
+      dobavLiniyu([x0,y0],[lx,ly]); dobavLiniyu([lx,ly],[px,ly]);
+      return { tx, ty, liniya:
+        `<line x1="${x0}" y1="${y0}" x2="${lx}" y2="${ly}" class="${kl.ext}"/>` +
+        `<line x1="${lx}" y1="${ly}" x2="${px}" y2="${ly}" class="${kl.ext}"/>` };
+    }
+    // чистого места не нашлось — идём вторым заходом
     return lyuboe ? null : polka(x0, y0, txt, w, h, true);
   };
 
