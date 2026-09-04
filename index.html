@@ -138,6 +138,38 @@
        Было семнадцать разных: .12 и .14 у соседних списков, .25 и .28
        у соседних полос, .3 и .38 — и ни одна разница не читается.
        Свели к четырём высотам плюс два особых случая (4 сентября 2026). */
+    /* ПОДЛОЖКА ПОД ОКНОМ. Две глубины, один оттенок. Было три оттенка
+       на три места: синеватый, почти чёрный и ещё один синеватый —
+       разница случайная, никто её не выбирал.
+       Глубины же две настоящие: окно требует решения и гасит лист
+       сильнее, выдвижная панель и всплывающий список — легче. */
+    --podlozhka-okna:rgba(15,20,24,.72);
+    --podlozhka:rgba(15,20,24,.45);
+
+    /* ПРОЗРАЧНЫЙ АКЦЕНТ — подложка под предупреждением, водяной знак,
+       выделенная строка. Берётся от самого акцента, а не пишется
+       числом: поменяется оранжевый — поменяется и она. Было четыре
+       крепости (.11, .12, .14, .20) — разницы между ними не видит никто.
+       Двадцатая осталась своей: она в наборе просмотра снимка,
+       на чёрном, и там своя мера. */
+    --akcent-fon:color-mix(in srgb, var(--orange) 12%, transparent);
+
+    /* ОПАСНОЕ ДЕЙСТВИЕ под курсором. Тоже от палитры: стояло
+       rgba(217,83,79,.1) — красный, похожий на наш, но не наш. */
+    --opasno-fon:color-mix(in srgb, var(--red) 10%, transparent);
+
+    /* ПРОСМОТР ДОКУМЕНТА — свой набор из трёх. Экран нарочно подделан
+       под просмотрщик PDF: серое поле, белый лист, светлая подпись.
+       Цвета не из палитры и не должны быть из неё — они изображают
+       чужую программу, а не наше приложение (это то самое исключение,
+       что записано в правиле про цвета). Имена нужны, чтобы исключение
+       было видно как исключение. */
+    --vhod-ramka:#000000;   /* волосяная рамка карточки входа — плакатный чёрный, нарочно */
+
+    --pdf-fon:#525659;
+    --pdf-list:#FFFFFF;
+    --pdf-tekst:#E6EAED;
+
     --ten-knopka:0 2px 8px rgba(0,0,0,.18);    /* кнопка, ползунок — чуть над листом */
     --ten-spisok:0 6px 18px rgba(0,0,0,.14);   /* выпадающий список, меню, поле в фокусе */
     --ten-vsplyv:0 10px 30px rgba(0,0,0,.25);  /* всплывающая полоса, тост, крупное меню */
@@ -387,7 +419,7 @@
   /* заголовок раздела «Работаю в бригаде» в списке проектов */
   .proj-group{
     display:block;padding:14px 10px 6px;margin-top:6px;
-    border-top:1px solid rgba(255,255,255,.10);
+    border-top:1px solid var(--sb-line);
     font-size:11px;letter-spacing:.06em;text-transform:uppercase;
     color:var(--sb-muted);
   }
@@ -487,7 +519,7 @@
   .nav-toggle:active{ transform:scale(0.94); }
   .nav-toggle:hover{ background:var(--sb-surface); }
   .nav-backdrop{
-    position:fixed; inset:0; background:rgba(20,28,33,.45);
+    position:fixed; inset:0; background:var(--podlozhka);
     opacity:0; pointer-events:none; transition:opacity .25s ease; z-index:900;
   }
   body.nav-open .nav-backdrop{ opacity:1; pointer-events:auto; }
@@ -1674,7 +1706,7 @@
     .smeta-wrap{position:relative;}
     .smeta-wrap::after{
       content:'';position:absolute;top:60px;bottom:0;right:0;width:24px;
-      background:linear-gradient(to right, transparent, rgba(0,0,0,.08));
+      background:linear-gradient(to right, transparent, color-mix(in srgb, var(--ink) 8%, transparent));
       pointer-events:none;
     }
   }
@@ -1833,24 +1865,24 @@
   .preview-title{font-family:'Space Grotesk','Inter',sans-serif;font-weight:600;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   .preview-actions{display:flex;gap:8px;flex-shrink:0;}
   .preview-actions .btn{font-size:12px;padding:7px 10px;}
-  .preview-frame{flex:1 1 auto;width:100%;border:none;background:#525659;}
+  .preview-frame{flex:1 1 auto;width:100%;border:none;background:var(--pdf-fon);}
   /* постраничный просмотр PDF (рисуем сами через pdf.js — работает и на Android) */
   .preview-pages{
     flex:1 1 auto;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;
-    background:#525659;padding:12px 8px 24px;
+    background:var(--pdf-fon);padding:12px 8px 24px;
   }
   .preview-pages canvas{
     display:block;width:100%;height:100%;
   }
   .pdf-page{
     display:block;margin:0 auto 12px;width:100%;max-width:900px;
-    background:#fff;box-shadow:var(--ten-bumaga);
+    background:var(--pdf-list);box-shadow:var(--ten-bumaga);
   }
   .preview-status{
-    color:#E6EAED;font-family:'JetBrains Mono',monospace;font-size:12px;
+    color:var(--pdf-tekst);font-family:'JetBrains Mono',monospace;font-size:12px;
     text-align:center;padding:28px 12px;
   }
-  .preview-ios{flex:1 1 auto;display:flex;align-items:center;justify-content:center;background:#525659;padding:24px;}
+  .preview-ios{flex:1 1 auto;display:flex;align-items:center;justify-content:center;background:var(--pdf-fon);padding:24px;}
   .preview-ios-card{
     background:var(--white);border-radius:var(--radius);padding:24px;max-width:380px;width:100%;
     display:flex;flex-direction:column;gap:12px;text-align:center;
@@ -1871,7 +1903,7 @@
     padding-bottom:calc(20px + env(safe-area-inset-bottom, 0px));
   }
   .auth-card{
-    background:var(--white);border:1px solid #000;border-radius:var(--radius);
+    background:var(--white);border:1px solid var(--vhod-ramka);border-radius:var(--radius);
     max-width:360px;width:100%;padding:30px 28px;
     margin:auto;   /* центрирует, пока есть место; дальше — прокрутка */
   }
@@ -2000,7 +2032,7 @@
   /* ---------- ВОДЯНОЙ ЗНАК ПРИ ПЕЧАТИ (бесплатный тариф) ---------- */
   .pending-badge{
     display:flex;align-items:flex-start;gap:7px;
-    background:rgba(232,98,44,.14);border:1px solid var(--orange);border-radius:var(--radius);
+    background:var(--akcent-fon);border:1px solid var(--orange);border-radius:var(--radius);
     padding:8px 10px;margin-bottom:10px;
     font-family:'Inter',sans-serif;font-size:11px;line-height:1.4;color:var(--sb-text);
   }
@@ -2092,7 +2124,7 @@
       position:absolute; top:45%; left:50%;
       transform:translate(-50%,-50%) rotate(-28deg);
       font-family:'Space Grotesk','Inter',sans-serif; font-weight:700;
-      font-size:44px; color:rgba(232,98,44,.11);
+      font-size:44px; color:var(--akcent-fon);
       white-space:nowrap; letter-spacing:1px;
     }
     body.free-plan .print-wm-foot{
@@ -2268,7 +2300,7 @@
      обычными элементами страницы, которые слушаются нашей темы.
      Сами <select> остаются в разметке: значения и обработчики не меняются. */
   .sel-backdrop{
-    position:fixed;inset:0;z-index:4000;background:rgba(10,14,17,.45);
+    position:fixed;inset:0;z-index:4000;background:var(--podlozhka);
   }
   .sel-pop{
     position:fixed;z-index:4001;
@@ -2463,7 +2495,7 @@
   .support-overlay, .pd-overlay{
     display:none; position:fixed; inset:0;
     align-items:center; justify-content:center;
-    background:rgba(15,20,24,.72);
+    background:var(--podlozhka-okna);
     padding:20px 20px calc(20px + env(safe-area-inset-bottom, 0px));
     overflow-y:auto; -webkit-overflow-scrolling:touch;
     /* ОБЫЧНОЕ ОКНО. Выше него только окна решения (2800) и просмотр
@@ -2503,7 +2535,7 @@
   .refcfg-pct{margin-top:3px;font-size:12px;color:var(--ink-soft);}
   .refcfg-price{flex-shrink:0;font-family:'Space Grotesk','Inter',sans-serif;font-size:24px;font-weight:700;color:var(--ink);white-space:nowrap;}
   .refcfg-price small{font-size:13px;font-weight:600;color:var(--ink-soft);}
-  .refcfg-warn{margin-bottom:12px;padding:9px 12px;border-radius:8px;background:rgba(232,98,44,.12);font-size:12px;line-height:1.5;color:var(--ink);}
+  .refcfg-warn{margin-bottom:12px;padding:9px 12px;border-radius:8px;background:var(--akcent-fon);font-size:12px;line-height:1.5;color:var(--ink);}
   .refcfg-add{width:100%;}
 
   @media (max-width:680px){
@@ -2568,7 +2600,7 @@
   .poly-no{font-size:12px;color:var(--ink-soft);text-align:center;}
   .poly-in{width:100%;padding:7px 9px;border:1px solid var(--paper-line);border-radius:7px;background:var(--white);color:var(--ink);font-size:14px;}
   .poly-deg{font-size:12px;color:var(--ink-soft);}
-  .poly-warn{margin:12px 0;padding:11px 13px;border-radius:8px;background:rgba(232,98,44,.12);font-size:13px;line-height:1.5;color:var(--ink);}
+  .poly-warn{margin:12px 0;padding:11px 13px;border-radius:8px;background:var(--akcent-fon);font-size:13px;line-height:1.5;color:var(--ink);}
   .poly-close-btn{display:block;margin-top:10px;}
   .room-plan{display:block;margin:0 auto;max-height:300px;color:var(--ink);}
   .room-plan .plan-poly{fill:currentColor;fill-opacity:.07;stroke:currentColor;stroke-width:2;stroke-linejoin:round;}
@@ -2828,7 +2860,7 @@
   .proj-more:hover{opacity:1 !important;color:var(--white);background:var(--sb-line);}
   @media (hover: hover) and (pointer: fine){ .proj-more{opacity:0;} }
   .status-menu button.danger{color:var(--red);}
-  .status-menu button.danger:hover{background:rgba(217,83,79,.1);}
+  .status-menu button.danger:hover{background:var(--opasno-fon);}
 
   /* метка проекта — точка перед названием. Полоска слева занята
      под отметку открытого проекта, две полоски там сливались */
@@ -2843,7 +2875,7 @@
   .arch-info:hover b{color:var(--orange);}
   .arch-note{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;
     max-width:820px;margin-bottom:18px;padding:11px 14px;border-radius:var(--radius);
-    background:rgba(232,98,44,.12);font-size:13px;color:var(--ink);line-height:1.45;}
+    background:var(--akcent-fon);font-size:13px;color:var(--ink);line-height:1.45;}
 
   /* материалы */
   /* Шапка прилипает к верху и перекрывает то, что идёт сразу под ней.
@@ -3764,7 +3796,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-04-187';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-04-189';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -17498,7 +17530,14 @@ function docBtns(type, fmt2, fmt2label){
     : '';
   return `
     <div class="docs-btns">
-      <button class="btn btn-primary btn-sm" data-doc="${type}|pdf|preview">Просмотр</button>
+      <!-- «Просмотр» — такая же кнопка, как соседние, и залита не была бы,
+           если бы правило проверили при её появлении. В строке пять
+           равных возможностей: посмотреть, отправить PDF, отправить
+           таблицу, скачать PDF, скачать таблицу. Оранжевая заливка
+           означает «вот главное действие» — а тут главного нет, и глаз
+           уводило к самому безобидному. Владелец 4 сентября 2026:
+           «ещё оранжевая кнопка в документах, просмотр». -->
+      <button class="btn btn-outline btn-sm" data-doc="${type}|pdf|preview">Просмотр</button>
       <span class="docs-group">
         <span class="docs-icon" title="Поделиться">${ZN_SAMOLYOT}</span>
         <button class="btn btn-outline btn-sm" data-doc="${type}|pdf|share">PDF</button>
