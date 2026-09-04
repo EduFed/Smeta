@@ -3613,7 +3613,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-04-168';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-04-169';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -21389,6 +21389,29 @@ function skListyRaschet(d){
   const vDyre = (x1,y1,x2,y2)=> dyry.some(o=>
     x1 >= o.x && x2 <= o.x + o.w && y1 >= o.y && y2 <= o.y + o.h);
 
+  // ЧТО ВЫРЕЗАЛИ ИЗ ЛИСТА ПОД ПРОЁМ. Владелец 4 сентября 2026:
+  // «вырезанное не может быть потерянным, эти обрезки могут пойти наверх».
+  //
+  // И он прав: полоса, выпиленная под дверь, ложится над этой же дверью.
+  // Сначала я считал вырезанное потерянным — и «с докладкой» выходило
+  // больше листов, чем на деле. Вторая ошибка в ту же сторону, что
+  // и с поворотом обрезка: обе занижали пользу от аккуратной резки.
+  //
+  // Берём НАИБОЛЬШИЙ прямоугольник пересечения клетки с проёмом.
+  // Если проёмов в одной клетке несколько, остальные не считаем:
+  // мелкие куски всё равно в дело не идут, а обещать их — врать
+  // в выгодную сторону, что хуже.
+  const vyrezIzKletki = (x1,y1,x2,y2)=>{
+    let luchshiy = null;
+    dyry.forEach(o=>{
+      const ix1 = Math.max(x1, o.x), ix2 = Math.min(x2, o.x + o.w);
+      const iy1 = Math.max(y1, o.y), iy2 = Math.min(y2, o.y + o.h);
+      const w = ix2 - ix1, h = iy2 - iy1;
+      if(w > 0 && h > 0 && (!luchshiy || w*h > luchshiy.w*luchshiy.h)) luchshiy = { w:w, h:h };
+    });
+    return luchshiy;
+  };
+
   const kuski = [];      // что реально нужно вырезать, размерами
   const setka = [];      // для картинки
   const kolonok = Math.ceil(dlina / w);
@@ -21401,7 +21424,7 @@ function skListyRaschet(d){
       if(kw <= 0 || kh <= 0) continue;
       const pusto = vDyre(x1, y1, x2, y2);
       setka.push({ x:x1, y:y1, w:kw, h:kh, pusto: pusto });
-      if(!pusto) kuski.push({ w: kw, h: kh });
+      if(!pusto) kuski.push({ w: kw, h: kh, vyrez: vyrezIzKletki(x1, y1, x2, y2) });
     }
   }
 
@@ -21444,6 +21467,12 @@ function skListyRaschet(d){
     const kh = povernut ? k.w : k.h;
     if(o.w - kw > 0) ostatki.push({ w: o.w - kw, h: o.h });
     if(o.h - kh > 0) ostatki.push({ w: kw, h: o.h - kh });
+    // Полоса, выпиленная под проём, возвращается в запас: она ложится
+    // над этим же проёмом или в другое узкое место. Мельче 100 мм
+    // по стороне не берём — такое в дело не идёт.
+    if(k.vyrez && k.vyrez.w >= 100 && k.vyrez.h >= 100){
+      ostatki.push({ w: k.vyrez.w, h: k.vyrez.h });
+    }
   });
 
   const sloyov = Math.max(1, Math.round(num(d.sloyov) || 1));
@@ -21685,7 +21714,7 @@ function skItogListy(){
       <div class="mat-note">Приложение не знает, как режут на вашем объекте, поэтому не выбирает за вас. Разница между числами — цена аккуратности бригады.</div>
     </div>
     ${skListyKartinka(r)}
-    <div class="mat-note">Серым — места, целиком попавшие в проём: там лист не нужен. Оранжевым пунктиром — сами проёмы. Задетый проёмом лист расходуется целиком: вырезанное в дело не идёт.</div>
+    <div class="mat-note">Серым — места, целиком попавшие в проём: там лист не нужен. Оранжевым пунктиром — сами проёмы. Лист, задетый проёмом, берётся целиком, но выпиленная полоса не пропадает: в счёте «с докладкой» она возвращается в запас и может пойти над этим же проёмом.</div>
     ${skSpisokKuskov('Подрезка — что резать', r.podrezka,
         'Размеры кусков, которые придётся отрезать от листа. Целые листы сюда не идут.')}
     ${skSpisokKuskov('Остатки после докладки', r.ostatki,
