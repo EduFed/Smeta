@@ -2880,6 +2880,23 @@
      что выполненная (та просто приглушена). Два разных состояния должны
      и выглядеть по-разному, иначе их начнут путать в разговоре
      с заказчиком. */
+  /* Строительный калькулятор */
+  .sk-vkladki{display:flex;gap:6px;margin:16px 0 4px;flex-wrap:wrap;}
+  .sk-vkl{border:1px solid var(--paper-line);border-radius:9px;background:transparent;
+    color:var(--ink-soft);font-size:13px;padding:9px 14px;cursor:pointer;}
+  .sk-vkl.on{background:var(--orange);border-color:var(--orange);color:#fff;font-weight:600;}
+  .sk-podzag{font-size:11px;color:var(--ink-soft);text-transform:uppercase;
+    letter-spacing:.04em;margin:16px 0 6px;}
+  .sk-proyom{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:6px;}
+  .sk-proyom .ownw-inp{flex:1 1 110px;min-width:0;}
+  .sk-proyom .sk-uzko{flex:0 0 70px;}
+  .sk-itog{margin-top:18px;padding-top:14px;border-top:1px solid var(--paper-line);}
+  .sk-itog-imya{font-weight:600;margin-bottom:8px;}
+  .sk-chisla{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:8px;}
+  .sk-chisla > div{flex:1 1 180px;border:1px solid var(--paper-line);border-radius:10px;padding:10px 12px;}
+  .sk-chisla span{display:block;font-size:11px;color:var(--ink-soft);
+    text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px;}
+  .sk-chisla b{font-family:'JetBrains Mono',monospace;font-size:19px;color:var(--orange);}
   .sel-work.pozicia-isklyuchena .sel-work-name{text-decoration:line-through;opacity:.55;}
   .sel-work.pozicia-isklyuchena .wsum{text-decoration:line-through;opacity:.55;}
   .isk-detali{margin:12px 0;border:1px solid var(--paper-line);border-radius:10px;padding:10px 12px;}
@@ -3120,6 +3137,7 @@
       </button>
       <button class="btn btn-ghost" id="settingsBtn">⚙ Настройки</button>
       <button class="btn btn-ghost" id="tcOpenBtn">▦ Раскладка плитки</button>
+      <button class="btn btn-ghost" id="skOpenBtn">🧮 Строительный калькулятор</button>
       <button class="btn btn-primary" id="newProjectBtn">+ Новый проект</button>
     </div>
 
@@ -3589,7 +3607,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-04-163';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-04-164';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -15815,6 +15833,8 @@ function render(){
     main.innerHTML = renderSettingsView();
   } else if(state.view === 'tiles'){
     main.innerHTML = renderTilesView();
+  } else if(state.view === 'skalk'){
+    main.innerHTML = renderSkalkView();
   } else if(state.view === 'executor'){
     main.innerHTML = renderExecutorView();
   } else if(state.view === 'ref'){
@@ -18893,6 +18913,13 @@ function attachHandlers(){
     if(window.innerWidth < 1024) setNav(false);
   };
   if(state.view==='tiles') tcAttach();
+  if(state.view==='skalk') skAttach();
+  const skBtn = document.getElementById('skOpenBtn');
+  if(skBtn) skBtn.onclick = ()=>{
+    state.view = 'skalk';
+    render();
+    if(window.innerWidth < 1024) setNav(false);
+  };
 
   document.querySelectorAll('[data-go]').forEach(el=>{
     el.onclick = ()=>{ state.view = el.getAttribute('data-go'); render(); };
@@ -21277,6 +21304,422 @@ let tcPrevView = 'project';   // куда вернуться по кнопке �
 let tcSelRect  = null;        // выделенная на схеме плитка
 
 // экран рендерится в основной области (как «Настройки»), а не поверх всего
+// ============================================================
+//  СТРОИТЕЛЬНЫЙ КАЛЬКУЛЯТОР (задача 2026-09-03-05)
+// ============================================================
+//
+// Владелец 3 сентября 2026: «может, создать отдельной кнопкой
+// строительный калькулятор. Расчёт листового материала (гипсокартон
+// и подобные), расчёт кирпичей и блоков, расход плиточного клея
+// и подобных смесей».
+//
+// РАБОТАЕТ БЕЗ ПРОЕКТА. Прораб стоит в магазине и считает — открытого
+// объекта для этого требовать нельзя (решение владельца 3 сентября).
+//
+// СЧИТАЮЩАЯ ЧАСТЬ НИЧЕГО НЕ ЗНАЕТ ОБ ИСТОЧНИКЕ ЧИСЕЛ. Функции ниже
+// принимают числа и возвращают числа — откуда они пришли (руками,
+// из памяти прошлого ввода, из будущего справочника, из проекта),
+// их не касается. Владелец дважды за день сказал «пока»: и про
+// отдельность от проектов, и про ручной ввод. Оба решения временные,
+// и связывание не должно обернуться переписыванием.
+//
+// ЗНАЧЕНИЙ ПО УМОЛЧАНИЮ НЕТ НИ ОДНОГО. Расход смеси читается с мешка
+// и у каждого производителя свой; размер листа зависит от того, что
+// есть в магазине сегодня. Подставленное число приняли бы не глядя,
+// и ошибка стала бы виной приложения, а не опечаткой.
+
+const SK_PAMYAT = 'skalk-pamyat-v1';   // последнее введённое — ПОДСКАЗКОЙ, не значением
+
+function skPamyat(){
+  try{ const o = JSON.parse(localStorage.getItem(SK_PAMYAT) || '{}');
+       return (o && typeof o === 'object') ? o : {}; }catch(_){ return {}; }
+}
+function skZapomnit(klyuch, znachenie){
+  const v = String(znachenie === null || znachenie === undefined ? '' : znachenie).trim();
+  if(!v) return;
+  const o = skPamyat(); o[klyuch] = v;
+  try{ localStorage.setItem(SK_PAMYAT, JSON.stringify(o)); }catch(_){}
+}
+
+// ---------- ЛИСТОВОЙ МАТЕРИАЛ: НАСТОЯЩАЯ РАСКЛАДКА ----------
+//
+// Владелец 4 сентября: «вводим длину, высоту стены. Да, нужно раскладку,
+// и с возможностью указать проёмы». Значит число листов берётся
+// ИЗ РАСКЛАДКИ, а не делением площадей.
+//
+// Стена режется на клетки размером с лист. Клетка нужна, если хоть
+// часть её приходится на стену и не попадает целиком в проём.
+//
+// ПОЧЕМУ КЛЕТКА ВНУТРИ ПРОЁМА НЕ НУЖНА, А ЗАДЕВАЮЩАЯ ПРОЁМ — НУЖНА.
+// Лист, у которого вырезают дверной проём, всё равно расходуется
+// целиком: вырезанное в дело не идёт. А клетка, целиком попавшая
+// в проём, не нужна вовсе — там нет стены.
+//
+// Все размеры внутри — в миллиметрах: стена приходит в метрах, лист
+// в миллиметрах, и смешивать их в одной формуле — верный способ
+// ошибиться на тысячу.
+function skListyRaschet(d){
+  const dlina  = Math.round(num(d.dlina) * 1000);
+  const vysota = Math.round(num(d.vysota) * 1000);
+  const listD  = Math.round(num(d.listD));
+  const listSh = Math.round(num(d.listSh));
+  if(!(dlina > 0 && vysota > 0 && listD > 0 && listSh > 0)) return null;
+
+  // Направление: вдоль — длинная сторона листа по горизонтали.
+  const w = (d.napravlenie === 'poperyok') ? listSh : listD;
+  const h = (d.napravlenie === 'poperyok') ? listD  : listSh;
+
+  const proyomy = (d.proyomy || [])
+    .map(o=>({ x: Math.round(num(o.x)*1000), y: Math.round(num(o.y)*1000),
+               w: Math.round(num(o.w)*1000), h: Math.round(num(o.h)*1000),
+               n: Math.max(1, Math.round(num(o.n) || 1)) }))
+    .filter(o=> o.w > 0 && o.h > 0);
+  // Несколько одинаковых проёмов — ставим их подряд от указанного места.
+  const dyry = [];
+  proyomy.forEach(o=>{
+    for(let i = 0; i < o.n; i++) dyry.push({ x: o.x + i*o.w, y: o.y, w: o.w, h: o.h });
+  });
+
+  const vDyre = (x1,y1,x2,y2)=> dyry.some(o=>
+    x1 >= o.x && x2 <= o.x + o.w && y1 >= o.y && y2 <= o.y + o.h);
+
+  const kuski = [];      // что реально нужно вырезать, размерами
+  const setka = [];      // для картинки
+  const kolonok = Math.ceil(dlina / w);
+  const ryadov  = Math.ceil(vysota / h);
+  for(let r = 0; r < ryadov; r++){
+    for(let k = 0; k < kolonok; k++){
+      const x1 = k*w, y1 = r*h;
+      const x2 = Math.min(x1 + w, dlina), y2 = Math.min(y1 + h, vysota);
+      const kw = x2 - x1, kh = y2 - y1;
+      if(kw <= 0 || kh <= 0) continue;
+      const pusto = vDyre(x1, y1, x2, y2);
+      setka.push({ x:x1, y:y1, w:kw, h:kh, pusto: pusto });
+      if(!pusto) kuski.push({ w: kw, h: kh });
+    }
+  }
+
+  // БЕЗ ДОКЛАДКИ: сколько кусков — столько листов.
+  const bez = kuski.length;
+
+  // С ДОКЛАДКОЙ: остаток разрезанного листа идёт на следующее место,
+  // если помещается по обеим сторонам. Обрезки режем по-гильотинному:
+  // отрезали кусок — остались две прямоугольные полосы.
+  //
+  // Крупные куски кладём первыми: иначе мелочь разберёт целые листы,
+  // и остатков не хватит на большое. Это обычная жадная укладка,
+  // и она НЕ обещает наилучшего результата — только правдоподобный.
+  const ostatki = [];
+  let sDokl = 0;
+  kuski.slice().sort((a,b)=> (b.w*b.h) - (a.w*a.h)).forEach(k=>{
+    let i = -1;
+    for(let j = 0; j < ostatki.length; j++){
+      if(ostatki[j].w >= k.w && ostatki[j].h >= k.h){ i = j; break; }
+    }
+    let o;
+    if(i >= 0){ o = ostatki.splice(i,1)[0]; }
+    else { sDokl++; o = { w: w, h: h }; }
+    if(o.w - k.w > 0) ostatki.push({ w: o.w - k.w, h: o.h });
+    if(o.h - k.h > 0) ostatki.push({ w: k.w, h: o.h - k.h });
+  });
+
+  const sloyov = Math.max(1, Math.round(num(d.sloyov) || 1));
+  const zapas  = Math.max(0, num(d.zapas) || 0);
+  const sZapasom = (n)=> Math.ceil(n * sloyov * (1 + zapas/100));
+
+  const ploschadSteny = dlina * vysota / 1e6;
+  const ploschadDyr = dyry.reduce((a,o)=> a + o.w*o.h, 0) / 1e6;
+
+  return {
+    setka: setka, dlina: dlina, vysota: vysota, w: w, h: h,
+    bez: sZapasom(bez), sDokl: sZapasom(sDokl),
+    bezGolyh: bez, sDoklGolyh: sDokl,
+    sloyov: sloyov, zapas: zapas,
+    ploschad: Math.max(0, ploschadSteny - ploschadDyr),
+    ploschadSteny: ploschadSteny
+  };
+}
+
+// ---------- КИРПИЧ И БЛОКИ ----------
+// Владелец 4 сентября: считаем «от площади стены и её толщины».
+// Толщина — в блоках (в полкирпича, в кирпич), как говорят на объекте.
+function skBlokiRaschet(d){
+  const dlina  = num(d.dlina), vysota = num(d.vysota);
+  const bD = num(d.blokD), bV = num(d.blokV);      // мм
+  const shov = Math.max(0, num(d.shov) || 0);       // мм
+  const tolschina = Math.max(1, num(d.tolschina) || 1);   // в блоках
+  if(!(dlina > 0 && vysota > 0 && bD > 0 && bV > 0)) return null;
+  const proyomy = (d.proyomy || []).reduce((a,o)=>
+    a + num(o.w)*num(o.h)*Math.max(1, Math.round(num(o.n)||1)), 0);
+  const ploschad = Math.max(0, dlina*vysota - proyomy);
+  // Блок со швом занимает больше места, чем сам блок: шов кладут
+  // с двух сторон, но считают его один раз на блок — иначе он войдёт
+  // в расчёт дважды.
+  const naBlok = ((bD + shov) * (bV + shov)) / 1e6;   // м² на один блок в ряду
+  if(naBlok <= 0) return null;
+  const vRyadu = ploschad / naBlok;
+  const zapas = Math.max(0, num(d.zapas) || 0);
+  return {
+    ploschad: ploschad,
+    shtuk: Math.ceil(vRyadu * tolschina * (1 + zapas/100)),
+    shtukGolyh: Math.ceil(vRyadu * tolschina),
+    tolschina: tolschina, zapas: zapas
+  };
+}
+
+// ---------- СМЕСИ ----------
+// Владелец 4 сентября: «как написано у производителя, толщину слоя они
+// тоже учитывают. Там расход на м² при такой-то толщине слоя».
+// Значит плотность нигде не спрашиваем — производитель её уже учёл.
+function skSmesRaschet(d){
+  const ploschad = num(d.ploschad);
+  const rashod   = num(d.rashod);        // кг/м² при указанной толщине
+  const priTolsch = num(d.priTolsch);    // мм, при которой указан расход
+  const faktTolsch = num(d.faktTolsch);  // мм на деле
+  if(!(ploschad > 0 && rashod > 0)) return null;
+  // Толщину не указали — считаем по мешку как есть. Не выдумываем.
+  const k = (priTolsch > 0 && faktTolsch > 0) ? (faktTolsch / priTolsch) : 1;
+  const zapas = Math.max(0, num(d.zapas) || 0);
+  return {
+    kg: ploschad * rashod * k * (1 + zapas/100),
+    kgGolyh: ploschad * rashod * k,
+    koef: k, zapas: zapas,
+    poTolschine: k !== 1
+  };
+}
+
+// Что набрано в калькуляторе. Живёт, пока открыта вкладка: это прикидка,
+// а не документ, и хранить её в проекте незачем (решение владельца —
+// «отдельно от проектов»).
+let SK = {
+  razdel: 'listy',
+  listy: { imya:'', dlina:'', vysota:'', listD:'', listSh:'',
+           napravlenie:'vdol', sloyov:'', zapas:'', proyomy:[] },
+  bloki: { imya:'', dlina:'', vysota:'', blokD:'', blokV:'', shov:'',
+           tolschina:'1', zapas:'', proyomy:[] },
+  smes:  { imya:'', ploschad:'', rashod:'', priTolsch:'', faktTolsch:'', zapas:'' }
+};
+
+// Поле с подсказкой последнего введённого. Подсказка — В ПУСТОМ ПОЛЕ,
+// а не значением: подставленное принимают не глядя, подсказку надо
+// прочесть и повторить осознанно (решение владельца 4 сентября 2026).
+function skPole(razdel, klyuch, podpis, opts){
+  const o = opts || {};
+  const zn = SK[razdel][klyuch];
+  const bylo = skPamyat()[razdel + '.' + klyuch];
+  const podskazka = o.placeholder || (bylo ? ('в прошлый раз ' + bylo) : '');
+  return `<div class="cust-field">
+    <label>${escapeHtml(podpis)}</label>
+    <input type="text" ${o.text ? '' : 'inputmode="decimal"'} class="ownw-inp"
+           placeholder="${escapeAttr(podskazka)}"
+           value="${escapeAttr(zn)}" data-sk="${razdel}|${klyuch}">
+  </div>`;
+}
+
+function skProyomyHtml(razdel, sPolozheniem){
+  const spisok = SK[razdel].proyomy || [];
+  const stroki = spisok.map((o,i)=>`
+    <div class="sk-proyom">
+      <input type="text" inputmode="decimal" class="ownw-inp" placeholder="ширина, м"
+             value="${escapeAttr(o.w||'')}" data-sk-pr="${razdel}|${i}|w">
+      <input type="text" inputmode="decimal" class="ownw-inp" placeholder="высота, м"
+             value="${escapeAttr(o.h||'')}" data-sk-pr="${razdel}|${i}|h">
+      ${sPolozheniem ? `
+      <input type="text" inputmode="decimal" class="ownw-inp" placeholder="от левого края, м"
+             value="${escapeAttr(o.x||'')}" data-sk-pr="${razdel}|${i}|x">
+      <input type="text" inputmode="decimal" class="ownw-inp" placeholder="от пола, м"
+             value="${escapeAttr(o.y||'')}" data-sk-pr="${razdel}|${i}|y">` : ''}
+      <input type="text" inputmode="numeric" class="ownw-inp sk-uzko" placeholder="шт."
+             value="${escapeAttr(o.n||'')}" data-sk-pr="${razdel}|${i}|n">
+      <button type="button" class="btn-icon" data-sk-pr-del="${razdel}|${i}" title="Убрать">✕</button>
+    </div>`).join('');
+  return `<div class="sk-proyomy">
+    <div class="sk-podzag">Проёмы</div>
+    ${stroki || '<div class="mat-note">Окон и дверей нет.</div>'}
+    <button type="button" class="add-link" data-sk-pr-add="${razdel}">+ Проём</button>
+  </div>`;
+}
+
+// КАРТИНКА РАСКЛАДКИ. Рисуем то же, что посчитали: те же клетки, тот же
+// порядок. Расходиться картинке и числу нельзя — человек поверит глазам.
+function skListyKartinka(r){
+  if(!r) return '';
+  const W = 640, ots = 8;
+  const k = (W - ots*2) / r.dlina;
+  const H = Math.round(r.vysota * k) + ots*2;
+  const kletki = r.setka.map(c=>{
+    const x = ots + c.x*k, y = ots + (r.vysota - c.y - c.h)*k;
+    const w = c.w*k, h = c.h*k;
+    return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}"
+      fill="${c.pusto ? 'var(--paper-line)' : 'var(--white)'}"
+      stroke="${c.pusto ? 'var(--paper-line)' : 'var(--ink-soft)'}" stroke-width="1"/>`;
+  }).join('');
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-width:640px;display:block;margin-top:10px;">
+    ${kletki}
+    <rect x="${ots}" y="${ots}" width="${(r.dlina*k).toFixed(1)}" height="${(r.vysota*k).toFixed(1)}"
+          fill="none" stroke="var(--ink)" stroke-width="2"/>
+  </svg>`;
+}
+
+function skItogListy(){
+  const r = skListyRaschet(SK.listy);
+  if(!r) return `<div class="mat-note">Введите размеры стены и листа — посчитаем.</div>`;
+  const imya = (SK.listy.imya||'').trim();
+  return `
+    <div class="sk-itog">
+      ${imya ? `<div class="sk-itog-imya">${escapeHtml(imya)}</div>` : ''}
+      <div class="sk-chisla">
+        <div><span>без докладки</span><b>${r.bez} листов</b></div>
+        <div><span>с докладкой обрезков</span><b>${r.sDokl} листов</b></div>
+      </div>
+      <div class="mat-note">Площадь под обшивку ${fmt(r.ploschad)} м².${
+        r.sloyov > 1 ? ` В ${r.sloyov} слоя.` : ''}${
+        r.zapas ? ` Запас ${fmt(r.zapas)} %.` : ''}</div>
+      <div class="mat-note">Приложение не знает, как режут на вашем объекте, поэтому не выбирает за вас. Разница между числами — цена аккуратности бригады.</div>
+    </div>
+    ${skListyKartinka(r)}
+    <div class="mat-note">Серым — места, целиком попавшие в проём: там лист не нужен. Задетый проёмом лист расходуется целиком — вырезанное в дело не идёт.</div>`;
+}
+
+function skItogBloki(){
+  const r = skBlokiRaschet(SK.bloki);
+  if(!r) return `<div class="mat-note">Введите размеры стены и блока — посчитаем.</div>`;
+  const imya = (SK.bloki.imya||'').trim();
+  return `<div class="sk-itog">
+      ${imya ? `<div class="sk-itog-imya">${escapeHtml(imya)}</div>` : ''}
+      <div class="sk-chisla"><div><span>всего</span><b>${r.shtuk} шт.</b></div></div>
+      <div class="mat-note">Площадь кладки ${fmt(r.ploschad)} м², толщина ${r.tolschina} ${plural(r.tolschina,'блок','блока','блоков')}.${
+        r.zapas ? ` Запас ${fmt(r.zapas)} %.` : ''}</div>
+    </div>`;
+}
+
+function skItogSmes(){
+  const r = skSmesRaschet(SK.smes);
+  if(!r) return `<div class="mat-note">Введите площадь и расход с мешка — посчитаем.</div>`;
+  const imya = (SK.smes.imya||'').trim();
+  return `<div class="sk-itog">
+      ${imya ? `<div class="sk-itog-imya">${escapeHtml(imya)}</div>` : ''}
+      <div class="sk-chisla"><div><span>всего</span><b>${fmt(Math.round(r.kg*10)/10)} кг</b></div></div>
+      <div class="mat-note">${r.poTolschine
+        ? `Пересчитано на вашу толщину слоя: расход с мешка × ${fmt(Math.round(r.koef*100)/100)}.`
+        : 'Считаем ровно как написано на мешке: толщину слоя вы не задали.'}${
+        r.zapas ? ` Запас ${fmt(r.zapas)} %.` : ''}</div>
+    </div>`;
+}
+
+function renderSkalkView(){
+  const r = SK.razdel;
+  const vkladka = (k, n)=>
+    `<button type="button" class="sk-vkl${r===k?' on':''}" data-sk-razdel="${k}">${n}</button>`;
+  let telo = '';
+  if(r === 'listy'){
+    telo = `
+      <div class="cust-grid">
+        ${skPole('listy','imya','Что считаем', {text:true, placeholder:'напр. гипсокартон'})}
+        ${skPole('listy','zapas','Запас на подрезку, %')}
+        ${skPole('listy','dlina','Длина стены, м')}
+        ${skPole('listy','vysota','Высота стены, м')}
+        ${skPole('listy','listD','Лист: длина, мм')}
+        ${skPole('listy','listSh','Лист: ширина, мм')}
+        ${skPole('listy','sloyov','Слоёв', {placeholder:'пусто — один'})}
+        <div class="cust-field"><label>Как кладём лист</label>
+          <select class="ownw-inp" data-sk="listy|napravlenie">
+            <option value="vdol"${SK.listy.napravlenie==='vdol'?' selected':''}>длинной стороной вдоль стены</option>
+            <option value="poperyok"${SK.listy.napravlenie==='poperyok'?' selected':''}>длинной стороной вверх</option>
+          </select></div>
+      </div>
+      ${skProyomyHtml('listy', true)}
+      ${skItogListy()}`;
+  } else if(r === 'bloki'){
+    telo = `
+      <div class="cust-grid">
+        ${skPole('bloki','imya','Что считаем', {text:true, placeholder:'напр. газоблок'})}
+        ${skPole('bloki','zapas','Запас на бой, %')}
+        ${skPole('bloki','dlina','Длина стены, м')}
+        ${skPole('bloki','vysota','Высота стены, м')}
+        ${skPole('bloki','blokD','Блок: длина, мм')}
+        ${skPole('bloki','blokV','Блок: высота, мм')}
+        ${skPole('bloki','shov','Шов, мм')}
+        ${skPole('bloki','tolschina','Толщина стены, в блоках')}
+      </div>
+      ${skProyomyHtml('bloki', false)}
+      ${skItogBloki()}`;
+  } else {
+    telo = `
+      <div class="cust-grid">
+        ${skPole('smes','imya','Что считаем', {text:true, placeholder:'напр. плиточный клей'})}
+        ${skPole('smes','zapas','Запас, %')}
+        ${skPole('smes','ploschad','Площадь, м²')}
+        ${skPole('smes','rashod','Расход с мешка, кг на м²')}
+        ${skPole('smes','priTolsch','…при слое, мм')}
+        ${skPole('smes','faktTolsch','Кладём слоем, мм')}
+      </div>
+      <div class="mat-note">Все три числа — с мешка и из вашей работы. Ничего не подставляем: у каждого производителя расход свой.</div>
+      ${skItogSmes()}`;
+  }
+  return `
+    <div class="tc-wrap">
+      <div class="proj-header">
+        <div>
+          <div class="proj-title-input" style="font-weight:700;">Строительный калькулятор</div>
+          <div class="proj-meta">прикидка для себя — в смету и закупку не идёт</div>
+        </div>
+        <div class="header-actions no-print">
+          <button class="btn btn-outline" data-go="project">Закрыть</button>
+        </div>
+      </div>
+      <div class="sk-vkladki">
+        ${vkladka('listy','Листовой материал')}
+        ${vkladka('bloki','Кирпич и блоки')}
+        ${vkladka('smes','Смеси')}
+      </div>
+      <div class="section">${telo}</div>
+    </div>`;
+}
+
+function skAttach(){
+  const main = document.getElementById('main');
+  main.querySelectorAll('[data-sk-razdel]').forEach(el=>{
+    el.onclick = ()=>{ SK.razdel = el.getAttribute('data-sk-razdel'); render(); };
+  });
+  main.querySelectorAll('[data-sk]').forEach(el=>{
+    const [razdel, klyuch] = el.getAttribute('data-sk').split('|');
+    const prinyat = ()=>{
+      SK[razdel][klyuch] = el.value;
+      skZapomnit(razdel + '.' + klyuch, el.value);
+      render();
+    };
+    // Пересчитываем по уходу из поля, а не на каждую цифру: перерисовка
+    // на каждый знак отняла бы фокус — тем же способом, каким это
+    // случилось с окнами и дверями (правка 3 сентября 2026).
+    el.addEventListener('change', prinyat);
+    el.addEventListener('blur', prinyat);
+  });
+  main.querySelectorAll('[data-sk-pr]').forEach(el=>{
+    const [razdel, i, pole] = el.getAttribute('data-sk-pr').split('|');
+    const prinyat = ()=>{
+      const o = SK[razdel].proyomy[parseInt(i)];
+      if(o){ o[pole] = el.value; render(); }
+    };
+    el.addEventListener('change', prinyat);
+    el.addEventListener('blur', prinyat);
+  });
+  main.querySelectorAll('[data-sk-pr-add]').forEach(el=>{
+    el.onclick = ()=>{
+      const razdel = el.getAttribute('data-sk-pr-add');
+      SK[razdel].proyomy.push({ w:'', h:'', x:'', y:'', n:'' });
+      render();
+    };
+  });
+  main.querySelectorAll('[data-sk-pr-del]').forEach(el=>{
+    el.onclick = ()=>{
+      const [razdel, i] = el.getAttribute('data-sk-pr-del').split('|');
+      SK[razdel].proyomy.splice(parseInt(i), 1);
+      render();
+    };
+  });
+}
+
 function renderTilesView(){
   return `
     <div class="proj-header">
