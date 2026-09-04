@@ -3901,7 +3901,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-05-223';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-05-224';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -12951,19 +12951,7 @@ function razmeryKontura(p, sr){
     return n;
   };
 
-  // ПОЛКА УХОДИТ НАРУЖУ КОНТУРА, А НЕ ВНУТРЬ КОМНАТЫ.
-  // Прежде направление выбиралось «к середине холста» — а для стены
-  // у края это ровно внутрь контура, и выноски резали комнату наискось.
-  // Теперь два прохода: сперва берём только те места, где число
-  // ложится ВНЕ контура (снаружи воздуха вдоволь), и лишь если снаружи
-  // не вышло — соглашаемся на место внутри. Владелец 5 сентября 2026:
-  // «снаружи много места, лучше подобные выносить за контур».
   const polka = (x0, y0, txt, w, h, lyuboe)=>{
-    const naruzhu = polkaZahod(x0, y0, txt, w, h, lyuboe, true);
-    return naruzhu || polkaZahod(x0, y0, txt, w, h, lyuboe, false);
-  };
-
-  const polkaZahod = (x0, y0, txt, w, h, lyuboe, tolkoSnaruzhi)=>{
     const kx = x0 <= sr.W/2 ? 1 : -1, ky = y0 <= sr.H/2 ? 1 : -1;
     const storony = [[kx,ky],[kx,-ky],[-kx,ky],[-kx,-ky]];
     let luchshee = null;          // для второго захода: наименее тесное
@@ -12978,7 +12966,6 @@ function razmeryKontura(p, sr){
         const tx = (lx + px)/2, ty = ly - h/2 - 2;   // число лежит НА полке
         if(tx - w/2 < 2 || tx + w/2 > sr.W - 2) continue;
         if(ty - h/2 < 2 || ty + h/2 > sr.H - 2) continue;
-        if(tolkoSnaruzhi && korobkaVnutri(tx, ty, w, h)) continue;
         if(lyuboe){
           // ВТОРОЙ ЗАХОД: чистого места нет нигде. Берём не первое
           // попавшееся, а то, где мешаем меньше всего — иначе полка
@@ -13012,7 +12999,7 @@ function razmeryKontura(p, sr){
         `<line x1="${lx}" y1="${ly}" x2="${px}" y2="${ly}" class="${kl.ext}"/>` };
     }
     // чистого места не нашлось — идём вторым заходом
-    return lyuboe ? null : polkaZahod(x0, y0, txt, w, h, true, tolkoSnaruzhi);
+    return lyuboe ? null : polka(x0, y0, txt, w, h, true);
   };
 
   // разложим стены: осевые идут в цепи, наклонные — отдельно
