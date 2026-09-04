@@ -400,6 +400,13 @@
   .btn-ghost{background:transparent;color:var(--white);border:1px solid var(--sb-line);}
   .btn-ghost:hover{border-color:var(--orange);}
   .btn-outline{background:transparent;color:var(--ink);border:1px solid var(--ink);}
+  /* Залитая цветом текста: тёмная на светлой теме, светлая на тёмной.
+     Тот же вид, каким помечена выбранная вкладка (.calc-mode-btn.active) —
+     это наш способ сказать «вот эта». Нужна там, где одну кнопку из ряда
+     надо выделить, но она не главное действие экрана: оранжевую заливку
+     бережём для главного, иначе она перестаёт что-либо значить. */
+  .btn-ink{background:var(--ink);color:var(--white);border:1px solid var(--ink);}
+  .btn-ink:hover{opacity:.92;}
   .btn-outline:hover{background:var(--ink);color:var(--white);}
   .btn-danger-text{background:none;border:none;color:var(--red);font-size:12px;cursor:pointer;padding:2px 4px;}
   .btn-icon{background:none;border:none;color:var(--ink-soft);cursor:pointer;font-size:14px;padding:2px 6px;}
@@ -3796,7 +3803,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-04-189';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-04-190';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -17530,14 +17537,14 @@ function docBtns(type, fmt2, fmt2label){
     : '';
   return `
     <div class="docs-btns">
-      <!-- «Просмотр» — такая же кнопка, как соседние, и залита не была бы,
-           если бы правило проверили при её появлении. В строке пять
-           равных возможностей: посмотреть, отправить PDF, отправить
-           таблицу, скачать PDF, скачать таблицу. Оранжевая заливка
-           означает «вот главное действие» — а тут главного нет, и глаз
-           уводило к самому безобидному. Владелец 4 сентября 2026:
-           «ещё оранжевая кнопка в документах, просмотр». -->
-      <button class="btn btn-outline btn-sm" data-doc="${type}|pdf|preview">Просмотр</button>
+      <!-- «Просмотр» выделен, но не оранжевым. Оранжевая заливка означает
+           «вот главное действие экрана», а в этой строке пять равных
+           возможностей — посмотреть, отправить PDF, отправить таблицу,
+           скачать PDF, скачать таблицу; главного среди них нет, и оранжевый
+           уводил глаз к самому безобидному. Владелец 4 сентября 2026:
+           сперва «ещё оранжевая кнопка в документах, просмотр», затем
+           «просмотр нужно выделить, чёрным на белом и наоборот». -->
+      <button class="btn btn-ink btn-sm" data-doc="${type}|pdf|preview">Просмотр</button>
       <span class="docs-group">
         <span class="docs-icon" title="Поделиться">${ZN_SAMOLYOT}</span>
         <button class="btn btn-outline btn-sm" data-doc="${type}|pdf|share">PDF</button>
