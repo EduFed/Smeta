@@ -3877,7 +3877,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-04-199';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-04-200';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -21366,12 +21366,23 @@ const TC_SURFACES = {
                                                  ['boxW','Ширина короба, м'],['boxD','Высота короба, м']], corner:true },
 };
 
+// Одна поверхность: тип и её размеры. Плитка, шов, рисунок и способ
+// укладки сюда не входят — они общие на весь расчёт: человек кладёт
+// одну и ту же плитку на пол и на стены санузла, а не разную.
+function tcPustaya(){
+  return { surface:'floor', W:'', H:'',
+           doorW:'', doorH:'', doorX:'',
+           winW:'', winH:'', winX:'', winY:'',
+           boxW:'', boxD:'', boxCorner:'BL' };
+}
+
 // состояние (только в памяти, сбрасывается при закрытии)
 const tc = {
-  surface:'floor', W:'', H:'',
-  doorW:'', doorH:'', doorX:'',
-  winW:'', winH:'', winX:'', winY:'',
-  boxW:'', boxD:'', boxCorner:'BL',
+  // Поверхности списком — то же устройство, что у стен в строительном
+  // калькуляторе. Санузел — это пол и четыре стены, и считать их пятью
+  // заходами, складывая на бумаге, значит делать руками ровно то,
+  // ради чего брали приложение (владелец 4 сентября 2026).
+  poverhnosti: [ tcPustaya() ],
   tileW:'', tileH:'', seam:'2',
   directional:'plain',
   orient:'h', pattern:'straight', offset:'half', offsetCustom:'',
@@ -21384,7 +21395,8 @@ const tc = {
 };
 
 // вырез (проём/короб) как прямоугольник в координатах поверхности, либо null
-function tcHole(){
+function tcHole(pv){
+  const tc = pv;                    // вырез считается по своей поверхности
   const W=num(tc.W), H=num(tc.H);
   const clamp=(r)=>({ x0:Math.max(0,Math.min(W,r.x0)), x1:Math.max(0,Math.min(W,r.x1)),
                       y0:Math.max(0,Math.min(H,r.y0)), y1:Math.max(0,Math.min(H,r.y1)) });
@@ -21465,8 +21477,10 @@ function tcPackPairs(listA, listB, cap){
 }
 
 // основной расчёт: раскладываем плитки по сетке и классифицируем каждую
-function tcCompute(){
-  const W=num(tc.W), H=num(tc.H);
+// Считает ОДНУ поверхность. Плитку, шов, рисунок и укладку берёт
+// из общего состояния, размеры и вырез — из переданной поверхности.
+function tcCompute(pv){
+  const W=num(pv.W), H=num(pv.H);
   // ориентация: 'h' — как введено, 'v' — плитка повёрнута на 90°
   const cw = (tc.orient==='h' ? num(tc.tileW) : num(tc.tileH))/100; // ширина ячейки, м
   const ch = (tc.orient==='h' ? num(tc.tileH) : num(tc.tileW))/100; // высота ячейки, м
@@ -21476,7 +21490,7 @@ function tcCompute(){
   if((W/px)*(H/py) > 6000) return {ok:false, tooMany:true};         // защита от опечатки в единицах
 
   const eps = 1e-6;
-  const hole = tcHole();
+  const hole = tcHole(pv);
 
   // левый/нижний край опорной колонки/ряда по режиму старта
   const refEdge=(mode, span, cell, svoyo)=>{
@@ -21599,7 +21613,51 @@ function tcCompute(){
   const saved = total - totalReuse;
   const bought = total*cw*ch;                            // купленная площадь плитки (по «с запасом»)
   const waste = bought>0 ? Math.max(0, Math.round((bought - surfArea)/bought*100)) : 0;
-  return {ok:true, W,H, tiles, whole, cut, total, totalReuse, saved, surfArea, waste, hole, cutList, shapedCount};
+  // Полосы отдаём наружу: обрезки одной поверхности годятся другой —
+  // плитка и рисунок общие. Складывать их надо один раз на весь расчёт,
+  // а не по поверхности, иначе экономия теряется ровно там, где она есть.
+  return {ok:true, W,H, tiles, whole, cut, total, totalReuse, saved, surfArea, waste, hole, cutList, shapedCount,
+          polosy:{widL, widR, hgtB, hgtT, cornerCut}};
+}
+
+// ВСЕ ПОВЕРХНОСТИ РАЗОМ.
+// Схема у каждой своя, числа общие, а запас обрезков — один на всех:
+// плитка и рисунок заданы один раз, значит кусок, оставшийся от пола,
+// ложится в подрезку стены. Ровно так же считаются стены в листовом
+// материале.
+function tcVse(){
+  const vse = (tc.poverhnosti || []).map(pv=> tcCompute(pv));
+  const godnye = vse.filter(r=> r.ok);
+  if(!godnye.length){
+    return { ok:false, tooMany: vse.some(r=> r.tooMany), kazhdaya: vse };
+  }
+  const cw = (tc.orient==='h' ? num(tc.tileW) : num(tc.tileH))/100;
+  const ch = (tc.orient==='h' ? num(tc.tileH) : num(tc.tileW))/100;
+
+  let whole=0, cut=0, surfArea=0, shapedCount=0, cornerCut=0;
+  const widL=[], widR=[], hgtB=[], hgtT=[];
+  const cutList = [];
+  godnye.forEach(r=>{
+    whole += r.whole; cut += r.cut; surfArea += r.surfArea; shapedCount += r.shapedCount;
+    cornerCut += r.polosy.cornerCut;
+    widL.push(...r.polosy.widL); widR.push(...r.polosy.widR);
+    hgtB.push(...r.polosy.hgtB); hgtT.push(...r.polosy.hgtT);
+    r.cutList.forEach(c=>{
+      const est = cutList.find(x=> Math.abs(x.w-c.w)<0.05 && Math.abs(x.h-c.h)<0.05);
+      if(est) est.n += c.n; else cutList.push({ w:c.w, h:c.h, n:c.n });
+    });
+  });
+  const tilesW = (tc.directional==='dir') ? tcPackPairs(widL, widR, cw) : tcPackFFD(widL.concat(widR), cw);
+  const tilesH = (tc.directional==='dir') ? tcPackPairs(hgtB, hgtT, ch) : tcPackFFD(hgtB.concat(hgtT), ch);
+
+  const total = whole + cut;
+  const totalReuse = whole + tilesW + tilesH + cornerCut + shapedCount;
+  const bought = total*cw*ch;
+  const waste = bought>0 ? Math.max(0, Math.round((bought - surfArea)/bought*100)) : 0;
+  cutList.sort((a,b)=> (b.w*b.h) - (a.w*a.h));
+  return { ok:true, kazhdaya: vse, whole, cut, total, totalReuse,
+           saved: total - totalReuse, surfArea, waste, cutList, shapedCount,
+           poverhnostey: godnye.length };
 }
 
 // рисуем схему (SVG). Плитки клипуются по контуру поверхности → у краёв видна подрезка.
@@ -21636,12 +21694,12 @@ const eps0 = 1e-6;
 // перерисовать картинку, цифры и список подрезок
 function tcRenderPreview(){
   const box = document.getElementById('tcPreview'); if(!box) return;
-  const r = tcCompute();
+  const r = tcVse();
   if(!r.ok){
     box.innerHTML = `<div class="tc-empty">${
       r.tooMany
         ? 'Слишком много плиток — проверьте единицы: поверхность в метрах, плитка в сантиметрах.'
-        : 'Заполните размеры поверхности и плитки на вкладке «Данные».'
+        : 'Заполните размеры поверхностей и плитки на вкладке «Данные».'
     }</div>`;
     return;
   }
@@ -21651,11 +21709,29 @@ function tcRenderPreview(){
     cutHtml = `<div class="tc-cutlist"><div class="tc-cut-title">Размеры подрезки</div>`;
     r.cutList.forEach(c=>{ cutHtml += `<div class="tc-cut-row"><span>${cm1(c.w)} × ${cm1(c.h)} см</span><b>${c.n} шт</b></div>`; });
     if(r.shapedCount) cutHtml += `<div class="tc-cut-row"><span>фигурные (у проёма), режутся по месту</span><b>${r.shapedCount} шт</b></div>`;
-    if(r.saved>0) cutHtml += `<div class="tc-cut-row tc-cut-save"><span>обрезки идут в дело — экономия</span><b>−${r.saved} шт</b></div>`;
+    if(r.saved>0) cutHtml += `<div class="tc-cut-row tc-cut-save"><span>обрезки идут в дело — экономия${
+      r.poverhnostey > 1 ? ', обрезки ходят между поверхностями' : ''}</span><b>−${r.saved} шт</b></div>`;
     cutHtml += `</div>`;
   }
+  // Схема у каждой поверхности своя: сложить их в одну картинку нельзя,
+  // они лежат в разных плоскостях. А числа ниже — общие.
+  const shemy = r.kazhdaya.map((odna,i)=>{
+    const pv = tc.poverhnosti[i];
+    const imya = TC_SURFACES[pv.surface] ? TC_SURFACES[pv.surface].label : 'Поверхность';
+    if(!odna.ok){
+      return `<div class="sk-stena-itog"><div class="sk-podzag">${escapeHtml(imya)} ${i+1}</div>
+        <div class="tc-empty">${odna.tooMany
+          ? 'Слишком много плиток — проверьте единицы.'
+          : 'Размеры не заполнены.'}</div></div>`;
+    }
+    return `<div class="sk-stena-itog">
+      <div class="sk-podzag">${escapeHtml(imya)} ${i+1} · ${fmt(odna.W)} × ${fmt(odna.H)} м · ${odna.total} шт.</div>
+      <div class="tc-canvas">${tcSVG(odna)}</div>
+    </div>`;
+  }).join('');
+
   box.innerHTML =
-    `<div class="tc-canvas">${tcSVG(r)}</div>` +
+    shemy +
     `<div class="tc-legend"><span><i class="lg-full"></i>целая</span><span><i class="lg-cut"></i>в подрез</span></div>` +
     `<div class="tc-tile-info" id="tcTileInfo">Нажмите на любую плитку — покажу её размер.</div>` +
     `<div class="tc-nums">
@@ -21676,26 +21752,48 @@ function tcSeg(key, opts, cur){
     `<button type="button" class="calc-mode-btn uzkiy${v===cur?' active':''}" data-tc-set="${key}|${v}">${l}</button>`
   ).join('') + `</div>`;
 }
-function tcFieldInput(key,label){
+// Поле пишет либо в общее состояние, либо в одну поверхность —
+// смотря чей это размер. Адрес поверхности: p:<номер>:<поле>.
+function tcFieldInput(key,label,i){
+  const svoyo = (i === undefined || i === null);
+  const hozyain = svoyo ? tc : tc.poverhnosti[i];
+  const adres = svoyo ? key : ('p:' + i + ':' + key);
   return `<div class="tc-field"><label>${label}</label>`+
-    `<input type="text" inputmode="decimal" data-tc="${key}" value="${escapeAttr(tc[key]||'')}" placeholder="0"></div>`;
+    `<input type="text" inputmode="decimal" data-tc="${adres}" value="${escapeAttr(hozyain[key]||'')}" placeholder="0"></div>`;
+}
+
+// Куда писать по адресу из разметки.
+function tcKuda(adres){
+  if(adres.indexOf('p:') !== 0) return { o: tc, k: adres };
+  const [, i, k] = adres.split(':');
+  return { o: tc.poverhnosti[parseInt(i)], k: k };
 }
 // поля вкладки «Данные»: Поверхность + Плитка
 function tcControlsDataHTML(){
-  const s = TC_SURFACES[tc.surface];
   let h='';
-  h += `<div class="tc-sec-title">Поверхность</div>`;
-  h += `<div class="tc-label">Тип поверхности</div>`;
-  h += `<div class="calc-mode">` + Object.keys(TC_SURFACES).map(k=>
-        `<button type="button" class="calc-mode-btn uzkiy${k===tc.surface?' active':''}" data-tc-set="surface|${k}">${TC_SURFACES[k].label}</button>`
-      ).join('') + `</div>`;
-  h += `<div class="tc-fields">` + s.fields.map(([k,l])=>tcFieldInput(k,l)).join('') + `</div>`;
-  if(s.corner){
-    h += `<div class="tc-label">Угол короба</div>`;
-    h += `<div class="tc-corner">` + [['TL','↖'],['TR','↗'],['BL','↙'],['BR','↘']].map(([v,l])=>
-          `<button type="button" class="calc-mode-btn uzkiy${(tc.boxCorner||'BL')===v?' active':''}" data-tc-set="boxCorner|${v}">${l}</button>`
+  h += `<div class="tc-sec-title">Поверхности</div>`;
+  h += `<div class="sk-steny">` + (tc.poverhnosti||[]).map((pv,i)=>{
+    const s = TC_SURFACES[pv.surface];
+    let b = `<div class="sk-stena">
+      <div class="sk-stena-shapka">
+        <div class="tc-label" style="margin:0;flex:1 1 auto;">${escapeHtml(s.label)} ${i+1}</div>
+        ${(tc.poverhnosti.length > 1)
+          ? `<button type="button" class="btn-icon" data-tc-pov-del="${i}" title="Убрать поверхность">✕</button>`
+          : ''}
+      </div>`;
+    b += `<div class="calc-mode">` + Object.keys(TC_SURFACES).map(k=>
+          `<button type="button" class="calc-mode-btn uzkiy${k===pv.surface?' active':''}" data-tc-set="p:${i}:surface|${k}">${TC_SURFACES[k].label}</button>`
         ).join('') + `</div>`;
-  }
+    b += `<div class="tc-fields">` + s.fields.map(([k,l])=>tcFieldInput(k,l,i)).join('') + `</div>`;
+    if(pv.surface === 'box'){
+      b += `<div class="tc-label">Угол короба</div>`;
+      b += `<div class="tc-corner">` + [['TL','↖'],['TR','↗'],['BL','↙'],['BR','↘']].map(([v,l])=>
+            `<button type="button" class="calc-mode-btn uzkiy${(pv.boxCorner||'BL')===v?' active':''}" data-tc-set="p:${i}:boxCorner|${v}">${l}</button>`
+          ).join('') + `</div>`;
+    }
+    return b + `</div>`;
+  }).join('') +
+  `<button type="button" class="add-link" data-tc-pov-add="1">+ Поверхность</button></div>`;
   h += `<div class="tc-sec-title">Плитка</div>`;
   h += `<div class="tc-fields">` + tcFieldInput('tileW','Ширина плитки, см') + tcFieldInput('tileH','Высота плитки, см') + `</div>`;
   h += `<div class="tc-fields">` + tcFieldInput('seam','Шов, мм') + `<div></div></div>`;
@@ -22505,15 +22603,25 @@ function tcAttach(){
   // текстовый ввод: на «Просмотре» (напр. своё смещение) — живой пересчёт картинки, фокус не теряем
   bd.addEventListener('input', e=>{
     const el = e.target.closest('[data-tc]'); if(!el) return;
-    tc[el.getAttribute('data-tc')] = el.value;
+    const kuda = tcKuda(el.getAttribute('data-tc'));
+    if(kuda.o) kuda.o[kuda.k] = el.value;
     if(tc.tab==='view') tcRenderPreview();
   });
   // клики: кнопки-переключатели ИЛИ клик по плитке на схеме
   bd.addEventListener('click', e=>{
+    const dob = e.target.closest('[data-tc-pov-add]');
+    if(dob){ tc.poverhnosti.push(tcPustaya()); tcRenderBody(); return; }
+    const ubr = e.target.closest('[data-tc-pov-del]');
+    if(ubr){
+      tc.poverhnosti.splice(parseInt(ubr.getAttribute('data-tc-pov-del')), 1);
+      if(!tc.poverhnosti.length) tc.poverhnosti.push(tcPustaya());
+      tcRenderBody(); return;
+    }
     const setBtn = e.target.closest('[data-tc-set]');
     if(setBtn){
-      const [k,v] = setBtn.getAttribute('data-tc-set').split('|');
-      tc[k]=v;
+      const [adres,v] = setBtn.getAttribute('data-tc-set').split('|');
+      const kuda = tcKuda(adres);
+      if(kuda.o) kuda.o[kuda.k] = v;
       if(tc.tab==='view'){
         const lc = document.getElementById('tcLayoutControls');
         if(lc) lc.innerHTML = tcControlsLayoutHTML();       // обновить активные кнопки / поле «своё»
