@@ -3607,7 +3607,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-04-165';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-04-166';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -21642,10 +21642,16 @@ function renderSkalkView(){
         ${skPole('listy','listD','Лист: длина, мм')}
         ${skPole('listy','listSh','Лист: ширина, мм')}
         ${skPole('listy','sloyov','Слоёв', {placeholder:'пусто — один'})}
-        <div class="cust-field"><label>Как кладём лист</label>
+        <div class="cust-field"><label>Как ставим лист</label>
+          <!-- ГОРИЗОНТАЛЬНО / ВЕРТИКАЛЬНО, а не «длинной стороной вдоль».
+               Правка владельца 4 сентября 2026. Прежняя формулировка
+               требовала мысленно повернуть лист, прежде чем понять,
+               о чём речь. Значения внутри (vdol/poperyok) не трогаем:
+               они уже лежат в памяти последнего ввода, и переименование
+               ради красоты стёрло бы выбор человека. -->
           <select class="ownw-inp" data-sk="listy|napravlenie">
-            <option value="vdol"${SK.listy.napravlenie==='vdol'?' selected':''}>длинной стороной вдоль стены</option>
-            <option value="poperyok"${SK.listy.napravlenie==='poperyok'?' selected':''}>длинной стороной вверх</option>
+            <option value="vdol"${SK.listy.napravlenie==='vdol'?' selected':''}>горизонтально</option>
+            <option value="poperyok"${SK.listy.napravlenie==='poperyok'?' selected':''}>вертикально</option>
           </select></div>
       </div>
       ${skProyomyHtml('listy', true)}
