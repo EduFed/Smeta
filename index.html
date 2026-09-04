@@ -122,6 +122,32 @@
     --who-10:#8C5A2B;  /* терракота  */
 
     /* Сайдбар тёмный при любой теме, поэтому его цвета от темы не зависят */
+    /* ПРОСМОТР СНИМКА И РАЗГОВОР — свой набор, как --sb-* у панели.
+       Просмотр всегда тёмный: под ним снимок, и он не меняется вместе
+       с темой. Значит и цвета его — свои, а не из темы; ровно то же
+       решение, что для боковой панели.
+       Раньше набора не было, и оттенки стояли числами в двадцати пяти
+       местах: восемь ступенек чёрного и пять ступенек белого. Разницу
+       между .45 и .5 не видит никто, а поддерживать её приходилось
+       глазами — это и есть «подобрано на глаз», ради чего правило
+       «любой цвет — переменная» и заведено. Свёл к четырём накладкам
+       и трём ступеням текста (4 сентября 2026). */
+    --pv-fon:rgba(0,0,0,.94);           /* лист под снимком */
+    --pv-panel:#0d0d0d;                 /* панель разговора сбоку */
+    --pv-plotnaya:rgba(0,0,0,.72);      /* подпись поверх снимка — читаемость важнее прозрачности */
+    --pv-nakladka:rgba(0,0,0,.55);      /* кнопки и полосы поверх снимка */
+    --pv-pole:rgba(0,0,0,.35);          /* поле ввода заметки */
+    --pv-ten:rgba(0,0,0,.45);
+    --pv-tekst:#FFFFFF;
+    --pv-tekst-tihiy:rgba(255,255,255,.75);
+    --pv-tekst-edva:rgba(255,255,255,.5);
+    --pv-liniya:rgba(255,255,255,.10);  /* разделители */
+    --pv-ramka:rgba(255,255,255,.28);
+    --pv-chuzhoe:rgba(255,255,255,.09); /* сообщение собеседника */
+    --pv-svoyo:rgba(232,98,44,.20);     /* своё сообщение — акцент вполсилы */
+    --pv-polzunok:#ff7d47;              /* ползунок прокрутки под курсором */
+    --pv-na-svetlom:#101010;            /* текст на светлой плашке */
+
     --sb-bg:#161D22;             /* фон панели */
     --sb-surface:#28353D;        /* строка под курсором, блоки внутри */
     --sb-line:#37444D;           /* границы и разделители */
@@ -575,7 +601,7 @@
      который человек считает сделанным, обязан быть сделан, и пока он
      не уехал, врать об этом нельзя (задача 2026-09-03-03). */
   .foto-zhdyot::after{content:"ждёт отправки";position:absolute;left:4px;right:4px;bottom:4px;
-    background:rgba(0,0,0,.72);color:#fff;font-size:9px;line-height:1.3;
+    background:var(--pv-plotnaya);color:var(--pv-tekst);font-size:9px;line-height:1.3;
     text-align:center;padding:3px 2px;border-radius:5px;pointer-events:none;}
   .foto-zhdyot img{opacity:.75;}
   /* ЗНАЧОК РАЗГОВОРА НА ПЛИТКЕ (с 2026-08-25).
@@ -588,7 +614,7 @@
     position:absolute; left:5px; bottom:5px; z-index:2;
     display:flex; align-items:center; gap:4px;
     padding:2px 7px 2px 5px; border-radius:99px;
-    background:rgba(0,0,0,.66); color:#fff;
+    background:var(--pv-plotnaya); color:var(--pv-tekst);
     font-size:11px; line-height:1.5; pointer-events:none;
   }
   .ph-komm svg{ width:11px; height:11px; fill:none; stroke:currentColor; stroke-width:2.2; }
@@ -609,7 +635,7 @@
 
   /* ПРОСМОТР НА ВЕСЬ ЭКРАН */
   .photo-viewer{
-    position:fixed; inset:0; z-index:9999; background:rgba(0,0,0,.94);
+    position:fixed; inset:0; z-index:9999; background:var(--pv-fon);
     /* Столбиком: сверху снимок, снизу разговор. Раньше полоса лежала
        наложением, и на широком снимке закрывала фотографию. */
     display:flex; flex-direction:column; align-items:stretch;
@@ -645,8 +671,8 @@
        куда нажимать. Теперь подложка тёмная и с тенью: читается и на
        белой плитке, и на чёрном проёме. */
     position:absolute; z-index:3; border:none;
-    background:rgba(0,0,0,.55); color:#fff;
-    box-shadow:0 1px 6px rgba(0,0,0,.45);
+    background:var(--pv-nakladka); color:var(--pv-tekst);
+    box-shadow:0 1px 6px var(--pv-ten);
     border-radius:50%; cursor:pointer; line-height:1; padding:0;
     display:flex; align-items:center; justify-content:center;
   }
@@ -674,24 +700,24 @@
     position:relative; z-index:3; flex:0 0 auto;
     padding:10px 16px calc(10px + env(safe-area-inset-bottom));
     display:flex; flex-direction:column; gap:8px;
-    color:#fff; font-family:'JetBrains Mono',monospace; font-size:12px;
+    color:var(--pv-tekst); font-family:'JetBrains Mono',monospace; font-size:12px;
     /* Своя подложка, а не растяжка по снимку: полоса больше не лежит
        на фотографии, и затемнять под собой ей нечего. */
-    background:rgba(0,0,0,.55);
-    border-top:1px solid rgba(255,255,255,.10);
+    background:var(--pv-nakladka);
+    border-top:1px solid var(--pv-liniya);
   }
   .pv-meta{ display:flex; align-items:center; justify-content:space-between; gap:12px; }
   /* Кнопка разговора: значок и число, как в образце владельца. */
   .pv-komm-knopka{
     display:flex; align-items:center; gap:6px; margin-left:auto;
     background:none; border:none; padding:4px 2px; cursor:pointer;
-    color:rgba(255,255,255,.85); font-family:inherit; font-size:12px;
+    color:var(--pv-tekst-tihiy); font-family:inherit; font-size:12px;
   }
   .pv-komm-knopka svg{
     width:20px; height:20px; fill:none;
     stroke:currentColor; stroke-width:1.8; stroke-linejoin:round;
   }
-  .pv-komm-knopka:hover{ color:#fff; }
+  .pv-komm-knopka:hover{ color:var(--pv-tekst); }
   .photo-viewer.komm-otkryt .pv-komm-knopka{ color:var(--orange); }
 
   /* КОММЕНТАРИИ ПУЗЫРЬКАМИ, как в переписке.
@@ -730,7 +756,7 @@
   .pv-komm::-webkit-scrollbar-thumb{
     background:var(--orange); border-radius:99px;
   }
-  .pv-komm::-webkit-scrollbar-thumb:hover{ background:#ff7d47; }
+  .pv-komm::-webkit-scrollbar-thumb:hover{ background:var(--pv-polzunok); }
   .pv-komm:empty{ display:none; }
   /* РАЗГОВОР СТРОКАМИ, А НЕ ПУЗЫРЯМИ — по образцу Инстаграма,
      владелец приложил снимок 24 августа 2026.
@@ -748,7 +774,7 @@
   .pv-k-ava{
     flex:0 0 28px; width:28px; height:28px; border-radius:50%;
     display:grid; place-items:center;
-    font-size:12px; font-weight:700; color:#101010;
+    font-size:12px; font-weight:700; color:var(--pv-na-svetlom);
     text-transform:uppercase; user-select:none;
   }
   /* ПУЗЫРЬ, КАК В МЕССЕНДЖЕРЕ. Владелец 25 августа 2026: «хочется,
@@ -762,19 +788,19 @@
      без сторон подпись и есть единственный признак. */
   .pv-k-soderzh{
     min-width:0; max-width:calc(100% - 38px); width:fit-content;
-    background:rgba(255,255,255,.09);
+    background:var(--pv-chuzhoe);
     border-radius:14px 14px 14px 14px;
     border-top-left-radius:5px;      /* «хвостик» к значку, как в переписке */
     padding:7px 11px 5px;
   }
-  .pv-k-svoy .pv-k-soderzh{ background:rgba(232,98,44,.20); }
+  .pv-k-svoy .pv-k-soderzh{ background:var(--pv-svoyo); }
   .pv-k-shapka{ display:flex; align-items:baseline; gap:7px; flex-wrap:wrap; }
   .pv-k-avtor{
     font-size:12px; font-weight:600; line-height:1.3;
     overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:14em;
   }
   .pv-k-telo{
-    font-size:13.5px; line-height:1.45; color:#fff;
+    font-size:13.5px; line-height:1.45; color:var(--pv-tekst);
     word-break:break-word; margin-top:1px;
   }
   /* Время внизу справа внутри пузыря — там же, где его ищут в любой
@@ -784,20 +810,20 @@
     display:flex; align-items:center; justify-content:flex-end;
     gap:14px; margin-top:2px;
   }
-  .pv-k-kogda{ font-size:11px; color:rgba(255,255,255,.45); }
+  .pv-k-kogda{ font-size:11px; color:var(--pv-tekst-edva); }
   .pv-k-knopki{ display:flex; gap:14px; }
   /* Подчёркивание убрано: в образце действия — просто мелкий серый
      текст, и подчёркнутое рядом с ним выглядит ссылкой из прошлого. */
   .pv-k-knopki button{
     background:none; border:none; padding:0; cursor:pointer;
     font-family:inherit; font-size:11px; font-weight:600;
-    color:rgba(255,255,255,.5);
+    color:var(--pv-tekst-edva);
   }
-  .pv-k-knopki button:hover{ color:#fff; }
+  .pv-k-knopki button:hover{ color:var(--pv-tekst); }
   .pv-add{ display:flex; gap:8px; align-items:center; max-width:560px; }
   .pv-add .pv-note{ flex:1; }
   .pv-add .btn{ flex:0 0 auto; }
-  .pv-k-pusto{ font-size:12px; color:rgba(255,255,255,.55); }
+  .pv-k-pusto{ font-size:12px; color:var(--pv-tekst-edva); }
 
   /* РАЗГОВОР ЗАКРЫТ, ПОКА НЕ ПОПРОСЯТ. Открывается — и полоса
      вырастает, а снимок над ней сжимается сам: раскладка столбиком,
@@ -829,13 +855,13 @@
       overflow-y:auto; overscroll-behavior:contain;
       padding:16px 16px calc(16px + env(safe-area-inset-bottom));
       border-top:none;
-      border-right:1px solid rgba(255,255,255,.10);
+      border-right:1px solid var(--pv-liniya);
       /* НЕПРОЗРАЧНАЯ, а не полупрозрачная (31 августа 2026).
-         Было rgba(0,0,0,.72): сквозь разговор просвечивала смета,
+         Было var(--pv-plotnaya): сквозь разговор просвечивала смета,
          и владелец прислал снимок с iPad — «нечитабельные комментарии
          из-за прозрачности». Разговор читают, а не любуются им поверх
          фотографии; за прозрачность здесь платит разборчивость текста. */
-      background:#0d0d0d;
+      background:var(--pv-panel);
     }
     /* ПОКА РАЗГОВОР ЗАКРЫТ — СВЕДЕНИЯ ЛОЖАТСЯ ПОВЕРХ СНИМКА.
        Прежде полоса забирала колонку даже закрытой, и снимок
@@ -848,7 +874,7 @@
       width:auto; max-width:min(460px, 45vw); height:auto;
       overflow:visible; border-right:none;
       padding:14px 20px 30px;
-      background:linear-gradient(to bottom, rgba(0,0,0,.78) 0%, rgba(0,0,0,.55) 55%, rgba(0,0,0,0) 100%);
+      background:linear-gradient(to bottom, var(--pv-plotnaya) 0%, var(--pv-nakladka) 55%, transparent 100%);
     }
     /* Разговор занимает ВСЮ высоту колонки: сверху сведения о снимке,
        снизу поле ввода, а между ними — всё остальное место. */
@@ -857,18 +883,18 @@
     .pv-add{ max-width:none; }
     .pv-meta{
       flex-direction:column; gap:2px; flex:0 0 auto;
-      padding-bottom:10px; border-bottom:1px solid rgba(255,255,255,.10);
-      color:rgba(255,255,255,.75);
+      padding-bottom:10px; border-bottom:1px solid var(--pv-liniya);
+      color:var(--pv-tekst-tihiy);
     }
   }
 
   .pv-note{
     width:100%; padding:10px 12px; min-height:44px;
-    border:1px solid rgba(255,255,255,.28); border-radius:var(--radius);
-    background:rgba(0,0,0,.35); color:#fff;
+    border:1px solid var(--pv-ramka); border-radius:var(--radius);
+    background:var(--pv-pole); color:var(--pv-tekst);
     font-family:inherit; font-size:13px;
   }
-  .pv-note::placeholder{ color:rgba(255,255,255,.45); }
+  .pv-note::placeholder{ color:var(--pv-tekst-edva); }
   .pv-note:focus{ outline:none; border-color:var(--orange); }
   /* Тот, кто только смотрит, подпись видит, но не правит.
      Прячем правку стилями, а не вырезанием из разметки. */
@@ -876,7 +902,7 @@
   .ph-wait{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--ink-soft);text-align:center;padding:4px;}
   .ph-del{
     position:absolute;top:4px;right:4px;width:22px;height:22px;line-height:1;
-    border:none;border-radius:50%;background:rgba(0,0,0,.55);color:#fff;
+    border:none;border-radius:50%;background:var(--pv-nakladka);color:var(--pv-tekst);
     font-size:12px;cursor:pointer;display:none;
   }
   .ph-item:hover .ph-del{display:block;}
@@ -3725,7 +3751,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-04-184';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-04-185';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
