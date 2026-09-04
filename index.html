@@ -3901,7 +3901,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-04-215';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-04-217';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -12367,7 +12367,7 @@ function roomPlanSVG(segs, dir0, drawn){
     W, H,
     shirina: t => t.length*6 + 8, vys: 13,
     // отступы мельче, чем в окне черчения: холст меньше и буквы мельче
-    OT: 20, OT2: 9, GL_TXT: 11, GL_SHAG: 13,
+    OT: 12, OT2: 12, ZAZOR: 3, GL_TXT: 11, GL_SHAG: 13,
     kl: { ext:'plan-tick', line:'plan-dim', tick:'plan-dim' },
     sel: null,
     // на схеме число не нажимается — это картинка для чтения.
@@ -13139,7 +13139,13 @@ function razmeryKontura(p, sr){
       // случай, когда снаружи места нет вовсе (правило 18 августа 2026,
       // «не помещается — весь размер уходит внутрь контура»).
       // Уехавшее на полку — там, куда полка его увезла.
-      const poz = glub ? kray - glub*storonaZnak : uroven + 9*storonaZnak;
+      // Зазор между числом и размерной линией — общий для всех размеров.
+      // Считаем от края числа, а не от его середины: у прямых стен число
+      // лежит поперёк, у наклонных вдоль, и «отступ 9 от середины» давал
+      // им разный просвет. Владелец 4 сентября 2026: «на прямых линиях
+      // у полей отступ есть, а при наклонных нет».
+      const poz = glub ? kray - glub*storonaZnak
+                       : uroven + (sr.ZAZOR + h/2)*storonaZnak;
       let tx, ty;
       if(gorizont){ tx = seredina; ty = poz; }
       else        { ty = seredina; tx = poz; }
@@ -13222,7 +13228,7 @@ function razmeryKontura(p, sr){
     // ориентация числа по линии — как у цепей: вертикальные читаются снизу вверх
     const vert = Math.abs(by-ay) > Math.abs(bx-ax);
     const shir = vert ? h : w, vys = vert ? w : h;
-    const glubNach = OT2 + h/2 + (tesno ? h + 3 : 0);
+    const glubNach = OT2 + sr.ZAZOR + h/2 + (tesno ? h + 3 : 0);
     let glub = glubNach, nashli = false;
     for(let g = glubNach; g <= glubNach + (h+3)*5; g += h + 3){
       const x = mX + ux*g, y = mY + uy*g;
@@ -13345,7 +13351,7 @@ function polyDrawSVG(){
       my: y => v.maxY - (y - PD_PAD)/PD_SC*st,
       W: v.w, H: v.h,
       shirina: t => t.length*7 + 8, vys: 15,
-      OT: 30, OT2: 13, GL_TXT: 15, GL_SHAG: 17,
+      OT: 18, OT2: 18, ZAZOR: 4, GL_TXT: 15, GL_SHAG: 17,
       kl: { ext:'pd-dim-ext', line:'pd-dim-line', tick:'pd-dim-tick' },
       sel: polyDraw.sel,
       // ЧИСЛО В ОКНЕ ЧЕРЧЕНИЯ КЛИКАБЕЛЬНО: нажатие открывает поле правки
