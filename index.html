@@ -285,6 +285,9 @@
      случаях, а вторая встаёт ровно под первой. Ширину места задать
      по самой длинной строке нельзя — такой ширины в CSS нет. */
   .zn-ryad.po-centru{justify-content:center;line-height:1.35;}
+  /* Выключка влево — на случай, если подгонка не отработала: тогда
+     подпись хотя бы прижата к значку. Подогнав ширину, `znPodognat`
+     ставит центровку сам. */
   .zn-ryad.po-centru > span{text-align:left;}
   .zn-ryad .zn{margin-right:0;}
 
@@ -2082,7 +2085,7 @@
     display:flex;align-items:center;justify-content:space-between;gap:8px;
     background:transparent;border:1px solid var(--sb-line);border-radius:var(--radius);
     padding:9px 12px;cursor:pointer;text-align:left;
-    font-family:'Inter',sans-serif;color:var(--white);
+    font-family:'Inter',sans-serif;font-size:13px;color:var(--white);
     transition:border-color .12s ease;
   }
   .plan-btn:hover{border-color:var(--orange);}
@@ -3707,7 +3710,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-04-180';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-04-181';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -15954,6 +15957,7 @@ function render(){
   applyViewerMode();                    // роль «смотрит»: поля и кнопки правки выключены
   decorateDates();
   znNapolnit();          // значки в постоянной разметке
+  znPodognat();          // подписи, ужатые до своей самой длинной строки
   // подписка на живые изменения — по текущему проекту
   if(state.view === 'project'){
     const cp = currentProject();
@@ -17272,6 +17276,43 @@ const ZN_PO_IMENI = {
   shesternya: ZN_SHESTERNYA,
   zamok: ZN_ZAMOK, vnimanie: ZN_VNIMANIE
 };
+// ПОДПИСЬ ПОСЛЕ ПЕРЕНОСА УЖИМАЕТСЯ ДО САМОЙ ДЛИННОЙ СВОЕЙ СТРОКИ.
+//
+// Место подписи сжимается по тексту, только пока текст помещается.
+// Как только он переносится, место растягивается на всю оставшуюся
+// ширину — и центрируется тогда текст внутри места, а не значок
+// с подписью вместе: значок остаётся один у края. Владелец 4 сентября
+// 2026 показал это на «Строительном калькуляторе» дважды: сперва
+// «значок вообще оторван от надписи», потом «сделай по центру».
+//
+// Ширины «по самой длинной строке» в CSS нет — ни `fit-content`,
+// ни `min-content` её не дают: первая при переносе равна остатку,
+// вторая равна самому длинному слову и рвёт строку там, где не надо.
+// Поэтому меряем сами: строки берём как есть, ширину ставим по самой
+// длинной. Перенос от этого не меняется — самая длинная строка в новую
+// ширину влезает ровно, остальные тем более.
+function znPodognat(korn){
+  (korn || document).querySelectorAll('.zn-ryad.po-centru > span').forEach(el=>{
+    el.style.width = '';
+    el.style.textAlign = '';
+    const r = document.createRange();
+    r.selectNodeContents(el);
+    const stroki = [...r.getClientRects()];
+    if(stroki.length < 2) return;      // в одну строку — подгонять нечего
+    el.style.width = Math.ceil(Math.max(...stroki.map(x=>x.width))) + 'px';
+    el.style.textAlign = 'center';
+  });
+}
+
+// Перенос зависит от ширины окна, а она меняется без перерисовки —
+// поворот телефона, боковая панель на планшете. Поэтому пересчёт
+// и по изменению размера, не только при отрисовке.
+let znTaymer = null;
+window.addEventListener('resize', ()=>{
+  clearTimeout(znTaymer);
+  znTaymer = setTimeout(znPodognat, 120);
+});
+
 function znNapolnit(korn){
   (korn || document).querySelectorAll('[data-zn]').forEach(el=>{
     const z = ZN_PO_IMENI[el.getAttribute('data-zn')];
