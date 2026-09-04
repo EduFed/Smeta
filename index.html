@@ -2337,7 +2337,11 @@
   .ref-row-price i{font-weight:400;color:var(--ink-soft);font-size:12px;font-style:normal;}
   .ref-reset-wrap{margin:24px 0 40px;}
 
-  .wd-ref-mark{color:var(--orange);margin-right:6px;font-size:12px;}
+  /* Метка «из справочника плиточника». Значок теперь рисованный —
+     выравниваем его по строке и даём чуть меньший размер, чтобы
+     он не спорил с названием работы. */
+  .wd-ref-mark{color:var(--orange);margin-right:6px;font-size:12px;display:inline-flex;vertical-align:-0.2em;}
+  .wd-ref-mark svg{width:14px;height:14px;}
 
   /* ===== ОДНО УСТРОЙСТВО ОКОН НА ВСЁ ПРИЛОЖЕНИЕ (1 сентября 2026) =====
      Было восемь окон и в них: три разные подложки (.45 чёрная, .72 и .75
@@ -2618,8 +2622,21 @@
   /* ЗНАЧКИ ИНТЕРФЕЙСА. Рисованные линиями, цвет берут от текста рядом —
      см. набор ZN_* в коде. Выравниваем по строке: значок должен стоять
      на одной линии с буквами, а не прыгать над ними. */
-  .zn{vertical-align:-0.18em;flex:0 0 auto;}
+  .zn{vertical-align:-0.18em;flex:0 0 auto;margin-right:9px;}
   .zn-mesto{display:inline-flex;vertical-align:-0.18em;}
+  /* ОТСТУП ОТ СЛОВА — вариант «В», выбран владельцем 4 сентября 2026
+     из четырёх показанных. Значок вплотную к букве читался одним
+     пятном: «сливается».
+     Оранжевый значок (вариант «Б») тоже разделил бы, но дороже:
+     оранжевый в этом приложении означает ДЕЙСТВИЕ — кнопки, суммы,
+     метки. Покрась им все заголовки блоков, и он перестанет значить
+     что-либо там, где сейчас работает.
+     Девять, а не тринадцать: в разметке между значком и словом уже
+     стоит пробел, он даёт около четырёх.
+     Там, где значок стоит ОДИН или в конце подписи, отступ снимаем —
+     иначе он съезжает с середины кнопки. */
+  [data-theme-mode] .zn, .extra-zamok .zn{margin-right:0;}
+  .btn-locked .zn, .docs-btns .zn{margin-right:0;margin-left:1px;}
 
   /* Прозрачный лист под всплывающим меню. Ловит нажатие мимо, чтобы оно
      не дошло до списка проектов под ним. Ничего не рисует: он нужен
@@ -3167,7 +3184,7 @@
         <span class="plan-tag free" id="planBtnTag">—</span>
       </button>
       <button class="btn btn-ghost" id="settingsBtn">⚙ Настройки</button>
-      <button class="btn btn-ghost" id="tcOpenBtn">▦ Раскладка плитки</button>
+      <button class="btn btn-ghost" id="tcOpenBtn"><span class="zn-mesto" data-zn="plitka"></span> Раскладка плитки</button>
       <button class="btn btn-ghost" id="skOpenBtn"><span class="zn-mesto" data-zn="schyoty"></span> Строительный калькулятор</button>
       <button class="btn btn-primary" id="newProjectBtn">+ Новый проект</button>
     </div>
@@ -3638,7 +3655,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-04-172';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-04-174';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -4247,7 +4264,7 @@ function refSearchItems(room){
   const cfgTags = (REF_TILING.layName + ' ' + REF_TILING.layTags).toLowerCase();
   const rid = escapeAttr(room.id);
   rows.push(`<div class="wd-item wd-ref" data-ref-config="${rid}" data-name="${escapeAttr(cfgTags)}">
-      <span class="wd-ref-mark">▦</span>${escapeHtml(REF_TILING.layName)} — настроить…
+      <span class="wd-ref-mark">${ZN_PLITKA}</span>${escapeHtml(REF_TILING.layName)} — настроить…
       <span class="wd-unit">от ${fmtMoney(refBase())}/м²</span></div>`);
 
   REF_TILING.works.forEach(w=>{
@@ -4264,7 +4281,7 @@ function refSearchItems(room){
     const key = (w.name + ' ' + (w.tags||'') + ' ' + refSecName(w.sec)).toLowerCase();
     const act = isUsed ? '' : ` data-ref-add="${rid}|${w.id}"`;
     rows.push(`<div class="wd-item wd-ref${isUsed?' wd-used':''}"${act} data-name="${escapeAttr(key)}">
-      <span class="wd-ref-mark">▦</span>${escapeHtml(w.name)}${tail}</div>`);
+      <span class="wd-ref-mark">${ZN_PLITKA}</span>${escapeHtml(w.name)}${tail}</div>`);
   });
   return rows.join('');
 }
@@ -4317,7 +4334,7 @@ function renderRefView(){
       <div class="ref-base-hint">${escapeHtml(REF_TILING.baseHint)}</div>
     </div>
 
-    <button class="btn btn-primary ref-cfg-btn" id="refCfgOpen">▦ Конфигуратор укладки</button>
+    <button class="btn btn-primary ref-cfg-btn" id="refCfgOpen">${ZN_PLITKA} Конфигуратор укладки</button>
 
     <div class="ref-hint">
       Проценты и цены ниже — значения по умолчанию, они показаны серым.
@@ -17118,7 +17135,7 @@ function renderSmetaBlock(proj){
 // Приём не новый: так уже нарисованы ICON_SEND и ICON_DL. Третьего
 // способа рисовать значки не заводим (CLAUDE.md).
 //
-// Типографские знаки — ✕ ▾ → ← ⋯ ⋮ ✓ − ○ ⚙ ✎ ⌫ ☰ ▦ — оставлены как
+// Типографские знаки — ✕ ▾ → ← ⋯ ⋮ ✓ − ○ ⚙ ✎ ⌫ ☰ — оставлены как
 // были: они одноцветные по своей природе и цвет текста уже берут.
 function ZN(putь, razmer){
   return '<svg class="zn" viewBox="0 0 24 24" width="' + (razmer||16) + '" height="' + (razmer||16) +
@@ -17129,7 +17146,12 @@ function ZN(putь, razmer){
 const ZN_DENGI    = ZN('<path d="M3 8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2"/><path d="M3 8v9a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-5a2 2 0 0 0-2-2H5"/><circle cx="16" cy="14" r="1.2"/>');
 const ZN_KUPYURA  = ZN('<rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01M18 12h.01"/>');
 const ZN_VYPLATA  = ZN('<rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M19 3l3 3-3 3"/>');
-const ZN_MASTER   = ZN('<path d="M4 15a8 8 0 0 1 16 0"/><path d="M12 7V4"/><path d="M2 15h20"/><path d="M2 19h20"/>');
+// КАСКА. Первый вариант владелец забраковал: «больше похоже
+// на кастрюлю, когда подают блюдо в ресторане». И правда — я поставил
+// сверху шишечку, а снизу вторую линию, и вышла крышка на подносе.
+// Убрал и то, и другое; добавил рёбра на куполе и поля пошире — по ним
+// каска и узнаётся.
+const ZN_MASTER   = ZN('<path d="M3.5 18h17"/><path d="M6 18v-4.2a6 6 0 0 1 12 0V18"/><path d="M9.6 18V9.6"/><path d="M14.4 18V9.6"/>');
 const ZN_KOROBKA  = ZN('<path d="M3 8l9-4 9 4v8l-9 4-9-4z"/><path d="M3 8l9 4 9-4"/><path d="M12 12v8"/>');
 const ZN_UGOLNIK  = ZN('<path d="M4 4v16h16"/><path d="M4 20L20 4"/><path d="M9 20v-3M14 20v-3"/>');
 const ZN_KLYUCH   = ZN('<path d="M14.5 6.5a4 4 0 1 0 3 3L21 6l-2-2-2 2-1.5-1.5z"/><path d="M11.5 9.5L3 18v3h3l8.5-8.5"/>');
@@ -17143,13 +17165,19 @@ const ZN_GLAZ     = ZN('<path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.
 const ZN_SOLNCE   = ZN('<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>');
 const ZN_MESYATS  = ZN('<path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z"/>');
 const ZN_VNIMANIE = ZN('<path d="M12 4l9 16H3z"/><path d="M12 10v4M12 17.5h.01"/>', 15);
+// РАСКЛАДКА ПЛИТКИ. Был типографский знак ▦ — сплошная штриховка,
+// в которой линии сливаются и на телефоне читаются серым пятном.
+// Владелец: «сильно заштрихован, как будто линии уже почти сливаются».
+// Рисуем плитку со смещением рядов: три линии вместо восьми, и сразу
+// видно, что это кладка, а не сетка.
+const ZN_PLITKA   = ZN('<rect x="3" y="4" width="18" height="16" rx="1.5"/><path d="M3 9.3h18M3 14.7h18"/><path d="M9 4v5.3M15 9.3v5.4M9 14.7V20"/>');
 
 // Места в постоянной разметке (кнопка калькулятора, переключатель темы)
 // помечены пустым <span data-zn="…">: сама разметка лежит в файле выше
 // объявления значков, и вставить их прямо туда нельзя. Наполняем один
 // раз при запуске.
 const ZN_PO_IMENI = {
-  schyoty: ZN_SCHYOTY, solnce: ZN_SOLNCE, mesyats: ZN_MESYATS,
+  schyoty: ZN_SCHYOTY, solnce: ZN_SOLNCE, mesyats: ZN_MESYATS, plitka: ZN_PLITKA,
   zamok: ZN_ZAMOK, vnimanie: ZN_VNIMANIE
 };
 function znNapolnit(korn){
@@ -17742,7 +17770,7 @@ function renderExtraWorksBlock(proj){
   // строку под поверхность помещения, а доп. работа ни к одной не привязана.
   const ewRef = refOn() ? REF_TILING.works.map(w=>{
     const key = (w.name + ' ' + (w.tags||'') + ' ' + refSecName(w.sec)).toLowerCase();
-    return `<div class="wd-item wd-ref" data-ew-ref-add="${escapeAttr(w.id)}" data-name="${escapeAttr(key)}"><span><span class="wd-ref-mark">▦</span>${escapeHtml(w.name)}</span><span class="wd-unit">${fmtMoney(refWorkPrice(w))}/${UNIT_LABEL[w.unit]}</span></div>`;
+    return `<div class="wd-item wd-ref" data-ew-ref-add="${escapeAttr(w.id)}" data-name="${escapeAttr(key)}"><span><span class="wd-ref-mark">${ZN_PLITKA}</span>${escapeHtml(w.name)}</span><span class="wd-unit">${fmtMoney(refWorkPrice(w))}/${UNIT_LABEL[w.unit]}</span></div>`;
   }).join('') : '';
   const ewQ = uiExtraSearch[proj.id] || '';
 
