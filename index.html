@@ -132,6 +132,19 @@
        глазами — это и есть «подобрано на глаз», ради чего правило
        «любой цвет — переменная» и заведено. Свёл к четырём накладкам
        и трём ступеням текста (4 сентября 2026). */
+    /* ТЕНИ. Тень — не украшение, а высота: она говорит, насколько
+       предмет поднят над листом. Значит и величин должно быть столько,
+       сколько у нас высот, а не столько, сколько мест.
+       Было семнадцать разных: .12 и .14 у соседних списков, .25 и .28
+       у соседних полос, .3 и .38 — и ни одна разница не читается.
+       Свели к четырём высотам плюс два особых случая (4 сентября 2026). */
+    --ten-knopka:0 2px 8px rgba(0,0,0,.18);    /* кнопка, ползунок — чуть над листом */
+    --ten-spisok:0 6px 18px rgba(0,0,0,.14);   /* выпадающий список, меню, поле в фокусе */
+    --ten-vsplyv:0 10px 30px rgba(0,0,0,.25);  /* всплывающая полоса, тост, крупное меню */
+    --ten-okno:0 18px 50px rgba(0,0,0,.30);    /* окно поверх всего */
+    --ten-vverh:0 -4px 16px rgba(0,0,0,.10);   /* полоса у нижнего края — тень вверх */
+    --ten-bumaga:0 2px 10px rgba(0,0,0,.4);    /* лист документа на сером фоне просмотра */
+
     --pv-fon:rgba(0,0,0,.94);           /* лист под снимком */
     --pv-panel:#0d0d0d;                 /* панель разговора сбоку */
     --pv-plotnaya:rgba(0,0,0,.72);      /* подпись поверх снимка — читаемость важнее прозрачности */
@@ -192,8 +205,8 @@
   [data-theme="dark"] .plan-btn:hover{ border-color:var(--orange); }
   [data-theme="dark"] .nav-toggle{ background:var(--sb-surface); color:var(--na-akcente); }
   [data-theme="dark"] .smeta-total{ background:var(--sb-bg); color:var(--na-akcente); }
-  [data-theme="dark"] .auth-overlay{ background:#12171A; }
-  [data-theme="dark"] .smeta-wrap, [data-theme="dark"] .catalog-table{ border-color:#2A343B; }
+  [data-theme="dark"] .auth-overlay{ background:var(--paper); }
+  [data-theme="dark"] .smeta-wrap, [data-theme="dark"] .catalog-table{ border-color:var(--paper-line); }
   @media print{
     [data-theme="dark"]{ --paper:#fff; --white:#fff; --ink:#1E2A32; --ink-soft:#5B6B74; --paper-line:#D9D2BE; --blue-soft:#DDE7EA; }
   }
@@ -453,7 +466,7 @@
     background:var(--ink); color:var(--white);
     font-size:18px; cursor:pointer; display:none;
     align-items:center; justify-content:center;
-    box-shadow:0 2px 8px rgba(0,0,0,.18);
+    box-shadow:var(--ten-knopka);
   }
   body.app-ready .nav-toggle{ display:flex; }
   .scroll-bottom-btn{
@@ -462,14 +475,14 @@
     background:var(--orange); color:var(--na-akcente);
     font-size:20px; line-height:1; cursor:pointer;
     display:none; align-items:center; justify-content:center;
-    box-shadow:0 3px 10px rgba(0,0,0,.25);
+    box-shadow:var(--ten-knopka);
     opacity:0; transition:opacity .2s ease, transform .2s ease;
     transform:translateY(6px);
   }
   .scroll-bottom-btn.visible{display:flex; opacity:1; transform:translateY(0);}
-  .scroll-bottom-btn:hover{ background:#d4551f; }
+  .scroll-bottom-btn:hover{ background:var(--orange-hover); }
   /* отклик на нажатие: кнопка слегка «вдавливается» и темнеет */
-  .scroll-bottom-btn.visible:active{ background:#d4551f; transform:scale(0.92); }
+  .scroll-bottom-btn.visible:active{ background:var(--orange-hover); transform:scale(0.92); }
   .btn-icon:active{ opacity:.55; }
   .nav-toggle:active{ transform:scale(0.94); }
   .nav-toggle:hover{ background:var(--sb-surface); }
@@ -1008,7 +1021,7 @@
   .work-search{position:relative;}
   .work-search-input{width:100%;box-sizing:border-box;font-family:'Inter',sans-serif;font-size:13px;border:1px solid var(--paper-line);border-radius:var(--radius);padding:9px 11px;background:var(--white);color:var(--ink);}
   .work-search-input:focus{outline:none;border-color:var(--blue);}
-  .work-dropdown{display:none;position:absolute;top:100%;left:0;right:0;z-index:30;max-height:260px;overflow-y:auto;margin-top:4px;background:var(--white);border:1px solid var(--paper-line);border-radius:var(--radius);box-shadow:0 6px 18px rgba(0,0,0,.12);}
+  .work-dropdown{display:none;position:absolute;top:100%;left:0;right:0;z-index:30;max-height:260px;overflow-y:auto;margin-top:4px;background:var(--white);border:1px solid var(--paper-line);border-radius:var(--radius);box-shadow:var(--ten-spisok);}
   .work-search.open .work-dropdown{display:block;}
   /* ВЫБОР В ДОП. РАБОТАХ — список В ПОТОКЕ, а не всплывающий.
      Блок доп. работ живёт внутри .cust-acc/.cust-body, а у обоих
@@ -1157,7 +1170,7 @@
     display:none;position:absolute;top:100%;right:0;z-index:40;margin-top:4px;
     min-width:210px;padding:6px;
     background:var(--white);border:1px solid var(--paper-line);
-    border-radius:var(--radius);box-shadow:0 6px 18px rgba(0,0,0,.14);
+    border-radius:var(--radius);box-shadow:var(--ten-spisok);
   }
   .mode-dd.open{z-index:45;}
   .mode-dd.open .mode-list{display:block;}
@@ -1296,7 +1309,7 @@
   /* Плашка «вас пригласили» */
   /* padding-top с safe-area: приложение открывается на весь экран,
      и без этого плашка залезает под часы и батарею телефона */
-  .invite-bar{position:sticky;top:0;z-index:60;background:var(--orange-soft,#FBE4D8);
+  .invite-bar{position:sticky;top:0;z-index:60;background:var(--orange-soft);
               border-bottom:1px solid var(--paper-line);
               padding-top:env(safe-area-inset-top,0px);
               transition:margin-left .25s ease;}
@@ -1328,7 +1341,7 @@
   .room-menu{position:relative;flex:0 0 auto;}
   .room-menu-pop{position:absolute;right:0;top:calc(100% + 6px);z-index:40;display:none;
                  min-width:180px;background:var(--white);border:1px solid var(--paper-line);
-                 border-radius:var(--radius);box-shadow:0 10px 24px rgba(30,42,50,.14);
+                 border-radius:var(--radius);box-shadow:var(--ten-spisok);
                  padding:6px;flex-direction:column;}
   .room-menu-pop.open{display:flex;}
   .room-menu-pop button{display:block;width:100%;text-align:left;background:none;border:0;
@@ -1376,7 +1389,7 @@
   /* настройка по одному мастеру: подпись слева, орган управления справа */
   .team-sub{display:flex;align-items:center;justify-content:space-between;gap:14px;
             padding:10px 0 0;margin-top:10px;border-top:1px solid var(--paper-line);}
-  .team-sub > span:first-child{font-size:13px;color:var(--ink-soft, #6b6b6b);min-width:0;}
+  .team-sub > span:first-child{font-size:13px;color:var(--ink-soft);min-width:0;}
   .team-sub span i{display:block;font-style:normal;font-size:11px;opacity:.75;
                    margin-top:3px;line-height:1.4;}
   .team-share{display:flex;align-items:center;gap:4px;flex:0 0 auto;}
@@ -1503,7 +1516,7 @@
     width:min(85vw, 900px) !important;
     max-width:none !important;
     z-index:40;background:var(--white);
-    box-shadow:0 6px 20px rgba(0,0,0,.2);
+    box-shadow:var(--ten-spisok);
     border-color:var(--blue);
   }
   .catalog-table td.name-cell{position:relative;overflow:visible;}
@@ -1514,7 +1527,7 @@
   .applies-dd{position:relative;}
   .applies-btn{width:100%;max-width:100%;box-sizing:border-box;text-align:left;font-family:'Inter',sans-serif;font-size:13px;border:1px solid var(--paper-line);border-radius:var(--radius);padding:6px 8px;background:var(--paper);color:var(--ink);cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:6px;}
   .applies-btn span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;}
-  .applies-list{display:none;position:absolute;top:100%;left:0;z-index:20;margin-top:4px;width:190px;background:var(--white);border:1px solid var(--paper-line);border-radius:var(--radius);box-shadow:0 6px 18px rgba(0,0,0,.14);padding:6px;}
+  .applies-list{display:none;position:absolute;top:100%;left:0;z-index:20;margin-top:4px;width:190px;background:var(--white);border:1px solid var(--paper-line);border-radius:var(--radius);box-shadow:var(--ten-spisok);padding:6px;}
   .applies-dd.open .applies-list{display:block;}
   .ap-item{display:flex;align-items:center;justify-content:flex-start;text-align:left;width:100%;box-sizing:border-box;gap:8px;padding:6px 8px;font-size:13px;color:var(--ink);cursor:pointer;border-radius:var(--radius);}
   .ap-item input[type="checkbox"]{
@@ -1831,7 +1844,7 @@
   }
   .pdf-page{
     display:block;margin:0 auto 12px;width:100%;max-width:900px;
-    background:#fff;box-shadow:0 2px 10px rgba(0,0,0,.4);
+    background:#fff;box-shadow:var(--ten-bumaga);
   }
   .preview-status{
     color:#E6EAED;font-family:'JetBrains Mono',monospace;font-size:12px;
@@ -2063,7 +2076,7 @@
     z-index:3000;display:flex;align-items:center;gap:12px;
     background:var(--ink);color:var(--white);
     padding:10px 12px 10px 16px;border-radius:var(--radius);
-    box-shadow:0 6px 24px rgba(0,0,0,.28);
+    box-shadow:var(--ten-vsplyv);
     font-family:'Inter',sans-serif;font-size:13px;
     max-width:calc(100vw - 32px);
   }
@@ -2088,8 +2101,8 @@
       font-family:'Inter',sans-serif; font-size:8px; color:var(--sb-muted);
     }
     body.free-plan .print-wm-logo{ width:12px; height:12px; }
-    body.free-plan .print-wm-foot b{ color:#E8622C; }
-    body.free-plan .print-wm-foot i{ color:#2C5F7C; font-style:normal; }
+    body.free-plan .print-wm-foot b{ color:var(--orange); }
+    body.free-plan .print-wm-foot i{ color:var(--blue); font-style:normal; }
   }
 
   /* ---------- ЗАБЛОКИРОВАННАЯ ЛИМИТОМ КНОПКА ---------- */
@@ -2261,7 +2274,7 @@
     position:fixed;z-index:4001;
     background:var(--white);color:var(--ink);
     border:1px solid var(--paper-line);border-radius:var(--radius);
-    box-shadow:0 12px 34px rgba(0,0,0,.38);
+    box-shadow:var(--ten-vsplyv);
     overflow-y:auto;-webkit-overflow-scrolling:touch;
     max-height:min(60vh, 420px);
     font-family:'Inter',sans-serif;font-size:15px;
@@ -2314,7 +2327,7 @@
     background:var(--ink); color:var(--paper);
     padding:12px 18px; border-radius:var(--radius);
     font-size:14px; text-align:center;
-    box-shadow:0 6px 22px rgba(0,0,0,.3);
+    box-shadow:var(--ten-vsplyv);
     opacity:0; transition:opacity .25s ease;
   }
   .toast.show{ opacity:1; }
@@ -2403,7 +2416,7 @@
   .ref-switch-txt span{display:block;margin-top:3px;font-size:13px;color:var(--ink-soft);}
   .ref-switch.locked{opacity:.75;}
   .ref-toggle{position:relative;flex-shrink:0;width:52px;height:30px;border:none;border-radius:15px;background:var(--paper-line);cursor:pointer;transition:background .18s;padding:0;}
-  .ref-toggle .ref-knob{position:absolute;top:3px;left:3px;width:24px;height:24px;border-radius:50%;background:var(--white);box-shadow:0 1px 3px rgba(0,0,0,.25);transition:transform .18s;}
+  .ref-toggle .ref-knob{position:absolute;top:3px;left:3px;width:24px;height:24px;border-radius:50%;background:var(--white);box-shadow:var(--ten-knopka);transition:transform .18s;}
   .ref-toggle.on{background:var(--orange);}
   .ref-toggle.on .ref-knob{transform:translateX(22px);}
   .ref-locked-note{padding:18px 20px;border:1px solid var(--paper-line);border-radius:var(--radius);background:var(--paper);font-size:14px;line-height:1.55;color:var(--ink);}
@@ -2468,7 +2481,7 @@
   .refcfg-modal, .plan-modal, .conflict-modal, .support-modal, .pd-modal{
     width:100%; background:var(--white);
     border:1px solid var(--paper-line); border-radius:16px;
-    box-shadow:0 18px 50px rgba(0,0,0,.3);
+    box-shadow:var(--ten-okno);
   }
   .refcfg-modal{max-width:560px;max-height:92vh;display:flex;flex-direction:column;overflow:hidden;}
   .refcfg-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:18px 20px 14px;border-bottom:1px solid var(--paper-line);}
@@ -2584,7 +2597,7 @@
      неудобным. Теперь окно занимает почти весь экран, но с полями
      и потолком по ширине: во весь монитор чертёж растягивать незачем —
      глазу тяжело, и пропадает ощущение окна, которое можно закрыть. */
-  .pd-modal{width:min(1180px, 96vw);max-width:none;height:94vh;max-height:94vh;display:flex;flex-direction:column;background:var(--white);border-radius:16px;overflow:hidden;box-shadow:0 18px 50px rgba(0,0,0,.3);}
+  .pd-modal{width:min(1180px, 96vw);max-width:none;height:94vh;max-height:94vh;display:flex;flex-direction:column;background:var(--white);border-radius:16px;overflow:hidden;box-shadow:var(--ten-okno);}
   /* На телефоне — весь экран: любая рамка съедает ту самую площадь,
      ради которой всё и делается, а контекст за окном там не виден. */
   @media (max-width: 720px){
@@ -2747,7 +2760,7 @@
   .schyoty{display:none;position:fixed;left:0;right:0;bottom:0;z-index:9000;
     gap:4px;padding:6px 8px calc(6px + env(safe-area-inset-bottom));
     background:var(--paper);border-top:1px solid var(--paper-line);
-    box-shadow:0 -4px 16px rgba(0,0,0,.10);}
+    box-shadow:var(--ten-vverh);}
   .schyoty.on{display:flex;}
   .schyoty button{flex:1 1 0;min-width:0;height:42px;border:1px solid var(--paper-line);
     border-radius:8px;background:var(--white);color:var(--ink);
@@ -2758,7 +2771,7 @@
     color:var(--na-akcente);flex:1.3 1 0;font-weight:600;}
   .schyoty button.styor{font-size:16px;}
   .status-menu{display:none;position:fixed;z-index:5300;min-width:190px;padding:4px;
-    background:var(--white);border:1px solid var(--paper-line);border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.25);}
+    background:var(--white);border:1px solid var(--paper-line);border-radius:10px;box-shadow:var(--ten-vsplyv);}
   .status-menu button{display:flex;align-items:center;gap:9px;width:100%;padding:8px 10px;border:none;
     background:none;color:var(--ink);font-size:13px;text-align:left;cursor:pointer;border-radius:7px;}
   .status-menu button:hover{background:var(--paper);}
@@ -3165,7 +3178,7 @@
     z-index:9000;display:flex;flex-direction:column;gap:6px;
     padding:14px 16px;border-radius:12px;
     background:var(--white);border:1px solid var(--red);
-    box-shadow:0 10px 30px rgba(0,0,0,.25);
+    box-shadow:var(--ten-vsplyv);
   }
   .fatal-note b{color:var(--red);font-size:14px;}
   .fatal-note span{font-family:'JetBrains Mono',monospace;font-size:11px;
@@ -3751,7 +3764,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-04-186';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-04-187';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
