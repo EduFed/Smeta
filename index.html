@@ -2615,6 +2615,12 @@
 
   /* Сайдбар лежит на слое 1000, поэтому меню должно быть выше него,
      иначе оно открывается под панелью и его не видно. */
+  /* ЗНАЧКИ ИНТЕРФЕЙСА. Рисованные линиями, цвет берут от текста рядом —
+     см. набор ZN_* в коде. Выравниваем по строке: значок должен стоять
+     на одной линии с буквами, а не прыгать над ними. */
+  .zn{vertical-align:-0.18em;flex:0 0 auto;}
+  .zn-mesto{display:inline-flex;vertical-align:-0.18em;}
+
   /* Прозрачный лист под всплывающим меню. Ловит нажатие мимо, чтобы оно
      не дошло до списка проектов под ним. Ничего не рисует: он нужен
      не для вида, а чтобы принять нажатие на себя. */
@@ -3162,7 +3168,7 @@
       </button>
       <button class="btn btn-ghost" id="settingsBtn">⚙ Настройки</button>
       <button class="btn btn-ghost" id="tcOpenBtn">▦ Раскладка плитки</button>
-      <button class="btn btn-ghost" id="skOpenBtn">🧮 Строительный калькулятор</button>
+      <button class="btn btn-ghost" id="skOpenBtn"><span class="zn-mesto" data-zn="schyoty"></span> Строительный калькулятор</button>
       <button class="btn btn-primary" id="newProjectBtn">+ Новый проект</button>
     </div>
 
@@ -3179,8 +3185,8 @@
       <div class="theme-switch no-print">
         <span class="theme-label">Тема</span>
         <div class="theme-btns">
-          <button type="button" data-theme-mode="light" title="Светлая">☀</button>
-          <button type="button" data-theme-mode="dark" title="Тёмная">🌙</button>
+          <button type="button" data-theme-mode="light" title="Светлая"><span class="zn-mesto" data-zn="solnce"></span></button>
+          <button type="button" data-theme-mode="dark" title="Тёмная"><span class="zn-mesto" data-zn="mesyats"></span></button>
           <button type="button" data-theme-mode="auto" title="Авто — как на телефоне">Авто</button>
         </div>
       </div>
@@ -3632,7 +3638,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-04-171';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-04-172';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -5402,7 +5408,9 @@ function applyLocks(){
   const mark = (el, locked, baseText)=>{
     if(!el) return;
     el.classList.toggle('btn-locked', !!locked);
-    el.textContent = locked ? (baseText + ' 🔒') : baseText;
+    // Значок — разметкой, а не знаком в тексте: иначе цвет задаёт шрифт
+    // устройства, а не палитра (правка 4 сентября 2026).
+    el.innerHTML = escapeHtml(baseText) + (locked ? ' ' + ZN_ZAMOK : '');
     el.title = locked ? 'Доступно в полном тарифе' : '';
   };
 
@@ -6297,7 +6305,7 @@ function teamAccHtml(proj){
   return `
   <div class="cust-acc team-acc ${open?'open':''}" data-team-acc="${proj.id}">
     <button type="button" class="cust-head no-print" data-team-toggle="${proj.id}" aria-expanded="${open}">
-      <span class="chev">▾</span><span>👷 Бригада</span>
+      <span class="chev">▾</span><span>${ZN_MASTER} Бригада</span>
     </button>
     <div class="cust-body">${body}</div>
   </div>`;
@@ -6493,8 +6501,8 @@ function applyViewerMode(){
       // как сломанная. Значок вешаем только на текстовые кнопки —
       // у значковых (✕, ▾) внутри разметка, её ломать нельзя.
       const txt = (btn.textContent || '').trim();
-      if(txt && txt.length > 2 && !btn.querySelector('svg, span') && txt.indexOf('🔒') < 0){
-        btn.textContent = txt + ' 🔒';
+      if(txt && txt.length > 2 && !btn.querySelector('svg, span')){
+        btn.innerHTML = escapeHtml(txt) + ' ' + ZN_ZAMOK;
       }
     }
   });
@@ -11569,7 +11577,7 @@ async function bootstrap(){
     const txt = document.getElementById('configWarnText');
     if(!libLoaded && /^https:\/\//.test(SUPABASE_URL) && txt){
       txt.innerHTML =
-        '📡 Нет связи с интернетом.<br>' +
+        ZN_NET_SETI + ' Нет связи с интернетом.<br>' +
         'Приложение не смогло загрузить нужные библиотеки.<br>' +
         '<span style="color:var(--sb-muted);">Подключитесь к сети и откройте приложение снова — ' +
         'после этого оно будет работать и офлайн.</span>';
@@ -15876,6 +15884,7 @@ function render(){
   applyLocks();
   applyViewerMode();                    // роль «смотрит»: поля и кнопки правки выключены
   decorateDates();
+  znNapolnit();          // значки в постоянной разметке
   // подписка на живые изменения — по текущему проекту
   if(state.view === 'project'){
     const cp = currentProject();
@@ -16141,7 +16150,7 @@ function renderProjMaterials(proj){
     <div class="section mat-block cust-acc ${open?'open':''}" data-mat-acc="${proj.id}">
       <button type="button" class="cust-head no-print" data-mat-toggle="${proj.id}" aria-expanded="${open}">
         <span class="chev">▾</span>
-        <span>🧱 Материалы</span>
+        <span>${ZN_KOROBKA} Материалы</span>
         <span class="mat-head-sum">${items.filter(matFilled).length
             ? items.filter(matFilled).length + ' поз.' + (withPrice ? ' · ' + fmtMoney(matSum) : '')
             : ''}</span>
@@ -16654,7 +16663,7 @@ function renderSidebar(){
   list.innerHTML =
       (foreign.length ? own.map(row).join('') : ordered.map(row).join(''))
     + (foreign.length
-        ? `<div class="proj-group">👷 Работаю в бригаде<i>чужие проекты — тариф и права задаёт владелец</i></div>`
+        ? `<div class="proj-group">${ZN_MASTER} Работаю в бригаде<i>чужие проекты — тариф и права задаёт владелец</i></div>`
           + foreign.map(row).join('')
         : '');
   // ВАЖНО: innerHTML уничтожает старые элементы вместе с их обработчиками,
@@ -17086,6 +17095,70 @@ function renderSmetaBlock(proj){
     ${otmStrokaItoga(proj)}`;
 }
 
+
+// ============================================================
+//  ЗНАЧКИ ИНТЕРФЕЙСА (правка 4 сентября 2026)
+// ============================================================
+//
+// Владелец: «приложение и сайт не должны быть аляповаты или пестрым.
+// У нас есть корпоративные цвета, их немного. Все значки слишком
+// пёстрые, нужно привести к корпоративной палитре».
+//
+// Было — цветные эмодзи: кошелёк, каска, кирпич, угольник, ключ
+// устройства своими цветами, которых в палитре нет вовсе: жёлтый,
+// салатовый, розовый. Хуже того, один и тот же значок на iPhone
+// и на компьютере выглядит по-разному — приложение теряет своё лицо
+// там, где мы его не контролируем.
+//
+// Стало — рисованные линиями, `stroke="currentColor"`. Значок берёт
+// цвет текста рядом: приглушённый в заголовке блока, оранжевый
+// на кнопке, красный в предупреждении. Палитра остаётся той, что
+// заведена в :root, и ни одного цвета сверх неё не появляется.
+//
+// Приём не новый: так уже нарисованы ICON_SEND и ICON_DL. Третьего
+// способа рисовать значки не заводим (CLAUDE.md).
+//
+// Типографские знаки — ✕ ▾ → ← ⋯ ⋮ ✓ − ○ ⚙ ✎ ⌫ ☰ ▦ — оставлены как
+// были: они одноцветные по своей природе и цвет текста уже берут.
+function ZN(putь, razmer){
+  return '<svg class="zn" viewBox="0 0 24 24" width="' + (razmer||16) + '" height="' + (razmer||16) +
+         '" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" ' +
+         'stroke-linejoin="round" aria-hidden="true">' + putь + '</svg>';
+}
+
+const ZN_DENGI    = ZN('<path d="M3 8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2"/><path d="M3 8v9a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-5a2 2 0 0 0-2-2H5"/><circle cx="16" cy="14" r="1.2"/>');
+const ZN_KUPYURA  = ZN('<rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01M18 12h.01"/>');
+const ZN_VYPLATA  = ZN('<rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M19 3l3 3-3 3"/>');
+const ZN_MASTER   = ZN('<path d="M4 15a8 8 0 0 1 16 0"/><path d="M12 7V4"/><path d="M2 15h20"/><path d="M2 19h20"/>');
+const ZN_KOROBKA  = ZN('<path d="M3 8l9-4 9 4v8l-9 4-9-4z"/><path d="M3 8l9 4 9-4"/><path d="M12 12v8"/>');
+const ZN_UGOLNIK  = ZN('<path d="M4 4v16h16"/><path d="M4 20L20 4"/><path d="M9 20v-3M14 20v-3"/>');
+const ZN_KLYUCH   = ZN('<path d="M14.5 6.5a4 4 0 1 0 3 3L21 6l-2-2-2 2-1.5-1.5z"/><path d="M11.5 9.5L3 18v3h3l8.5-8.5"/>');
+const ZN_SCHYOTY  = ZN('<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 7h8"/><path d="M8 12h.01M12 12h.01M16 12h.01M8 16h.01M12 16h.01M16 16h.01"/>');
+const ZN_ZAMOK    = ZN('<rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/>', 14);
+const ZN_LIST     = ZN('<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h4"/>');
+const ZN_CHELOVEK = ZN('<circle cx="12" cy="8" r="3.5"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/>');
+const ZN_KAMERA   = ZN('<path d="M3 8h3l1.5-2h9L18 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.5"/>');
+const ZN_NET_SETI = ZN('<path d="M2 2l20 20"/><path d="M5 12.5a10 10 0 0 1 3.2-2.2"/><path d="M8.5 16a5 5 0 0 1 1.7-1.2"/><circle cx="12" cy="19.5" r="1"/><path d="M19 12.5a10 10 0 0 0-4.8-2.7"/>');
+const ZN_GLAZ     = ZN('<path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="2.6"/>');
+const ZN_SOLNCE   = ZN('<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>');
+const ZN_MESYATS  = ZN('<path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z"/>');
+const ZN_VNIMANIE = ZN('<path d="M12 4l9 16H3z"/><path d="M12 10v4M12 17.5h.01"/>', 15);
+
+// Места в постоянной разметке (кнопка калькулятора, переключатель темы)
+// помечены пустым <span data-zn="…">: сама разметка лежит в файле выше
+// объявления значков, и вставить их прямо туда нельзя. Наполняем один
+// раз при запуске.
+const ZN_PO_IMENI = {
+  schyoty: ZN_SCHYOTY, solnce: ZN_SOLNCE, mesyats: ZN_MESYATS,
+  zamok: ZN_ZAMOK, vnimanie: ZN_VNIMANIE
+};
+function znNapolnit(korn){
+  (korn || document).querySelectorAll('[data-zn]').forEach(el=>{
+    const z = ZN_PO_IMENI[el.getAttribute('data-zn')];
+    if(z && !el.firstChild) el.innerHTML = z;
+  });
+}
+
 const ICON_SEND = `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>`;
 const ICON_DL = `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`;
 
@@ -17189,7 +17262,7 @@ function docBtns(type, fmt2, fmt2label){
   // видел замки на том, что ему открыто.
   const pro   = !userPlan || isProAt();
   const lk    = pro ? '' : ' btn-locked';
-  const lbl2  = pro ? fmt2label : fmt2label + ' 🔒';
+  const lbl2  = pro ? fmt2label : fmt2label + ' ' + ZN_ZAMOK;
   const tip   = pro ? '' : ' title="Доступно в полном тарифе"';
   // смету можно отправить и просто текстом — сообщением в мессенджер
   // Смету и список материалов можно отправить просто текстом — сообщением
@@ -17620,7 +17693,7 @@ function renderExtraWorksBlock(proj){
         // триггер на DELETE сработал бы и при удалении проекта. Значит
         // защита здесь единственная. Случайная правка - это опечатка
         // в поле, случайное удаление - осознанное нажатие.
-        ? `<button class="btn-icon extra-zamok" data-dop-snyat="${escapeAttr(e.id)}" title="Снять подписание с этой строки — она вернётся в черновик">🔒</button>`
+        ? `<button class="btn-icon extra-zamok" data-dop-snyat="${escapeAttr(e.id)}" title="Снять подписание с этой строки — она вернётся в черновик">${ZN_ZAMOK}</button>`
         : `<button class="btn-icon" data-del-extra="${i}" title="Удалить">✕</button>`}
     </div>`;
 
@@ -17677,7 +17750,7 @@ function renderExtraWorksBlock(proj){
     <div class="section extra-block cust-acc ${open?'open':''}" data-extra-acc="${proj.id}">
       <button type="button" class="cust-head no-print" data-extra-toggle="${proj.id}" aria-expanded="${open}">
         <span class="chev">▾</span>
-        <span>🔧 Дополнительные работы</span>
+        <span>${ZN_KLYUCH} Дополнительные работы</span>
         <span class="mat-head-sum">${filled.length
           ? filled.length + ' ' + plural(filled.length,'позиция','позиции','позиций') + (sum ? ' · ' + fmtMoney(sum) : '')
           : ''}</span>
@@ -17781,7 +17854,7 @@ function renderOplatyBlock(proj){
     <div class="section oplaty-block cust-acc ${open?'open':''}" data-opl-acc="${proj.id}">
       <button type="button" class="cust-head no-print" data-opl-toggle="${proj.id}" aria-expanded="${open}">
         <span class="chev">▾</span>
-        <span>💵 Оплаты заказчика</span>
+        <span>${ZN_KUPYURA} Оплаты заказчика</span>
         <span class="mat-head-sum">${shapka}</span>
       </button>
       <div class="cust-body">
@@ -17939,7 +18012,7 @@ function renderVyplatyBlock(proj){
     <div class="section vyplaty-block cust-acc ${open?'open':''}" data-vyp-acc="${proj.id}">
       <button type="button" class="cust-head no-print" data-vyp-toggle="${proj.id}" aria-expanded="${open}">
         <span class="chev">▾</span>
-        <span>💸 Выплаты мастерам</span>
+        <span>${ZN_VYPLATA} Выплаты мастерам</span>
         <span class="mat-head-sum">${shapka}</span>
       </button>
       <div class="cust-body">
@@ -17971,7 +18044,7 @@ function renderCondsBlock(proj){
     <div class="section conds-block cust-acc ${open?'open':''}" data-conds-acc="${proj.id}">
       <button type="button" class="cust-head no-print" data-conds-toggle="${proj.id}" aria-expanded="${open}">
         <span class="chev">▾</span>
-        <span>📐 Условия объекта</span>
+        <span>${ZN_UGOLNIK} Условия объекта</span>
         <span class="mat-head-sum">${sum ? fmtMoney(sum) : ''}</span>
       </button>
       <div class="cust-body">
@@ -18010,7 +18083,7 @@ function renderSmetaDocPanel(proj){
     <div class="doc-panel ${open?'open':''}" data-panel-box="smeta">
       <button class="doc-main-btn" data-panel="smeta"><span class="chev">▾</span> ${isNaryad(proj) ? 'Сформировать наряд' : 'Сформировать смету'}</button>
       ${isNaryad(proj) ? `<div class="team-note" style="margin:10px 0 0;">
-        👷 Это <b>наряд</b>, а не смета: цены здесь ваши, по вашей доле.
+        ${ZN_MASTER} Это <b>наряд</b>, а не смета: цены здесь ваши, по вашей доле.
         Заказчику такой документ отправлять не нужно — у него свои цифры.
       </div>` : ''}
       <div class="doc-panel-body">
@@ -18126,7 +18199,7 @@ function renderPayoutBlock(proj){
     <div class="section pay-block cust-acc ${open?'open':''}" data-pay-acc="${proj.id}">
       <button type="button" class="cust-head no-print" data-pay-toggle="${proj.id}" aria-expanded="${open}">
         <span class="chev">▾</span>
-        <span>💰 Расклад по деньгам</span>
+        <span>${ZN_DENGI} Расклад по деньгам</span>
         <span class="mat-head-sum pay-head-sum"${d.unassigned
           ? ' title="Роздано не всё — сумма изменится, когда остальные работы уйдут мастерам"' : ''}>${headTxt}</span>
       </button>
@@ -18184,21 +18257,21 @@ function renderCustomerBlock(proj){
   // об одном и том же, и первое спорило со вторым. Роль в его случае
   // ничего не объясняет: он не наблюдатель, он работает по заданию.
   const roleNote = isNaryad(proj)
-    ? `<div class="role-note">👷 <b>Это наряд от прораба.</b> Работы и объёмы задаёт он — здесь они только для просмотра. Цены в наряде ваши, по вашей доле. Замерили иначе или нашли работу, которой нет в списке, — скажите прорабу.</div>`
+    ? `<div class="role-note">${ZN_MASTER} <b>Это наряд от прораба.</b> Работы и объёмы задаёт он — здесь они только для просмотра. Цены в наряде ваши, по вашей доле. Замерили иначе или нашли работу, которой нет в списке, — скажите прорабу.</div>`
     : (proj.myRole === 'viewer')
-    ? `<div class="role-note">👁 Вы в этом проекте как «смотрит» — смету видно, но менять её нельзя. Права выдаёт владелец.</div>`
+    ? `<div class="role-note">${ZN_GLAZ} Вы в этом проекте как «смотрит» — смету видно, но менять её нельзя. Права выдаёт владелец.</div>`
     : (foreign
-        ? `<div class="role-note">👷 Чужой проект — вы в бригаде как «${escapeHtml(ROLE_NAME[proj.myRole] || proj.myRole)}». Тариф действует владельца проекта.</div>` : '');
+        ? `<div class="role-note">${ZN_MASTER} Чужой проект — вы в бригаде как «${escapeHtml(ROLE_NAME[proj.myRole] || proj.myRole)}». Тариф действует владельца проекта.</div>` : '');
 
   return roleNote + teamAccHtml(proj) + `
   <div class="cust-acc ${open?'open':''}" data-cust-acc="${proj.id}">
     <button type="button" class="cust-head no-print" data-cust-toggle="${proj.id}" aria-expanded="${open}">
-      <span class="chev">▾</span><span>📄 Данные для договора</span>
+      <span class="chev">▾</span><span>${ZN_LIST} Данные для договора</span>
     </button>
     <div class="cust-body">
       ${proj.customerMasked ? `
       <div class="team-note" style="margin:16px 0 4px;">
-        🔒 Владелец скрыл данные заказчика. В документах они заменены на ХХХХХХ.
+        ${ZN_ZAMOK} Владелец скрыл данные заказчика. В документах они заменены на ХХХХХХ.
       </div>` : ''}
       <div class="cust-group">
         <div class="cust-group-title">Договор</div>
@@ -18423,7 +18496,7 @@ function renderRoom(room){
           <div class="badge">Площадь пола: <b data-out="floorArea">${fmt(g.floorArea)} м²</b></div>
           <div class="badge">Площадь потолка: <b data-out="ceilingArea">${fmt(g.ceilingArea)} м²</b></div>
         </div>
-        ${wallAreaHint(room, g) ? `<div class="room-warn" data-wallhint="${room.id}">⚠ ${escapeHtml(wallAreaHint(room, g))}</div>` : `<div class="room-warn" data-wallhint="${room.id}" style="display:none;"></div>`}
+        ${wallAreaHint(room, g) ? `<div class="room-warn" data-wallhint="${room.id}">${ZN_VNIMANIE} ${escapeHtml(wallAreaHint(room, g))}</div>` : `<div class="room-warn" data-wallhint="${room.id}" style="display:none;"></div>`}
       </div>
     </div>
   `;
@@ -18486,7 +18559,7 @@ function renderRoomPhotos(room){
       </div>
       <input type="file" accept="image/*" multiple class="ph-file" data-ph-file="${room.id}" hidden>
       <button type="button" class="ph-add no-print" data-ph-add="${room.id}">
-        <span class="ph-add-ico" aria-hidden="true">📷</span> Добавить фото
+        <span class="ph-add-ico" aria-hidden="true">${ZN_KAMERA}</span> Добавить фото
       </button>
       <div class="ph-msg" data-ph-msg="${room.id}"></div>
     </div>
@@ -18559,8 +18632,8 @@ function renderGeometryBlock(room){
   }
   const seg = `
     <div class="calc-mode no-print">
-      <button type="button" class="calc-mode-btn ${mode==='dims'?'active':''}" data-calc-mode="${room.id}|dims">📐 Размеры помещения</button>
-      <button type="button" class="calc-mode-btn ${mode==='walls'?'active':''}" data-calc-mode="${room.id}|walls">🧱 Размеры поверхности</button>
+      <button type="button" class="calc-mode-btn ${mode==='dims'?'active':''}" data-calc-mode="${room.id}|dims">${ZN_UGOLNIK} Размеры помещения</button>
+      <button type="button" class="calc-mode-btn ${mode==='walls'?'active':''}" data-calc-mode="${room.id}|walls">${ZN_KOROBKA} Размеры поверхности</button>
     </div>`;
   let body;
   if(mode === 'dims'){
@@ -18782,8 +18855,8 @@ function renderSettingsView(){
     </div>
     <div class="settings-menu">
       <button class="settings-item" data-go="catalog"><span>⚙ Виды работ</span><span class="settings-arrow">→</span></button>
-      <button class="settings-item" data-go="materials"><span>📦 Материалы</span><span class="settings-arrow">→</span></button>
-      <button class="settings-item" data-go="executor"><span>👤 Данные исполнителя</span><span class="settings-arrow">→</span></button>
+      <button class="settings-item" data-go="materials"><span>${ZN_KOROBKA} Материалы</span><span class="settings-arrow">→</span></button>
+      <button class="settings-item" data-go="executor"><span>${ZN_CHELOVEK} Данные исполнителя</span><span class="settings-arrow">→</span></button>
     </div>`;
 }
 
@@ -20311,7 +20384,7 @@ function updateDerived(proj){
     const warnEl = roomEl.querySelector(`[data-wallhint="${room.id}"]`);
     if(warnEl){
       const hint = wallAreaHint(room, g);
-      if(hint){ warnEl.style.display=''; warnEl.textContent = '⚠ ' + hint; }
+      if(hint){ warnEl.style.display=''; warnEl.innerHTML = ZN_VNIMANIE + ' ' + escapeHtml(hint); }
       else { warnEl.style.display='none'; warnEl.textContent=''; }
     }
     (room.works||[]).forEach(rw=>{
