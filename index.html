@@ -268,9 +268,12 @@
 
      `.zn-ryad` — значок сбоку от всей подписи и по её середине;
      `.po-centru` добавляет центровку для кнопок.
-     Отступ даёт `gap`, поэтому собственный отступ значка внутри снимаем:
-     иначе они складываются и выходит 18 вместо 9. */
-  .zn-ryad{display:flex;align-items:center;gap:9px;}
+     Зазор задаёт только `gap` — 8. Собственный отступ значка внутри
+     снимаем, иначе они складываются; и подпись лежит в своём `<span>`,
+     без пробела перед ней, иначе пробел прибавляется к зазору и
+     расстояние выходит то 8, то 12 — от того, как написана разметка.
+     Владелец 4 сентября 2026: «значок вообще оторван от надписи». */
+  .zn-ryad{display:flex;align-items:center;gap:8px;}
   .zn-ryad.po-centru{justify-content:center;text-align:center;line-height:1.35;}
   .zn-ryad .zn{margin-right:0;}
 
@@ -282,7 +285,7 @@
      у каждого такого блока свои поля, и `padding-left` правила
      перебивал их собственный, объявленный ниже. Отступ, который
      держится на порядке правил, ломается молча. */
-  .zn-abzac{display:flex;align-items:flex-start;gap:9px;}
+  .zn-abzac{display:flex;align-items:flex-start;gap:8px;}
   .zn-abzac .zn{margin-right:0;margin-top:.12em;}
   .sb-label{
     font-family:'JetBrains Mono',monospace;
@@ -2658,7 +2661,7 @@
   /* ЗНАЧКИ ИНТЕРФЕЙСА. Рисованные линиями, цвет берут от текста рядом —
      см. набор ZN_* в коде. Выравниваем по строке: значок должен стоять
      на одной линии с буквами, а не прыгать над ними. */
-  .zn{vertical-align:-0.18em;flex:0 0 auto;margin-right:9px;}
+  .zn{vertical-align:-0.18em;flex:0 0 auto;margin-right:8px;}
   .zn-mesto{display:inline-flex;vertical-align:-0.18em;}
   /* ОТСТУП ОТ СЛОВА — вариант «В», выбран владельцем 4 сентября 2026
      из четырёх показанных. Значок вплотную к букве читался одним
@@ -3693,7 +3696,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-04-178';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-04-179';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -4372,7 +4375,7 @@ function renderRefView(){
       <div class="ref-base-hint">${escapeHtml(REF_TILING.baseHint)}</div>
     </div>
 
-    <button class="btn btn-primary ref-cfg-btn zn-ryad po-centru" id="refCfgOpen">${ZN_PLITKA} Конфигуратор укладки</button>
+    <button class="btn btn-primary ref-cfg-btn zn-ryad po-centru" id="refCfgOpen">${ZN_PLITKA}<span>Конфигуратор укладки</span></button>
 
     <div class="ref-hint">
       Проценты и цены ниже — значения по умолчанию, они показаны серым.
@@ -6360,7 +6363,7 @@ function teamAccHtml(proj){
   return `
   <div class="cust-acc team-acc ${open?'open':''}" data-team-acc="${proj.id}">
     <button type="button" class="cust-head no-print" data-team-toggle="${proj.id}" aria-expanded="${open}">
-      <span class="chev">▾</span><span class="zn-ryad">${ZN_MASTER} Бригада</span>
+      <span class="chev">▾</span><span class="zn-ryad">${ZN_MASTER}<span>Бригада</span></span>
     </button>
     <div class="cust-body">${body}</div>
   </div>`;
@@ -16205,7 +16208,7 @@ function renderProjMaterials(proj){
     <div class="section mat-block cust-acc ${open?'open':''}" data-mat-acc="${proj.id}">
       <button type="button" class="cust-head no-print" data-mat-toggle="${proj.id}" aria-expanded="${open}">
         <span class="chev">▾</span>
-        <span class="zn-ryad">${ZN_KOROBKA} Материалы</span>
+        <span class="zn-ryad">${ZN_KOROBKA}<span>Материалы</span></span>
         <span class="mat-head-sum">${items.filter(matFilled).length
             ? items.filter(matFilled).length + ' поз.' + (withPrice ? ' · ' + fmtMoney(matSum) : '')
             : ''}</span>
@@ -17856,7 +17859,7 @@ function renderExtraWorksBlock(proj){
     <div class="section extra-block cust-acc ${open?'open':''}" data-extra-acc="${proj.id}">
       <button type="button" class="cust-head no-print" data-extra-toggle="${proj.id}" aria-expanded="${open}">
         <span class="chev">▾</span>
-        <span class="zn-ryad">${ZN_KLYUCH} Дополнительные работы</span>
+        <span class="zn-ryad">${ZN_KLYUCH}<span>Дополнительные работы</span></span>
         <span class="mat-head-sum">${filled.length
           ? filled.length + ' ' + plural(filled.length,'позиция','позиции','позиций') + (sum ? ' · ' + fmtMoney(sum) : '')
           : ''}</span>
@@ -17960,7 +17963,7 @@ function renderOplatyBlock(proj){
     <div class="section oplaty-block cust-acc ${open?'open':''}" data-opl-acc="${proj.id}">
       <button type="button" class="cust-head no-print" data-opl-toggle="${proj.id}" aria-expanded="${open}">
         <span class="chev">▾</span>
-        <span class="zn-ryad">${ZN_KUPYURA} Оплаты заказчика</span>
+        <span class="zn-ryad">${ZN_KUPYURA}<span>Оплаты заказчика</span></span>
         <span class="mat-head-sum">${shapka}</span>
       </button>
       <div class="cust-body">
@@ -18118,7 +18121,7 @@ function renderVyplatyBlock(proj){
     <div class="section vyplaty-block cust-acc ${open?'open':''}" data-vyp-acc="${proj.id}">
       <button type="button" class="cust-head no-print" data-vyp-toggle="${proj.id}" aria-expanded="${open}">
         <span class="chev">▾</span>
-        <span class="zn-ryad">${ZN_VYPLATA} Выплаты мастерам</span>
+        <span class="zn-ryad">${ZN_VYPLATA}<span>Выплаты мастерам</span></span>
         <span class="mat-head-sum">${shapka}</span>
       </button>
       <div class="cust-body">
@@ -18150,7 +18153,7 @@ function renderCondsBlock(proj){
     <div class="section conds-block cust-acc ${open?'open':''}" data-conds-acc="${proj.id}">
       <button type="button" class="cust-head no-print" data-conds-toggle="${proj.id}" aria-expanded="${open}">
         <span class="chev">▾</span>
-        <span class="zn-ryad">${ZN_UGOLNIK} Условия объекта</span>
+        <span class="zn-ryad">${ZN_UGOLNIK}<span>Условия объекта</span></span>
         <span class="mat-head-sum">${sum ? fmtMoney(sum) : ''}</span>
       </button>
       <div class="cust-body">
@@ -18304,7 +18307,7 @@ function renderPayoutBlock(proj){
     <div class="section pay-block cust-acc ${open?'open':''}" data-pay-acc="${proj.id}">
       <button type="button" class="cust-head no-print" data-pay-toggle="${proj.id}" aria-expanded="${open}">
         <span class="chev">▾</span>
-        <span class="zn-ryad">${ZN_DENGI} Расклад по деньгам</span>
+        <span class="zn-ryad">${ZN_DENGI}<span>Расклад по деньгам</span></span>
         <span class="mat-head-sum pay-head-sum"${d.unassigned
           ? ' title="Роздано не всё — сумма изменится, когда остальные работы уйдут мастерам"' : ''}>${headTxt}</span>
       </button>
@@ -18371,7 +18374,7 @@ function renderCustomerBlock(proj){
   return roleNote + teamAccHtml(proj) + `
   <div class="cust-acc ${open?'open':''}" data-cust-acc="${proj.id}">
     <button type="button" class="cust-head no-print" data-cust-toggle="${proj.id}" aria-expanded="${open}">
-      <span class="chev">▾</span><span class="zn-ryad">${ZN_LIST} Данные для договора</span>
+      <span class="chev">▾</span><span class="zn-ryad">${ZN_LIST}<span>Данные для договора</span></span>
     </button>
     <div class="cust-body">
       ${proj.customerMasked ? `
@@ -18663,7 +18666,7 @@ function renderRoomPhotos(room){
       </div>
       <input type="file" accept="image/*" multiple class="ph-file" data-ph-file="${room.id}" hidden>
       <button type="button" class="ph-add no-print zn-ryad po-centru" data-ph-add="${room.id}">
-        <span class="ph-add-ico" aria-hidden="true">${ZN_KAMERA}</span> Добавить фото
+        <span class="ph-add-ico" aria-hidden="true">${ZN_KAMERA}</span><span>Добавить фото</span>
       </button>
       <div class="ph-msg" data-ph-msg="${room.id}"></div>
     </div>
@@ -18736,8 +18739,8 @@ function renderGeometryBlock(room){
   }
   const seg = `
     <div class="calc-mode no-print">
-      <button type="button" class="calc-mode-btn zn-ryad po-centru ${mode==='dims'?'active':''}" data-calc-mode="${room.id}|dims">${ZN_UGOLNIK} Размеры помещения</button>
-      <button type="button" class="calc-mode-btn zn-ryad po-centru ${mode==='walls'?'active':''}" data-calc-mode="${room.id}|walls">${ZN_KOROBKA} Размеры поверхности</button>
+      <button type="button" class="calc-mode-btn zn-ryad po-centru ${mode==='dims'?'active':''}" data-calc-mode="${room.id}|dims">${ZN_UGOLNIK}<span>Размеры помещения</span></button>
+      <button type="button" class="calc-mode-btn zn-ryad po-centru ${mode==='walls'?'active':''}" data-calc-mode="${room.id}|walls">${ZN_KOROBKA}<span>Размеры поверхности</span></button>
     </div>`;
   let body;
   if(mode === 'dims'){
@@ -18958,9 +18961,9 @@ function renderSettingsView(){
       </div>
     </div>
     <div class="settings-menu">
-      <button class="settings-item" data-go="catalog"><span class="zn-ryad">${ZN_SHESTERNYA} Виды работ</span><span class="settings-arrow">→</span></button>
-      <button class="settings-item" data-go="materials"><span class="zn-ryad">${ZN_KOROBKA} Материалы</span><span class="settings-arrow">→</span></button>
-      <button class="settings-item" data-go="executor"><span class="zn-ryad">${ZN_CHELOVEK} Данные исполнителя</span><span class="settings-arrow">→</span></button>
+      <button class="settings-item" data-go="catalog"><span class="zn-ryad">${ZN_SHESTERNYA}<span>Виды работ</span></span><span class="settings-arrow">→</span></button>
+      <button class="settings-item" data-go="materials"><span class="zn-ryad">${ZN_KOROBKA}<span>Материалы</span></span><span class="settings-arrow">→</span></button>
+      <button class="settings-item" data-go="executor"><span class="zn-ryad">${ZN_CHELOVEK}<span>Данные исполнителя</span></span><span class="settings-arrow">→</span></button>
     </div>`;
 }
 
