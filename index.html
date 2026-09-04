@@ -3640,7 +3640,7 @@
           <li class="lim"><span class="ic">10</span><span>До 10 позиций в своём прайсе</span></li>
           <li class="lim"><span class="ic">5</span><span>До 5 материалов в справочнике</span></li>
           <li class="lim"><span class="ic">1</span><span>Строительный калькулятор: одна стена</span></li>
-          <li class="no"><span class="ic"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M7 7l10 10M17 7L7 17" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>Раскладка плитки недоступна</span></li>
+          <li class="lim"><span class="ic">1</span><span>Раскладка плитки: одна поверхность</span></li>
           <li class="no"><span class="ic"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M7 7l10 10M17 7L7 17" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>PDF с водяным знаком, без вашего логотипа</span></li>
           <li class="no"><span class="ic"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M7 7l10 10M17 7L7 17" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>Экспорт в Excel и Word недоступен</span></li>
         </ul>
@@ -3659,7 +3659,7 @@
           <li class="yes"><span class="ic"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>Справочник плиточника: ~70 параметров расчёта</span></li>
           <li class="yes"><span class="ic"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>Чистый PDF с вашим логотипом и реквизитами</span></li>
           <li class="yes"><span class="ic"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>Экспорт сметы в Excel и Word</span></li>
-          <li class="yes"><span class="ic"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>Раскладка плитки: точный расчёт на помещение</span></li>
+          <li class="yes"><span class="ic"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>Раскладка плитки на весь санузел: обрезки идут в дело</span></li>
           <li class="yes"><span class="ic"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>Калькулятор на несколько стен: обрезки идут в дело</span></li>
           <li class="yes"><span class="ic"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>Договор и акт с вашими данными исполнителя</span></li>
           <li class="yes"><span class="ic"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>Приоритетная поддержка</span></li>
@@ -3877,7 +3877,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-04-200';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-04-201';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -16105,9 +16105,12 @@ function render(){
   // Функция сама проверит, надо ли, и не откроется дважды.
   openActiveProjectPicker();
   const main = document.getElementById('main');
-  // страховка: бесплатного не пускаем в режим плитки, даже если view успел
-  // стать 'tiles' в обход кнопки (сохранённое состояние, старая вкладка)
-  if(state.view === 'tiles' && !isPro()) state.view = 'project';
+  // Прежде здесь стоял ещё один запрет: раскладка была закрыта целиком,
+  // и этот выброс не давал попасть в неё в обход кнопки. Теперь она
+  // открыта всем, заперта только вторая поверхность — выбрасывать
+  // из экрана больше не за что. (Второй замок на ту же дверь легко
+  // пережил снятие первого и держал её закрытой; нашёлся замером,
+  // а не чтением — 4 сентября 2026.)
   if(state.view === 'catalog'){
     main.innerHTML = renderCatalogView();
   } else if(state.view === 'settings'){
@@ -19341,14 +19344,15 @@ function attachHandlers(){
   };
   const tcBtn = document.getElementById('tcOpenBtn');
   if(tcBtn) tcBtn.onclick = ()=>{
-    // Раскладка плитки — функция Pro (и пробного периода). Бесплатным
-    // показываем предложение подписки: showLimit сам открывает окно тарифа
-    // и пишет событие в аналитику — так же, как остальные замки в приложении.
-    if(!isPro()){
-      showLimit('Раскладка плитки — в полном тарифе',
-                'Точный расчёт плитки на помещение доступен в Pro и в пробном периоде.');
-      return;
-    }
+    // Раскладка открыта всем. Заперта не она, а вторая поверхность —
+    // так же, как вторая стена в строительном калькуляторе (владелец
+    // 4 сентября 2026: «открой раскладку частично на бесплатном тарифе,
+    // по раскладке также ограничим по количеству стен»).
+    //
+    // Прежде вход был закрыт целиком, и свободный видел только окно
+    // тарифов. Так он не понимал, за что платит: обещание «точный расчёт
+    // плитки» проверить было нечем. Теперь он делает настоящую раскладку
+    // одной поверхности и упирается в замок там, где начинается объект.
     tcPrevView = state.view;
     state.view = 'tiles';
     render();
@@ -21793,7 +21797,10 @@ function tcControlsDataHTML(){
     }
     return b + `</div>`;
   }).join('') +
-  `<button type="button" class="add-link" data-tc-pov-add="1">+ Поверхность</button></div>`;
+  (isPro()
+    ? `<button type="button" class="add-link" data-tc-pov-add="1">+ Поверхность</button>`
+    : `<button type="button" class="add-link btn-locked" data-tc-pov-zamok="1">+ Поверхность ${ZN_ZAMOK}</button>`)
+  + `</div>`;
   h += `<div class="tc-sec-title">Плитка</div>`;
   h += `<div class="tc-fields">` + tcFieldInput('tileW','Ширина плитки, см') + tcFieldInput('tileH','Высота плитки, см') + `</div>`;
   h += `<div class="tc-fields">` + tcFieldInput('seam','Шов, мм') + `<div></div></div>`;
@@ -22611,6 +22618,12 @@ function tcAttach(){
   bd.addEventListener('click', e=>{
     const dob = e.target.closest('[data-tc-pov-add]');
     if(dob){ tc.poverhnosti.push(tcPustaya()); tcRenderBody(); return; }
+    const zam = e.target.closest('[data-tc-pov-zamok]');
+    if(zam){
+      showLimit('Несколько поверхностей — в полном тарифе',
+        'На бесплатном раскладка считает одну поверхность. В полном — весь санузел разом: обрезок от пола идёт в подрезку стены, и плитки выходит меньше.');
+      return;
+    }
     const ubr = e.target.closest('[data-tc-pov-del]');
     if(ubr){
       tc.poverhnosti.splice(parseInt(ubr.getAttribute('data-tc-pov-del')), 1);
