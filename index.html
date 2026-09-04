@@ -355,6 +355,37 @@
   .auth-logo{display:block;margin:0 auto;color:var(--ink);}
   .sb-section{display:flex;flex-direction:column;gap:8px;}
 
+  /* ЛИСТ «ЧТО НОВОГО». Выезжает снизу — оттуда же, откуда приходят
+     ответы на телефоне, и потому не читается как ошибка.
+     Слой выше окон решения: он показывается один раз и должен быть
+     сверху всего, что успело открыться при запуске. */
+  .novosti-fon{
+    position:fixed; inset:0; z-index:5400;
+    background:var(--podlozhka-okna);
+    display:flex; align-items:flex-end; justify-content:center;
+    opacity:0; transition:opacity .22s ease;
+  }
+  .novosti-fon.vidno{ opacity:1; }
+  .novosti-list{
+    position:relative; width:min(560px, 100%);
+    max-height:86vh; overflow-y:auto; -webkit-overflow-scrolling:touch;
+    background:var(--white); color:var(--ink);
+    border-top-left-radius:18px; border-top-right-radius:18px;
+    padding:26px 22px calc(22px + env(safe-area-inset-bottom, 0px));
+    box-shadow:var(--ten-okno);
+    transform:translateY(100%); transition:transform .26s ease;
+  }
+  .novosti-fon.vidno .novosti-list{ transform:translateY(0); }
+  .novosti-krest{ position:absolute; top:12px; right:12px; }
+  .novosti-zag{
+    font-family:'Space Grotesk','Inter',sans-serif;
+    font-size:24px; font-weight:700; margin-bottom:4px;
+  }
+  .novosti-pod{ font-size:13px; color:var(--ink-soft); margin-bottom:16px; }
+  .novosti-punkty{ margin:0 0 20px; padding-left:20px; }
+  .novosti-punkty li{ font-size:14px; line-height:1.5; margin-bottom:12px; }
+  .novosti-ok{ width:100%; padding:13px; min-height:44px; }
+
   /* ЗНАЧОК И ПОДПИСЬ — ДВА ОТДЕЛЬНЫХ МЕСТА, А НЕ ОДНА СТРОКА ТЕКСТА.
      Правило общее, на все места сразу (владелец 4 сентября 2026:
      «оцентруй, а то всё куда-то едет, значок вверху, вторая строка
@@ -3853,7 +3884,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-04-203';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-04-204';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -13946,6 +13977,101 @@ function num(v){
   return isFinite(n) ? n : 0;
 }
 
+// ---------- ЧТО НОВОГО ----------
+// Приложение обновляется само и молча. За 3–4 сентября 2026 вышло больше
+// двадцати сборок, и человек не узнал бы ни об одной: он открывает
+// приложение и видит то же, что вчера, пока не наткнётся случайно.
+//
+// Список пишется руками, а не собирается из истории сборок: рассказывать
+// стоит о шести вещах из двадцати, а про правку отступа человеку читать
+// незачем. Нет записи у сборки — лист не выезжает.
+//
+// Пишем «что теперь можно», а не «что сделано»: человек читает не журнал
+// изменений, а ответ на вопрос «что мне с этого».
+const NOVOSTI_KLYUCH = 'novosti-videl-v1';
+const NOVOSTI = [
+  { sborka: '2026-09-04-204', punkty: [
+    'Строительный калькулятор — отдельной кнопкой в панели. Считает листовой материал с раскладкой, кирпич и блоки, расход смесей и площади поверхностей любой формы.',
+    'Раскладка плитки теперь и на бесплатном тарифе — одна поверхность. В полном считается весь санузел разом, и обрезок от пола идёт в подрезку стены.',
+    'Отметка готовности у работ: ставите процент, приложение считает готовность по объекту с учётом стоимости.',
+    'Отчёт руководителю за период: что изменилось на объекте, по датам и без цен.',
+    'Выплаты мастерам — рядом с оплатами заказчика, с остатком долга.',
+    'Позицию можно исключить из сметы, не переподписывая договор: она остаётся в документах с пометкой.',
+    'Снимки, сделанные без связи, уходят сами, как только связь появится.'
+  ] }
+];
+
+function novostiNepokazannye(){
+  let videl = '';
+  try{ videl = localStorage.getItem(NOVOSTI_KLYUCH) || ''; }catch(e){}
+  return NOVOSTI.filter(n=> n.sborka > videl);
+}
+
+function novostiOtmetit(){
+  const posl = NOVOSTI[NOVOSTI.length - 1];
+  try{ localStorage.setItem(NOVOSTI_KLYUCH, posl ? posl.sborka : ''); }catch(e){}
+}
+
+// Показываем только тому, кто уже пользовался приложением. Признак —
+// есть хотя бы один проект: у пришедшего впервые сравнивать не с чем,
+// а первое, что он увидел бы, — окно, которое сразу не закрыть.
+let novostiTaymer = null;
+function novostiPokazat(){
+  if(!currentUser) return;
+  if(!(state.projects || []).length){ novostiOtmetit(); return; }
+  const spisok = novostiNepokazannye();
+  if(!spisok.length) return;
+  if(document.getElementById('novostiOverlay')) return;
+
+  const punkty = spisok.reduce((a, n)=> a.concat(n.punkty), []);
+  const ov = document.createElement('div');
+  ov.id = 'novostiOverlay';
+  ov.className = 'novosti-fon no-print';
+  ov.innerHTML = `
+    <div class="novosti-list" role="dialog" aria-label="Что нового">
+      <button type="button" class="plan-close novosti-krest" id="novostiKrest"
+              aria-label="Закрыть" hidden>✕</button>
+      <div class="novosti-zag">Привет!</div>
+      <div class="novosti-pod">Появилось вот что:</div>
+      <ul class="novosti-punkty">${punkty.map(t=>`<li>${escapeHtml(t)}</li>`).join('')}</ul>
+      <button type="button" class="btn btn-primary novosti-ok" id="novostiOk">Понятно</button>
+    </div>`;
+  document.body.appendChild(ov);
+  requestAnimationFrame(()=> ov.classList.add('vidno'));
+
+  // Кнопка «Понятно» работает сразу — она в конце списка, до неё надо
+  // долистать. А крестик, Escape и щелчок мимо включаются через три
+  // секунды: это единственное, что удерживает от привычного жеста
+  // «закрыть не глядя». Правило владельца 4 сентября 2026.
+  document.getElementById('novostiOk').onclick = novostiZakryt;
+  clearTimeout(novostiTaymer);
+  novostiTaymer = setTimeout(()=>{
+    const kr = document.getElementById('novostiKrest');
+    if(kr){ kr.hidden = false; kr.onclick = novostiZakryt; }
+    const o = document.getElementById('novostiOverlay');
+    if(o) o.dataset.zhesty = '1';
+  }, 3000);
+}
+
+function novostiZakryt(){
+  clearTimeout(novostiTaymer);
+  const ov = document.getElementById('novostiOverlay');
+  novostiOtmetit();
+  if(!ov) return;
+  ov.classList.remove('vidno');
+  setTimeout(()=>{ if(ov.parentNode) ov.parentNode.removeChild(ov); }, 220);
+}
+
+document.addEventListener('keydown', e=>{
+  if(e.key !== 'Escape') return;
+  const ov = document.getElementById('novostiOverlay');
+  if(ov && ov.dataset.zhesty === '1') novostiZakryt();
+});
+document.addEventListener('pointerdown', e=>{
+  const ov = document.getElementById('novostiOverlay');
+  if(ov && ov.dataset.zhesty === '1' && e.target === ov) novostiZakryt();
+});
+
 // ---------- КАЛЬКУЛЯТОР В ПОЛЯХ РАЗМЕРОВ ----------
 // На объекте размер редко бывает одним числом: «дверной проём плюс
 // простенок», «шесть плиток по 0.6». Считать это в уме и вводить итог —
@@ -16051,6 +16177,7 @@ function render(){
   // и человек оказался бы в приложении без выхода (поймано 10 августа).
   // Функция сама проверит, надо ли, и не откроется дважды.
   openActiveProjectPicker();
+  novostiPokazat();
   const main = document.getElementById('main');
   // Прежде здесь стоял ещё один запрет: раскладка была закрыта целиком,
   // и этот выброс не давал попасть в неё в обход кнопки. Теперь она
