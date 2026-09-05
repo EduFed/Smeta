@@ -2707,6 +2707,19 @@
   .refcfg-extra{display:flex;align-items:center;gap:4px;}
   .refcfg-extra input{width:80px;padding:9px 12px;border:1px solid var(--paper-line);border-radius:8px;background:var(--white);color:var(--ink);font-size:14px;text-align:right;}
   .refcfg-foot{padding:14px 20px 18px;border-top:1px solid var(--paper-line);background:var(--paper);}
+  /* Окно вопроса: узкое, по середине экрана, кнопки в ряд справа. */
+  .okno-vopros-modal{max-width:420px;}
+  .okno-vopros .refcfg-head{border-bottom:none;padding-bottom:6px;}
+  .okno-vopros .refcfg-title{font-size:17px;line-height:1.35;}
+  .okno-vopros-telo{padding-top:0;font-size:13px;line-height:1.55;color:var(--ink-soft);}
+  .okno-vopros-telo p{margin:0 0 8px;}
+  .okno-vopros-telo p:last-child{margin-bottom:0;}
+  .okno-vopros-nogi{display:flex;gap:10px;justify-content:flex-end;border-top:none;}
+  .okno-vopros-nogi .btn{min-width:104px;}
+  @media (max-width:520px){
+    .okno-vopros-nogi{flex-direction:column-reverse;}
+    .okno-vopros-nogi .btn{width:100%;}
+  }
   /* Пустое сообщение места не занимает: иначе над кнопкой всегда висел
      бы пробел в две строки ради ответа, которого чаще всего нет. */
   .refcfg-foot .plan-lead-msg{margin-top:0;margin-bottom:10px;}
@@ -4040,7 +4053,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-05-239';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-05-240';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -5400,7 +5413,7 @@ function planCenyNarisovat(){
 async function oplatit(plan){
   const period = uiPlanPeriod;
   track('click_' + plan, period);
-  if(LOCAL_TEST){ alert('Локальный режим: оплата не вызывается.'); return; }
+  if(LOCAL_TEST){ soobschit('Локальный режим: оплата не вызывается.'); return; }
   if(!sb || !currentUser){ showLogin(); return; }
 
   const btn = document.getElementById({ pro:'planProCta', brigada:'planTeamCta',
@@ -5435,7 +5448,7 @@ async function oplatit(plan){
              m.className = 'plan-lead-msg'; }
       return;
     }
-    alert('Не удалось начать оплату. Проверьте связь и попробуйте ещё раз.');
+    soobschit('Не удалось начать оплату. Проверьте связь и попробуйте ещё раз.');
   }
 }
 
@@ -5683,7 +5696,7 @@ function renderActiveProjectPicker(){
 
 async function pickActiveProject(id, name){
   const msg = document.getElementById('pickerMsg');
-  if(!confirm('Работать в проекте «' + name + '»?\n\n' +
+  if(!await sprosit('Работать в проекте «' + name + '»?\n\n' +
               'Остальные проекты станут только для просмотра. ' +
               'Изменить выбор потом будет нельзя.')) return;
   if(msg){ msg.textContent = 'Сохраняем выбор…'; msg.className = 'picker-msg'; }
@@ -6789,7 +6802,7 @@ function renderInviteBar(){
           // сервер отвечает настоящей ролью: повторным приглашением роль
           // не повышается, и приложение не должно обещать обратное
           if(data.already_member && data.role_changed === false){
-            alert('Вы уже в этой бригаде, роль прежняя: ' + (ROLE_NAME[data.role] || data.role) +
+            soobschit('Вы уже в этой бригаде, роль прежняя: ' + (ROLE_NAME[data.role] || data.role) +
                   '. Изменить её может только владелец проекта.');
           }
           await loadMyInvites();
@@ -6799,9 +6812,9 @@ function renderInviteBar(){
           return;
         }
         // нехватка мест и прочее приходит понятным текстом
-        alert((data && data.error) || 'Не удалось принять приглашение.');
+        soobschit((data && data.error) || 'Не удалось принять приглашение.');
       }catch(e){
-        alert('Не удалось принять: ' + ((e && e.message) || 'ошибка'));
+        soobschit('Не удалось принять: ' + ((e && e.message) || 'ошибка'));
       }
       el.disabled = false; el.textContent = 'Принять';
     });
@@ -6828,14 +6841,14 @@ async function tryAcceptInvite(){
     sessionStorage.removeItem('smeta-invite');
     try{ history.replaceState(null, '', location.pathname); }catch(_){}
     if(data && data.ok){
-      alert(data.already_member
+      soobschit(data.already_member
         ? 'Вы уже в этой бригаде. Роль: ' + (ROLE_NAME[data.role] || data.role) + '.'
         : 'Готово — проект добавлен. Вы в бригаде как ' + (ROLE_NAME[data.role] || data.role) + '.');
       return true;
     }
-    alert((data && data.error) || 'Приглашение не сработало.');
+    soobschit((data && data.error) || 'Приглашение не сработало.');
   }catch(e){
-    alert('Не удалось принять приглашение: ' + ((e && e.message) || 'ошибка'));
+    soobschit('Не удалось принять приглашение: ' + ((e && e.message) || 'ошибка'));
   }
   return false;
 }
@@ -7274,7 +7287,7 @@ async function podelitSozdat(){
 }
 
 async function podelitOtozvat(id){
-  if(!confirm('Отозвать ссылку?\n\nЗаказчик по ней больше ничего не увидит. Отменить отзыв нельзя — придётся выдать новую.')) return;
+  if(!await sprosit('Отозвать ссылку?\n\nЗаказчик по ней больше ничего не увидит. Отменить отзыв нельзя — придётся выдать новую.')) return;
   try{
     await DB.otozvatSsylku(id);
     uiPodelit.spisok = await DB.spisokSsylok(uiPodelit.projectId);
@@ -8641,11 +8654,21 @@ const DB = {
 
   // Вернуть позиции этого соглашения в смету. Сторож пропускает снятие
   // ВЧИСТУЮ — только эти два поля и ничего больше.
+  // ВОЗВРАЩАЕМ В ЧЕРНОВИК, А НЕ В СМЕТУ НАЧИСТО.
+  // У доп. работы снятие подписания оставляет строку в черновике —
+  // она видна под шапкой «Ещё не подписано» и ждёт следующего
+  // соглашения. У исключения было иначе: позиция уходила из соглашения
+  // совсем, и на экране просто пропадала. Владелец 5 сентября 2026:
+  // «при снятии подписания исключённые позиции пропадают».
+  // Обе половины соглашения обязаны вести себя одинаково.
+  //
+  // Черновик в этом же запросе сторож разрешает: в ветке снятия он
+  // сторожит только название, единицу и два поля количества.
   async vernutPozicii(projectId, nomer){
     const nom = String(nomer || '').trim();
     if(!nom) return [];
     const { data, error } = await sb.from('room_works')
-      .update({ excluded_dop_no: null, excluded_date: null })
+      .update({ excluded_dop_no: null, excluded_date: null, excluded_draft: true })
       .eq('project_id', projectId)
       .eq('excluded_dop_no', nom)
       .select('lid');
@@ -10915,7 +10938,7 @@ async function fotoSkachat(a){
     setTimeout(()=> URL.revokeObjectURL(u), 10000);
   }catch(e){
     console.error('Снимок не скачался', e);
-    alert('Не удалось скачать снимок. Проверьте связь и попробуйте ещё раз.');
+    soobschit('Не удалось скачать снимок. Проверьте связь и попробуйте ещё раз.');
   }finally{
     if(knopka) knopka.disabled = false;
   }
@@ -14360,7 +14383,7 @@ function polyDrawBind(){
     const vi = polyDraw.selVert;
     if(vi === null || vi === undefined) return;
     if(polyDraw.pts.length <= 3){
-      alert('В контуре и так три точки — меньше нельзя.');
+      soobschit('В контуре и так три точки — меньше нельзя.');
       return;
     }
     polyDraw.pts.splice(vi, 1);
@@ -14386,7 +14409,7 @@ function polyDrawBind(){
     // Меньше трёх вершин — это уже не фигура. Раньше кнопка при трёх
     // точках просто молчала, и человек не понимал, сломалось или нет.
     if(polyDraw.pts.length <= 3){
-      alert('В контуре и так три стены — меньше нельзя. Сотрите контур целиком и начертите заново.');
+      soobschit('В контуре и так три стены — меньше нельзя. Сотрите контур целиком и начертите заново.');
       return;
     }
     polyDraw.pts.splice((polyDraw.sel+1)%polyDraw.pts.length, 1);
@@ -16167,7 +16190,7 @@ async function generateDoc(proj, docType, format, action, btn){
     // Отличаем «не доехала библиотека» от прочих сбоев: человеку важно понять,
     // что дело в связи, и что после одной удачной загрузки это заработает офлайн.
     const noLib = e && /LIB_TIMEOUT|загрузить библиотеку|не загрузился/.test(e.message || '');
-    alert(noLib
+    soobschit(noLib
       ? 'Нет связи с интернетом.\n\nЧтобы сформировать документ, приложению нужно один раз загрузить нужные библиотеки. ' +
         'Подключитесь к сети и попробуйте снова — после этого документы будут создаваться и без интернета.'
       : 'Не удалось сформировать документ. Попробуйте ещё раз.');
@@ -16725,7 +16748,8 @@ document.getElementById('previewClose') && document.getElementById('previewClose
         return;
       }
       if(udal){
-        if(!confirm('Удалить свой комментарий? Восстановить его будет нельзя.')) return;
+        if(!await sprosit('Удалить свой комментарий? Восстановить его будет нельзя.',
+                          { da:'Удалить', opasno:true })) return;
         try{
           await kommUdalit(udal);
           pvKomm = pvKomm.filter(x=>x.id !== udal);
@@ -17077,11 +17101,12 @@ function matAttachHandlers(main){
     el.addEventListener('change', ()=>{ apply(); if(el.tagName==='SELECT') render(); });
   });
   main.querySelectorAll('[data-mat-del]').forEach(el=>{
-    el.onclick = ()=>{
+    el.onclick = async ()=>{
       const i = +el.getAttribute('data-mat-del');
       const m = (state.materials||[])[i];
       if(!m) return;
-      if((m.name||'').trim() && !confirm('Убрать «' + m.name + '» из справочника?')) return;
+      if((m.name||'').trim() && !await sprosit('Убрать «' + m.name + '» из справочника?',
+                                               { da:'Убрать', opasno:true })) return;
       state.materials.splice(i,1);
       scheduleSave(); render();
     };
@@ -17572,8 +17597,9 @@ function renderSelBar(){
     toast(n === 1 ? 'Проект в архиве' : 'В архиве: ' + n);
   };
   const b3 = q('data-sel-del');
-  if(b3) b3.onclick = ()=>{
-    if(!confirm('Удалить выбранные проекты (' + selIds.size + ') без возможности восстановления?')) return;
+  if(b3) b3.onclick = async ()=>{
+    if(!await sprosit('Удалить выбранные проекты (' + selIds.size + ')?\n\nВосстановить их будет нельзя.',
+                      { da:'Удалить', opasno:true })) return;
     // снимки удалённых проектов — со склада сразу, не дожидаясь сервера
     fotoZabytProekty(state.projects.filter(p=>selIds.has(p.id)));
     state.projects = state.projects.filter(p=>!selIds.has(p.id));
@@ -17795,7 +17821,7 @@ function projMenu(id, x, y){
     };
   });
   m.querySelectorAll('[data-act]').forEach(b=>{
-    b.onclick = ()=>{
+    b.onclick = async ()=>{
       const a = b.getAttribute('data-act');
       close();
       if(a === 'pin'){ p.pinned = !p.pinned; scheduleSave(); renderSidebar(); return; }
@@ -17809,7 +17835,8 @@ function projMenu(id, x, y){
       }
       if(a === 'many'){ selMode = true; selIds.clear(); selIds.add(id); renderSidebar(); return; }
       if(a === 'del'){
-        if(!confirm('Удалить проект «' + (p.name||'Без названия') + '» без возможности восстановления?')) return;
+        if(!await sprosit('Удалить проект «' + (p.name||'Без названия') + '»?\n\nВосстановить его будет нельзя.',
+                          { da:'Удалить', opasno:true })) return;
         fotoZabytProekty([p]);      // снимки — со склада сразу
         state.projects = state.projects.filter(x=>x.id!==id);
         if(state.currentProjectId === id) state.currentProjectId = (state.projects.find(x=>!x.archived)||{}).id || null;
@@ -18036,10 +18063,11 @@ function attachSidebarHandlers(){
   });
 
   list.querySelectorAll('[data-del]').forEach(el=>{
-    el.onclick = (e)=>{
+    el.onclick = async (e)=>{
       e.stopPropagation();
       const id = el.getAttribute('data-del');
-      if(confirm('Удалить проект без возможности восстановления?')){
+      if(await sprosit('Удалить проект?\n\nВосстановить его будет нельзя.',
+                       { da:'Удалить', opasno:true })){
         fotoZabytProekty(state.projects.filter(p=>p.id===id));   // снимки — со склада сразу
         state.projects = state.projects.filter(p=>p.id!==id);
         if(state.currentProjectId===id) state.currentProjectId = firstOpenableProjectId();
@@ -18914,7 +18942,7 @@ async function dopPodpisApply(){
 
 // Снять подписание. ids задан - одна строка, нет - всё соглашение.
 async function dopSnyat(proj, nomer, ids, vopros){
-  if(!confirm(vopros)) return;
+  if(!await sprosit(vopros, { da:'Снять подписание', opasno:true })) return;
   try{
     // СНЯТИЕ ВОЗВРАЩАЕТ И ИСКЛЮЧЁННЫЕ ПОЗИЦИИ — иначе расподписание
     // сработает наполовину: доп. работы отойдут, а позиции останутся
@@ -18924,13 +18952,15 @@ async function dopSnyat(proj, nomer, ids, vopros){
     if(!ids){
       if(LOCAL_TEST){
         (proj.rooms||[]).forEach(r=> (r.works||[]).forEach(w=>{
-          if((w.excludedDopNo||'').trim() === String(nomer)){ w.excludedDopNo=''; w.excludedDate=''; }
+          if((w.excludedDopNo||'').trim() === String(nomer)){
+            w.excludedDopNo=''; w.excludedDate=''; w.excludedDraft = true;
+          }
         }));
       } else {
         const verno = await DB.vernutPozicii(proj.id, nomer);
         const lids = new Set((verno||[]).map(r=>r.lid));
         (proj.rooms||[]).forEach(r=> (r.works||[]).forEach(w=>{
-          if(lids.has(w.lid)){ w.excludedDopNo=''; w.excludedDate=''; }
+          if(lids.has(w.lid)){ w.excludedDopNo=''; w.excludedDate=''; w.excludedDraft = true; }
         }));
       }
     }
@@ -18957,11 +18987,20 @@ async function dopSnyat(proj, nomer, ids, vopros){
       // перезагрузки. Владелец 5 сентября 2026: «соглашение 3, где есть
       // исключённая позиция, нет возможности снять подписание».
       // Та же грабля 76, с другой стороны.
-      const estRaboty = ids
-        ? true
-        : (proj.extraWorks||[]).some(e=> (e.dopNo||'').trim() === String(nomer));
-      if(estRaboty){
-        const tronuty = await DB.snyatPodpisanie(proj.id, nomer, ids);
+      // СНИМАЕМ ПОИМЁННО, а не «всё с этим номером».
+      // Подписание всегда шло списком строк, а снятие — сравнением
+      // номера в базе со строкой из приложения. Сравнение текста —
+      // лишнее звено: номер соглашения человек пишет руками, и в нём
+      // бывает что угодно, вплоть до косой черты и запятой (у владельца
+      // есть договор «1111 косая 000»). Приложение и так знает, какие строки
+      // входят в соглашение, — незачем просить базу искать их заново
+      // по тексту. Так снятие устроено ровно как подписание.
+      const idsRabot = (ids && ids.length) ? ids
+        : (proj.extraWorks||[])
+            .filter(e=> (e.dopNo||'').trim() === String(nomer))
+            .map(e=> e.id).filter(Boolean);
+      if(idsRabot.length){
+        const tronuty = await DB.snyatPodpisanie(proj.id, nomer, idsRabot);
         const snyato = new Set((tronuty||[]).map(r=>r.id));
         (proj.extraWorks||[]).forEach(e=>{
           if(snyato.has(e.id)){ e.dopNo = ''; e.dopDate = ''; }
@@ -18973,8 +19012,16 @@ async function dopSnyat(proj, nomer, ids, vopros){
     if(uiDopNo === String(nomer) && dopNomera(proj).indexOf(String(nomer)) === -1) uiDopNo = '';
     render();
   }catch(e){
+    // ЭКРАН ОБНОВЛЯЕМ ДАЖЕ ПРИ ОТКАЗЕ. Снятие идёт двумя запросами
+    // в две таблицы, и первый мог уже пройти: исключения вернулись,
+    // а доп. работы — нет. Без перерисовки экран показывал прежнее,
+    // и позиция выглядела пропавшей: в соглашении её уже нет, а в смете
+    // ещё не появилась. Владелец 5 сентября 2026: «при снятии
+    // подписания исключённые позиции пропадают».
     console.error('Снятие подписания не прошло', e);
-    alert('Не удалось снять подписание: ' + ((e && e.message) || 'проверьте связь'));
+    render();
+    soobschit('Снятие прошло не полностью: ' + ((e && e.message) || 'проверьте связь') +
+          '\n\nЧто успело — уже на экране. Повторите снятие.');
   }
 }
 
@@ -20379,10 +20426,11 @@ function attachHandlers(){
     };
   });
   main.querySelectorAll('[data-arch-del]').forEach(el=>{
-    el.onclick = ()=>{
+    el.onclick = async ()=>{
       const id = el.getAttribute('data-arch-del');
       const p = state.projects.find(x=>x.id===id);
-      if(!p || !confirm('Удалить «' + (p.name||'Без названия') + '» навсегда?')) return;
+      if(!p || !await sprosit('Удалить «' + (p.name||'Без названия') + '» навсегда?',
+                              { da:'Удалить', opasno:true })) return;
       fotoZabytProekty([p]);      // снимки — со склада сразу
       state.projects = state.projects.filter(x=>x.id!==id);
       if(state.currentProjectId === id) state.currentProjectId = (state.projects.find(x=>!x.archived)||{}).id || null;
@@ -20653,17 +20701,18 @@ function attachHandlers(){
     };
   });
   main.querySelectorAll('[data-del-room]').forEach(el=>{
-    el.onclick = (e)=>{
+    el.onclick = async (e)=>{
       e.stopPropagation();
       const id = el.getAttribute('data-del-room');
       const pop = main.querySelector(`[data-room-menu-pop="${id}"]`);
       if(pop) pop.classList.remove('open');
-      if(proj.rooms.length<=1){ alert('В проекте должно остаться хотя бы одно помещение.'); return; }
+      if(proj.rooms.length<=1){ soobschit('В проекте должно остаться хотя бы одно помещение.'); return; }
       const room = proj.rooms.find(r=>r.id===id);
       const name = (room && room.name) ? '«' + room.name + '»' : 'помещение';
       // удаление — только с подтверждением: вместе с помещением уходят
       // все его работы, проёмы и размеры
-      if(!confirm('Удалить ' + name + '? Вместе с ним удалятся все его работы и размеры. Отменить будет нельзя.')) return;
+      if(!await sprosit('Удалить ' + name + '?\n\nВместе с ним удалятся все его работы и размеры. Отменить будет нельзя.',
+                        { da:'Удалить', opasno:true })) return;
       proj.rooms = proj.rooms.filter(r=>r.id!==id);
       scheduleSave(); render();
     };
@@ -20818,13 +20867,14 @@ function attachHandlers(){
       const id = el.getAttribute('data-ph-del');
       // Спрашиваем всегда: снимок скрытых работ, удалённый по ошибке,
       // не восстановить, а спор с заказчиком может начаться через полгода.
-      if(!confirm('Удалить снимок? Восстановить его будет нельзя.')) return;
+      if(!await sprosit('Удалить снимок? Восстановить его будет нельзя.',
+                        { da:'Удалить', opasno:true })) return;
       try{
         await photoDelete(proj, id);
         render();
       }catch(e){
         console.error('Photo delete failed', e);
-        alert('Не удалось удалить снимок: ' + (e && e.message ? e.message : 'сервер отказал'));
+        soobschit('Не удалось удалить снимок: ' + (e && e.message ? e.message : 'сервер отказал'));
       }
     };
   });
@@ -21113,7 +21163,7 @@ function attachHandlers(){
     }catch(e){
       console.error('Черновик исключения не прошёл', e);
       el.disabled = false;
-      alert((da ? 'Не удалось отложить позицию: ' : 'Не удалось вернуть позицию: ')
+      soobschit((da ? 'Не удалось отложить позицию: ' : 'Не удалось вернуть позицию: ')
             + ((e && e.message) || 'проверьте связь'));
     }
   };
@@ -21157,7 +21207,7 @@ function attachHandlers(){
       dopSnyat(proj, nom, null,
         'Снять подписание с соглашения № ' + nom + ' целиком?\n\n' +
         chasti.join(' и ') + ' ' + plural(rabot + iskl,'вернётся','вернутся','вернётся') +
-        ' в смету, номер освободится.\n\nЕсли бумага уже у заказчика, ' +
+        ' в черновик, номер освободится.\n\nЕсли бумага уже у заказчика, ' +
         'ей это изменение не передастся.');
     };
   });
@@ -21220,7 +21270,7 @@ function attachHandlers(){
       const role = main.querySelector(`[data-team-newrole="${pid}"]`);
       const email = (mail && mail.value || '').trim();
       if(!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){
-        alert('Впишите почту мастера — на неё будет выписано приглашение.');
+        soobschit('Впишите почту мастера — на неё будет выписано приглашение.');
         return;
       }
       el.disabled = true; el.textContent = 'Готовим…';
@@ -21243,7 +21293,7 @@ function attachHandlers(){
         await teamLoad(pid);
       }catch(e){
         // лимит мест приходит с сервера человеческим текстом
-        alert((e && e.message) || 'Не удалось пригласить.');
+        soobschit((e && e.message) || 'Не удалось пригласить.');
         el.disabled = false; el.textContent = 'Пригласить';
       }
     });
@@ -21258,29 +21308,32 @@ function attachHandlers(){
   main.querySelectorAll('[data-team-revoke]').forEach(el=>{
     el.addEventListener('click', async ()=>{
       const [id, pid] = el.getAttribute('data-team-revoke').split('|');
-      if(!confirm('Отозвать приглашение? Ссылка перестанет работать.')) return;
+      if(!await sprosit('Отозвать приглашение? Ссылка перестанет работать.',
+                        { da:'Отозвать', opasno:true })) return;
       try{ await DB.revokeInvite(id); await teamLoad(pid); }
-      catch(e){ alert((e && e.message) || 'Не удалось отозвать.'); }
+      catch(e){ soobschit((e && e.message) || 'Не удалось отозвать.'); }
     });
   });
   main.querySelectorAll('[data-team-del]').forEach(el=>{
     el.addEventListener('click', async ()=>{
       const [pid, uidv] = el.getAttribute('data-team-del').split('|');
-      if(!confirm('Убрать мастера из проекта? Он потеряет доступ к смете.')) return;
+      if(!await sprosit('Убрать мастера из проекта? Он потеряет доступ к смете.',
+                        { da:'Убрать', opasno:true })) return;
       try{ await DB.removeMember(pid, uidv); await teamLoad(pid); }
-      catch(e){ alert((e && e.message) || 'Не удалось убрать.'); }
+      catch(e){ soobschit((e && e.message) || 'Не удалось убрать.'); }
     });
   });
   main.querySelectorAll('[data-team-leave]').forEach(el=>{
     el.addEventListener('click', async ()=>{
       const pid = el.getAttribute('data-team-leave');
-      if(!confirm('Выйти из проекта? Он пропадёт из вашего списка. Вернуть доступ сможет только владелец.')) return;
+      if(!await sprosit('Выйти из проекта?\n\nОн пропадёт из вашего списка. Вернуть доступ сможет только владелец.',
+                        { da:'Выйти', opasno:true })) return;
       try{
         await DB.leaveProject(pid);
         serverSnap = null;                 // проект исчез — перечитываем всё
         await loadFromCloud();
         render();
-      }catch(e){ alert((e && e.message) || 'Не удалось выйти.'); }
+      }catch(e){ soobschit((e && e.message) || 'Не удалось выйти.'); }
     });
   });
   // Способ работы: одна настройка вместо двух независимых.
@@ -21340,7 +21393,7 @@ function attachHandlers(){
         }
         render();
       }
-      catch(e){ alert((e && e.message) || 'Не удалось изменить.'); }
+      catch(e){ soobschit((e && e.message) || 'Не удалось изменить.'); }
     };
   });
 
@@ -21372,7 +21425,7 @@ function attachHandlers(){
         // это число и знаем его. Ошибка выбросит исключение раньше.
         m.share_pct = next;
         render();
-      }catch(e){ alert((e && e.message) || 'Не удалось изменить долю.'); }
+      }catch(e){ soobschit((e && e.message) || 'Не удалось изменить долю.'); }
     };
   });
 
@@ -21409,7 +21462,7 @@ function attachHandlers(){
         render();
       }catch(e){
         el.value = was;
-        alert((e && e.message) || 'Не удалось сохранить подпись.');
+        soobschit((e && e.message) || 'Не удалось сохранить подпись.');
       }
     });
   });
@@ -21431,7 +21484,7 @@ function attachHandlers(){
                                                 : 'Мастер видит ' + val + '% от сметы'));
       }catch(e){
         el.value = was == null ? '' : was;
-        alert((e && e.message) || 'Не удалось изменить долю.');
+        soobschit((e && e.message) || 'Не удалось изменить долю.');
       }
     });
   });
@@ -21453,7 +21506,7 @@ function attachHandlers(){
       catch(e){
         m.hide_personal = !next;
         el.classList.toggle('on', !next);
-        alert((e && e.message) || 'Не удалось изменить.');
+        soobschit((e && e.message) || 'Не удалось изменить.');
       }
     });
   });
@@ -21812,6 +21865,79 @@ function createProject(){
   // на телефоне закрываем меню — как при выборе существующего проекта,
   // иначе оно перекрывало бы только что созданный проект
   if(window.innerWidth < 1024) setNav(false);
+}
+
+// ============================================================
+//  ОКНО ВОПРОСА И СООБЩЕНИЯ — СВОЁ, А НЕ БРАУЗЕРНОЕ
+// ============================================================
+//
+// Родные confirm и alert рисует браузер: своим шрифтом, своей кнопкой
+// и с надписью «Подтвердите действие на smetaraschet.ru» — приложение
+// в этот миг перестаёт быть собой, и человек видит служебное окно
+// вместо своего инструмента. Владелец 5 сентября 2026: «данное окно
+// должно быть выполнено в корпоративном стиле и по середине экрана».
+//
+// Вид берём общий для всех окон (.refcfg-overlay/.refcfg-modal),
+// как велит CLAUDE.md: третьего вида окна не заводим.
+//
+// ВОПРОС — ЭТО ОКНО РЕШЕНИЯ. Закрывается только своими кнопками:
+// ни щелчком мимо, ни Escape. Правило владельца от 1 сентября 2026 —
+// там, где человек обязан принять решение, случайное закрытие означает
+// несделанный выбор. Родной confirm вёл себя так же, и терять это
+// свойство, меняя вид, было бы шагом назад.
+//
+// СООБЩЕНИЕ закрывается чем угодно: терять там нечего.
+//
+// Первый абзац текста становится заголовком, остальные — телом:
+// все нынешние тексты уже написаны в таком виде («Снять подписание?»,
+// пустая строка, объяснение).
+function oknoVopros(tekst, opts){
+  const o = opts || {};
+  return new Promise(resolve=>{
+    const chasti = String(tekst == null ? '' : tekst).split(/\n\s*\n/);
+    const zagolovok = (chasti.shift() || '').trim();
+    const telo = chasti.map(t=> '<p>' + escapeHtml(t.trim()).replace(/\n/g, '<br>') + '</p>').join('');
+    const ov = document.createElement('div');
+    ov.className = 'refcfg-overlay okno-vopros no-print';
+    ov.innerHTML =
+      '<div class="refcfg-modal okno-vopros-modal">' +
+        '<div class="refcfg-head"><div><div class="refcfg-title">' + escapeHtml(zagolovok) + '</div></div></div>' +
+        (telo ? '<div class="refcfg-body okno-vopros-telo">' + telo + '</div>' : '') +
+        '<div class="refcfg-foot okno-vopros-nogi">' +
+          (o.otmena ? '<button class="btn btn-outline" data-okno="net">' + escapeHtml(o.otmena) + '</button>' : '') +
+          '<button class="btn ' + (o.opasno ? 'btn-ink' : 'btn-primary') + '" data-okno="da">' +
+            escapeHtml(o.da || 'Понятно') + '</button>' +
+        '</div>' +
+      '</div>';
+    document.body.appendChild(ov);
+    ov.style.display = 'flex';
+    const zakryt = (otvet)=>{
+      document.removeEventListener('keydown', poKlavishe, true);
+      ov.remove();
+      resolve(otvet);
+    };
+    // Escape закрывает только сообщение: у вопроса выход один — кнопки.
+    const poKlavishe = (e)=>{
+      if(e.key === 'Escape' && !o.otmena){ e.preventDefault(); zakryt(true); }
+    };
+    document.addEventListener('keydown', poKlavishe, true);
+    ov.querySelectorAll('[data-okno]').forEach(b=>{
+      b.onclick = ()=> zakryt(b.getAttribute('data-okno') === 'da');
+    });
+    if(!o.otmena) ov.onclick = (e)=>{ if(e.target === ov) zakryt(true); };
+    const glavnaya = ov.querySelector('[data-okno="da"]');
+    if(glavnaya) glavnaya.focus();
+  });
+}
+
+// Спросить «да или нет». Возвращает истину, если человек согласился.
+function sprosit(tekst, opts){
+  const o = opts || {};
+  return oknoVopros(tekst, { da: o.da || 'Да', otmena: o.otmena || 'Отмена', opasno: o.opasno });
+}
+// Сказать и дождаться, пока прочитают. Одна кнопка.
+function soobschit(tekst){
+  return oknoVopros(tekst, { da: 'Понятно' });
 }
 
 function escapeHtml(s){
