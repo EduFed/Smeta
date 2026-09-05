@@ -4053,7 +4053,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-05-240';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-05-241';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -8893,6 +8893,26 @@ async function persistToCloud(payload, stamp){
     (state.projects || []).forEach(p=>{ p._srvAt = at.get(p.id) || p._srvAt; });
   }
   return { kind:'ok' };
+}
+
+// ЖДАТЬ ПОЛНОЕ СОХРАНЕНИЕ — ТОЛЬКО ЕСЛИ ЕСТЬ ЧЕГО ЖДАТЬ.
+//
+// Узкие запросы (подписание, исключение, снятие) ищут строку на сервере,
+// поэтому перед ними приложение дошлёт несохранённое. Но `persist` ждёт
+// ответа до NET_TIMEOUT_MS — пятнадцати секунд, — и на медленной связи
+// человек всё это время смотрит в неподвижный экран: кнопка нажата,
+// ничего не происходит. Владелец 5 сентября 2026: «почему-то секунд 15
+// проходит перед снятием и подписанием».
+//
+// Два правила. Нечего сохранять — не ждём вовсе. Есть чего — говорим
+// об этом на самой кнопке, а не молчим: пятнадцать секунд молчания
+// неотличимы от поломки (грабля 5).
+async function dozhdatsyaSohraneniya(btn, podpis){
+  if(!pendingSave) return;
+  const bylo = btn ? btn.textContent : '';
+  if(btn) btn.textContent = podpis || 'Сохраняем правки…';
+  try{ await persist(); }
+  finally{ if(btn && btn.textContent === (podpis || 'Сохраняем правки…')) btn.textContent = bylo; }
 }
 
 async function persist(){
@@ -18701,7 +18721,7 @@ async function iskDobavitApply(){
   if(btn){ btn.disabled = true; btn.textContent = 'Откладываем…'; }
   try{
     if(!LOCAL_TEST){
-      await persist();
+      await dozhdatsyaSohraneniya(btn, 'Сохраняем правки…');
       await DB.chernovikIsklyucheniya(p.id, lids, true);
       markLocalClean();
     }
@@ -18892,7 +18912,7 @@ async function dopPodpisApply(){
       // ПЕРЕД подписанием дошлём несохранённое: если строка ещё не уехала
       // на сервер, узкий запрос её не найдёт и она останется неподписанной,
       // а на экране выглядела бы подписанной.
-      await persist();
+      await dozhdatsyaSohraneniya(btn, 'Сохраняем правки…');
       // СОГЛАШЕНИЕ БЕЗ ДОП. РАБОТ — ЗАПРОС НЕ ЗОВЁМ ВОВСЕ.
       // `podpisatDopSoglashenie` нарочно отбивает пустой список: правило
       // стоит с 1 сентября 2026, когда «подписать всё неподписанное»
@@ -18921,12 +18941,26 @@ async function dopPodpisApply(){
       // бы из сметы по соглашению, которого нет.
       if(iskLids.length){
         const iskTronuty = await DB.isklyuchitPozicii(o.projectId, iskLids, nom, o.data);
-        const po_lid = new Map((iskTronuty||[]).map(r=>[r.lid, r]));
+        // ЭКРАН ПО ТОМУ, О ЧЁМ ПРОСИЛИ, А НЕ ПО ТОМУ, ЧТО ВЕРНУЛОСЬ.
+        // Прежде местная копия правилась только по строкам из ответа:
+        // не пришла строка — позиция молча оставалась черновиком,
+        // и итог не пересчитывался, хотя соглашение подписано. Владелец
+        // 5 сентября 2026: «соглашение подписалось, исключённые позиции
+        // видно в списке, но итоговая сумма не пересчиталась».
+        // Теперь: запрос не бросил ошибку — значит применяем к тем
+        // строкам, о которых просили; а если сервер задел не все,
+        // говорим об этом прямо, а не оставляем расхождение молчать.
+        const tronulis = new Set((iskTronuty||[]).map(r=>r.lid));
         (p.rooms||[]).forEach(r=> (r.works||[]).forEach(w=>{
-          const t = po_lid.get(w.lid);
-          if(t){ w.excludedDopNo = t.excluded_dop_no || ''; w.excludedDate = t.excluded_date || '';
-                 w.excludedDraft = false; }
+          if(iskLids.indexOf(w.lid) === -1) return;
+          w.excludedDopNo = nom; w.excludedDate = o.data; w.excludedDraft = false;
         }));
+        if(tronulis.size !== iskLids.length){
+          console.warn('Исключено строк', tronulis.size, 'из', iskLids.length);
+          soobschit('Соглашение подписано.\n\nНо сервер отметил не все исключённые позиции: ' +
+                    tronulis.size + ' из ' + iskLids.length +
+                    '. Обновите страницу и проверьте список.');
+        }
       }
       markLocalClean();
     }
@@ -18972,7 +19006,7 @@ async function dopSnyat(proj, nomer, ids, vopros){
     } else {
       // Дошлём несохранённое до снятия: узкий запрос ищет строки
       // на сервере, и не доехавшую он не найдёт.
-      await persist();
+      await dozhdatsyaSohraneniya(null);
       // У СОГЛАШЕНИЯ ИЗ ОДНИХ ИСКЛЮЧЕНИЙ ДОП. РАБОТ НЕТ — И СПРАШИВАТЬ
       // О НИХ НЕ НАДО. `snyatPodpisanie` нарочно ругается, когда запрос
       // не задел ни строки: «ничего не снято» отличает отказ прав
@@ -21154,7 +21188,7 @@ function attachHandlers(){
     el.disabled = true;
     try{
       if(!LOCAL_TEST){
-        await persist();                 // строка могла ещё не уехать на сервер
+        await dozhdatsyaSohraneniya(el, 'Сохраняем…');   // строка могла ещё не уехать
         await DB.chernovikIsklyucheniya(proj.id, [lid], da);
         markLocalClean();
       }
