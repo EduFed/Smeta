@@ -1661,14 +1661,17 @@
      Замер на экране «Виды работ», ширина 390: таблица начиналась
      на 377-й точке, стала на 191-й.
 
-     Порог 1023, а не 1024: соседнее правило для компьютера начинается
-     ровно с 1024, и на этой ширине выиграло бы то, что ниже по файлу.
+     Порог тот же 1024, что и у отступов .main ниже по файлу: два разных
+     порога на одну и ту же перестройку разошлись бы на первой же правке.
 
      Прилипшая шапка стоит ТАМ ЖЕ, где стоит непрокрученная: страница
      уезжает под неё, а сама она не дёргается. Иначе при прокрутке
-     строка с кнопками уезжала под кнопку меню. */
-  @media (max-width:1023px){
-    .main{ padding-top:calc(20px + env(safe-area-inset-top, 0px)); }
+     строка с кнопками уезжала под кнопку меню.
+
+     24 сверху — не «покрасивее», а верхняя точка кнопки меню: заголовок
+     и кнопка стоят на одной линии сами, без подгонки. То же число
+     и в самой кнопке. */
+  @media (max-width:1024px){
     /* всё, что стоит на странице первым, кроме шапки, просто опускается
        ниже кнопки: обойти её слева умеет только заголовок */
     .main > *:first-child{ margin-top:calc(var(--menyu-razmer) + 4px); }
@@ -1682,12 +1685,12 @@
       padding-left:calc(var(--menyu-razmer) + 10px);
     }
     .proj-header.sticky-head{
-      top:calc(20px + env(safe-area-inset-top, 0px));
-      padding-top:6px; padding-bottom:10px; margin-bottom:6px;
+      top:calc(24px + env(safe-area-inset-top, 0px));
+      padding-top:0; padding-bottom:10px; margin-bottom:6px;
     }
     .proj-header.sticky-head::before{
-      top:calc(-20px - env(safe-area-inset-top, 0px) - 2px);
-      height:calc(20px + env(safe-area-inset-top, 0px) + 2px);
+      top:calc(-24px - env(safe-area-inset-top, 0px) - 2px);
+      height:calc(24px + env(safe-area-inset-top, 0px) + 2px);
     }
     .proj-header.sticky-head + *{ margin-top:10px; }
   }
@@ -1979,7 +1982,7 @@
     .room{break-inside:avoid;}
   }
   @media (max-width:1024px){
-    .main{padding:calc(64px + env(safe-area-inset-top, 0px)) 18px 24px;}
+    .main{padding:calc(24px + env(safe-area-inset-top, 0px)) 18px 24px;}
   }
   @media (max-width:520px){
     /* На телефоне кнопка крупнее: 44 точки — наименьшая цель для пальца,
@@ -1987,7 +1990,7 @@
        Знак растёт вместе с ней сам, он берёт ту же величину. */
     :root{ --menyu-razmer:44px; }
     .sidebar{width:86vw;}
-    .main{padding:calc(64px + env(safe-area-inset-top, 0px)) 14px 24px;}
+    .main{padding:calc(24px + env(safe-area-inset-top, 0px)) 14px 24px;}
     .opening-row{grid-template-columns:1fr 66px 66px 54px 22px;gap:6px;}
     .dims-row{gap:14px;}
   }
@@ -2712,12 +2715,30 @@
      кнопка «Все расценки →» на телефоне уезжала на свою строку
      во всю ширину и съедала экран у таблицы, ради которой сюда
      и заходят. */
-  .ref-inline.vklyuchen{flex-wrap:nowrap;gap:8px;padding:8px 12px;cursor:pointer;}
+  /* ВИДНО, ЧТО ПО СТРОКЕ МОЖНО НАЖАТЬ.
+     Владелец 5 сентября 2026: «не сразу понятно, что это активная
+     кнопка; стрелка справа конечно есть, но её как-то не сразу
+     заметно». Серая стрелка в конце строки — тот же знак, что стоит
+     в «Настройках», и он там ровно так же незаметен.
+     Шеврон садится в тёмный кружок — «чёрным на белом», тот же приём,
+     которым по просьбе владельца выделена кнопка «Просмотр»
+     в документах (`.btn-ink`). Оранжевый кружок сравнивали рядом
+     и отвергли: в этой строке уже есть оранжевый тумблер, и второй
+     оранжевый кружок отнимает у него смысл «включено».
+     Плюс отклик на нажатие: системную подсветку приложение отключает
+     целиком, и без своего :active нажатая строка выглядит мёртвой. */
+  .ref-inline.vklyuchen{flex-wrap:nowrap;gap:8px;padding:8px 12px;cursor:pointer;
+    transition:border-color .15s, background .12s;}
+  .ref-inline.vklyuchen:hover{border-color:var(--ink-soft);}
+  .ref-inline.vklyuchen:active{background:var(--akcent-fon);}
   .ref-inline.vklyuchen .ref-inline-txt{flex:1 1 auto;}
   .ref-inline.vklyuchen .ref-inline-txt b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .ref-inline.vklyuchen .ref-inline-rate{flex:0 0 auto;gap:4px;cursor:auto;}
   .ref-inline.vklyuchen .ref-inline-rate input{width:60px;padding:5px 7px;}
-  .ref-inline-shevron{flex:0 0 auto;font-size:22px;line-height:1;color:var(--ink-soft);padding:0 2px;}
+  .ref-inline-shevron{flex:0 0 auto;width:28px;height:28px;border-radius:50%;
+    display:flex;align-items:center;justify-content:center;
+    background:var(--ink);color:var(--white);
+    font-size:18px;line-height:1;padding-bottom:2px;}
   @media (max-width:560px){
     .ref-inline{gap:10px;}
   }
@@ -3973,7 +3994,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-05-230';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-05-231';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
