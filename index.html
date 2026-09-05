@@ -1651,6 +1651,53 @@
     .proj-header.sticky-head{ top:0; }
     .proj-header.sticky-head::before{ top:-26px; height:26px; }
   }
+  /* ЗАГОЛОВОК ВСТАЁТ РЯДОМ С КНОПКОЙ МЕНЮ, А НЕ ПОД НЕЙ.
+     Владелец 5 сентября 2026: «очень большая шапка для телефона,
+     можно поднять выше и сделать короче?». Кнопка меню занимает свои
+     44 точки в левом верхнем углу, а страница начиналась НИЖЕ неё —
+     то есть полоса во всю ширину экрана пустовала ради одной кнопки.
+     Теперь заголовок отступает от левого края ровно на её ширину
+     и встаёт с ней на одну линию.
+     Замер на экране «Виды работ», ширина 390: таблица начиналась
+     на 377-й точке, стала на 191-й.
+
+     Порог 1023, а не 1024: соседнее правило для компьютера начинается
+     ровно с 1024, и на этой ширине выиграло бы то, что ниже по файлу.
+
+     Прилипшая шапка стоит ТАМ ЖЕ, где стоит непрокрученная: страница
+     уезжает под неё, а сама она не дёргается. Иначе при прокрутке
+     строка с кнопками уезжала под кнопку меню. */
+  @media (max-width:1023px){
+    .main{ padding-top:calc(20px + env(safe-area-inset-top, 0px)); }
+    /* всё, что стоит на странице первым, кроме шапки, просто опускается
+       ниже кнопки: обойти её слева умеет только заголовок */
+    .main > *:first-child{ margin-top:calc(var(--menyu-razmer) + 4px); }
+    .main > .proj-header:first-child{ margin-top:0; }
+    /* :not(.cat-head-top) — потому что на экранах «Виды работ»
+       и «Материалы» первый ребёнок шапки это сама строка
+       заголовок-плюс-кнопки, и отступ достался бы ещё и кнопкам,
+       а потом второй раз заголовку внутри неё. */
+    .main > .proj-header:first-child > div:first-child:not(.cat-head-top),
+    .main > .proj-header:first-child .cat-head-top > div:first-child{
+      padding-left:calc(var(--menyu-razmer) + 10px);
+    }
+    .proj-header.sticky-head{
+      top:calc(20px + env(safe-area-inset-top, 0px));
+      padding-top:6px; padding-bottom:10px; margin-bottom:6px;
+    }
+    .proj-header.sticky-head::before{
+      top:calc(-20px - env(safe-area-inset-top, 0px) - 2px);
+      height:calc(20px + env(safe-area-inset-top, 0px) + 2px);
+    }
+    .proj-header.sticky-head + *{ margin-top:10px; }
+  }
+  @media (max-width:520px){
+    /* На телефоне заголовок мельче: 28 точек он занимал в том расчёте,
+       где шапка была во весь экран. */
+    .proj-h1,.ref-h1,.proj-title-input{ font-size:22px; line-height:1.15; }
+    .proj-meta{ margin-top:2px; }
+    .cat-head-top{ gap:10px; }
+  }
   .cat-name-input{min-width:105px;width:auto;max-width:100%;box-sizing:border-box;transition:width .12s ease;position:relative;}
   .cat-name-input:focus{
     position:absolute !important;top:4px !important;left:0 !important;
@@ -2535,7 +2582,12 @@
   .tc-tile-info b{color:var(--ink);}
 
   /* ---------- СПРАВОЧНИКИ РАБОТ ---------- */
-  .ref-h1{font-family:'Space Grotesk','Inter',sans-serif;font-size:28px;font-weight:700;}
+  /* ЗАГОЛОВОК СТРАНИЦЫ — ОДИН КЛАСС НА ВСЕ ЭКРАНЫ.
+     Раньше эти три строки стояли шестью копиями прямо в разметке,
+     атрибутом style. Пока размер один, это просто некрасиво; как только
+     его понадобилось уменьшить на телефоне, оказалось, что из разметки
+     он не переопределяется ничем, кроме !important. */
+  .proj-h1,.ref-h1{font-family:'Space Grotesk','Inter',sans-serif;font-size:28px;font-weight:700;}
   .ref-wrap{max-width:820px;}
   .ref-switch{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:18px 20px;border:1px solid var(--paper-line);border-radius:var(--radius);background:var(--white);margin-bottom:18px;}
   .ref-switch-txt b{display:block;font-family:'Space Grotesk','Inter',sans-serif;font-size:16px;font-weight:600;color:var(--ink);}
@@ -2654,11 +2706,20 @@
   .ref-inline-rate input{width:78px;padding:6px 9px;border:1px solid var(--paper-line);border-radius:7px;
     background:var(--white);color:var(--ink);font-size:14px;font-weight:600;text-align:right;}
   .ref-inline-rate i{font-style:normal;}
-  .ref-inline-more{flex:0 0 auto;}
+  /* ВКЛЮЧЁННЫЙ СПРАВОЧНИК — ОДНА СТРОКА.
+     Тумблер, название, ставка, шеврон. Вся строка ведёт в расценки,
+     шеврон — только знак того, что по ней можно нажать: отдельная
+     кнопка «Все расценки →» на телефоне уезжала на свою строку
+     во всю ширину и съедала экран у таблицы, ради которой сюда
+     и заходят. */
+  .ref-inline.vklyuchen{flex-wrap:nowrap;gap:8px;padding:8px 12px;cursor:pointer;}
+  .ref-inline.vklyuchen .ref-inline-txt{flex:1 1 auto;}
+  .ref-inline.vklyuchen .ref-inline-txt b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .ref-inline.vklyuchen .ref-inline-rate{flex:0 0 auto;gap:4px;cursor:auto;}
+  .ref-inline.vklyuchen .ref-inline-rate input{width:60px;padding:5px 7px;}
+  .ref-inline-shevron{flex:0 0 auto;font-size:22px;line-height:1;color:var(--ink-soft);padding:0 2px;}
   @media (max-width:560px){
     .ref-inline{gap:10px;}
-    .ref-inline-rate,.ref-inline-more{flex:1 1 100%;}
-    .ref-inline-more{width:100%;}
   }
 
   .sel-work-sub{display:block;margin-top:2px;font-size:11px;color:var(--ink-soft);line-height:1.4;}
@@ -3912,7 +3973,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-05-229';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-05-230';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -4670,26 +4731,32 @@ function renderRefView(){
 // ползунок целиком — на планшете он просто пропадал с экрана.
 function renderRefInline(){
   const on = refOn(), locked = !refAllowed(), r = refState();
+  // ПОЯСНЕНИЕ НУЖНО, ПОКА СПРАВОЧНИК ВЫКЛЮЧЕН.
+  // Оно отвечает на один вопрос — «что мне даст этот тумблер». Когда
+  // справочник уже включён, человек это знает, а строка продолжала
+  // тратить на объяснение две строки на телефоне. Владелец 5 сентября
+  // 2026: «на айфоне плиточные работы в справочнике занимают пол-экрана».
+  // Замер: было 121 точка, стало 46.
   const note = locked
     ? (REF_TILING.works.length + 1) + ' готовых расценок · в полном тарифе'
-    : (on ? 'позиции видны в поиске работ внутри помещения'
-          : (REF_TILING.works.length + 1) + ' готовых расценок от вашей базовой ставки');
+    : (REF_TILING.works.length + 1) + ' готовых расценок от вашей базовой ставки';
   return `
-    <div class="ref-inline ${locked?'locked':''}">
+    <div class="ref-inline ${locked?'locked':''} ${on?'vklyuchen':''}"
+         ${on ? 'title="Все расценки"' : ''}>
       <button type="button" class="ref-toggle ${on?'on':''}" id="refToggle"
               role="switch" aria-checked="${on}"
               title="${locked?'Доступно в полном тарифе':(on?'Выключить':'Включить')}"><span class="ref-knob"></span></button>
       <div class="ref-inline-txt">
         <b>${escapeHtml(REF_TILING.name)}</b>
-        <span>${note}</span>
+        ${on ? '' : `<span>${note}</span>`}
       </div>
       ${on ? `
-      <label class="ref-inline-rate">ставка
+      <label class="ref-inline-rate" title="Ваша базовая ставка, ₽/м²">
         <input type="text" inputmode="decimal" id="refBaseInput"
                placeholder="${REF_TILING.baseDefault}" value="${escapeAttr(r.base==null?'':r.base)}">
         <i>₽/м²</i>
       </label>
-      <button class="btn btn-outline ref-inline-more" data-go="ref">Все расценки →</button>` : ''}
+      <span class="ref-inline-shevron" aria-hidden="true">›</span>` : ''}
     </div>`;
 }
 
@@ -4893,6 +4960,18 @@ function refAttachHandlers(main){
   if(pb) pb.onclick = ()=>{
     showLimit('Справочник плиточника доступен в полном тарифе.',
               (REF_TILING.works.length + 1) + ' готовых расценок на плиточные работы.');
+  };
+
+  // ВСЯ СТРОКА СПРАВОЧНИКА В ШАПКЕ «ВИДОВ РАБОТ» ВЕДЁТ В РАСЦЕНКИ.
+  // Тумблер и поле ставки из этого исключены: они делают своё дело
+  // на месте, и уход в расценки посреди правки ставки — это потеря
+  // набранного. Проверяем по цели нажатия, а не порядком обработчиков:
+  // обработчики [data-go] вешаются раньше этих, и «кто первый»
+  // здесь не защита, а совпадение.
+  const inl = main.querySelector('.ref-inline.vklyuchen');
+  if(inl) inl.onclick = (e)=>{
+    if(e.target.closest('.ref-toggle, .ref-inline-rate')) return;
+    state.view = 'ref'; render();
   };
 
   const base = document.getElementById('refBaseInput');
@@ -16846,7 +16925,7 @@ function renderMaterialsView(){
   return `
     <div class="proj-header sticky-head mat-head">
       <div>
-        <div style="font-family:'Space Grotesk','Inter',sans-serif;font-size:28px;font-weight:700;">Материалы</div>
+        <div class="proj-h1">Материалы</div>
         <div class="proj-meta">справочник для списков закупки · ${list.length} позиций</div>
       </div>
       <div class="header-actions">
@@ -17482,7 +17561,7 @@ function renderArchiveView(){
   return `
     <div class="proj-header">
       <div>
-        <div style="font-family:'Space Grotesk','Inter',sans-serif;font-size:28px;font-weight:700;">Архив проектов</div>
+        <div class="proj-h1">Архив проектов</div>
         <div class="proj-meta">${arch.length ? arch.length + ' в архиве' : 'пусто'}</div>
       </div>
       <div class="header-actions"><button class="btn btn-outline" data-go="project">← К проектам</button></div>
@@ -19675,7 +19754,7 @@ function renderSettingsView(){
   return `
     <div class="proj-header">
       <div>
-        <div style="font-family:'Space Grotesk','Inter',sans-serif;font-size:28px;font-weight:700;">Настройки</div>
+        <div class="proj-h1">Настройки</div>
         <div class="proj-meta">справочник работ и данные исполнителя</div>
       </div>
     </div>
@@ -19699,7 +19778,7 @@ function renderExecutorView(){
   return `
     <div class="proj-header">
       <div>
-        <div style="font-family:'Space Grotesk','Inter',sans-serif;font-size:28px;font-weight:700;">Данные исполнителя</div>
+        <div class="proj-h1">Данные исполнителя</div>
         <div class="proj-meta">подставляются в договор, расписку и акт как «Подрядчик»</div>
       </div>
       <div class="header-actions"><button class="btn btn-outline" data-go="settings">← Настройки</button></div>
@@ -19779,7 +19858,7 @@ function renderCatalogView(){
     <div class="proj-header sticky-head cat-head">
       <div class="cat-head-top">
         <div>
-          <div style="font-family:'Space Grotesk','Inter',sans-serif;font-size:28px;font-weight:700;">Виды работ</div>
+          <div class="proj-h1">Виды работ</div>
           <div class="proj-meta">справочник для расчёта смет · ${realCatalog().length} позиций</div>
         </div>
         <div class="header-actions">
@@ -23068,7 +23147,7 @@ function renderTilesView(){
   return `
     <div class="proj-header">
       <div>
-        <div style="font-family:'Space Grotesk','Inter',sans-serif;font-size:28px;font-weight:700;">Раскладка плитки</div>
+        <div class="proj-h1">Раскладка плитки</div>
         <div class="proj-meta">калькулятор · со сметой не связан</div>
       </div>
       <div class="header-actions"><button class="btn btn-outline" id="tcBack">← Назад</button></div>
