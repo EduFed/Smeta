@@ -4053,7 +4053,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-05-241';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-05-242';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -4103,6 +4103,59 @@ const DEFAULT_CATALOG = [
 ];
 function defaultCatalog(){
   return DEFAULT_CATALOG.map(w=> Object.assign({ id: uid('w') }, w));
+}
+
+// ДУБЛИКАТ ПРОЕКТА: НОВОЕ ИМЯ КАЖДОЙ СТРОКЕ, А НЕ ТОЛЬКО ПРОЕКТУ.
+//
+// Прежде копия получала новый номер проекту и помещениям, а строки смет,
+// проёмы, доп. работы, оплаты, выплаты и материалы оставались со СТАРЫМИ
+// именами. Все они пишутся в базу через upsert по этому имени —
+// значит в одном сохранении уходили две строки с одним `lid`, и Postgres
+// отбивал пачку целиком: «ON CONFLICT DO UPDATE не может задеть строку
+// дважды». То есть после дублирования переставало сохраняться ВСЁ,
+// а не только копия. Найдено 5 сентября 2026 сторонней проверкой кода;
+// подтверждено чтением `ensureIds` — она выдаёт имя только тем, у кого
+// его нет, и потому скопированные не исправляет.
+//
+// ЧЕГО КОПИЯ НЕ НАСЛЕДУЕТ, и это не забывчивость:
+//
+//   · снимки — они сделаны на ДРУГОМ объекте, а копия их записей
+//     указывала бы на те же файлы в хранилище: удаление снимка в копии
+//     стёрло бы файл у оригинала;
+//   · оплаты заказчика и выплаты мастерам — деньги другого объекта.
+//     Копия показала бы полученным то, чего не получали;
+//   · подписанные доп. соглашения и исключения — копия ничего
+//     не подписывала. Номера соглашений остаются у оригинала;
+//   · отметки готовности — на новом объекте не сделано ничего.
+//
+// Смета, помещения, размеры, проёмы, материалы и доп. работы —
+// наследуются: ради них дублирование и заведено.
+function dublikatProekta(proj){
+  const k = JSON.parse(JSON.stringify(proj));
+  k.id = uid('p');
+  k.name = proj.name + ' (копия)';
+  k.createdAt = Date.now();
+  k.seq = nextProjectSeq();
+  delete k._srvAt;
+  delete k._justCreated;
+  // деньги и снимки другого объекта в копию не идут
+  k.photos = [];
+  k.payments = [];
+  k.payouts = [];
+  (k.rooms || []).forEach(r=>{
+    r.id = uid('r');
+    (r.windows || []).forEach(o=> o._id = newUuid());
+    (r.doors   || []).forEach(o=> o._id = newUuid());
+    (r.works   || []).forEach(w=>{
+      w.lid = uid('l');
+      // копия ничего не подписывала и ничего ещё не сделала
+      w.excludedDopNo = ''; w.excludedDate = ''; w.excludedDraft = false;
+      w.donePct = ''; w.doneNote = ''; w.doneAt = '';
+    });
+  });
+  (k.extraWorks || []).forEach(e=>{ e.id = newUuid(); e.dopNo = ''; e.dopDate = ''; });
+  (k.materials  || []).forEach(m=>{ m.id = uid('pm'); });
+  return k;
 }
 
 function emptyRoom(){
@@ -7116,7 +7169,21 @@ function execFromRow(r, masked){
 }
 
 // числовые поля таблиц: пустая строка должна стать NULL, а не нулём
-function num(v){
+// ПУСТОЕ ПОЛЕ — ЭТО НИЧЕГО, А НЕ НОЛЬ.
+//
+// Здесь была вторая функция с именем `num`, и она молча не работала:
+// ниже по файлу объявлена ещё одна с тем же именем, а объявления
+// поднимаются наверх — побеждает последняя. То есть весь файл, включая
+// сборку строк для базы, пользовался числовым разборщиком, который
+// на пустом поле отдаёт НОЛЬ. Пустое количество уезжало в базу нулём
+// и возвращалось на экран нулём, хотя загрузка ждёт `null`, чтобы
+// показать пустое поле.
+//
+// Найдено 5 сентября 2026 сторонней проверкой кода. Имя разведено,
+// и разводить его надо было с самого начала: две функции с одним
+// именем и разными правилами — это не дубль, это ловушка, потому что
+// вторая не спорит с первой, а бесшумно её заменяет.
+function chisloIliPusto(v){
   if(v === '' || v === null || v === undefined) return null;
   const n = Number(String(v).replace(',', '.'));
   return isFinite(n) ? n : null;
@@ -7410,7 +7477,11 @@ function schitat(vvod){
     const j = i;
     while(i < t.length && /[0-9.]/.test(t[i])) i++;
     if(i === j) return NaN;
-    const ch = parseFloat(t.slice(j, i));
+    // Две точки в числе — это не число: parseFloat('1..2') отдаёт 1,
+    // и «1..2+1» тихо превращалось в 2. Та же правка, что в calcParse.
+    const kusok = t.slice(j, i);
+    if(!/^\d*\.?\d+$|^\d+\.$/.test(kusok)) return NaN;
+    const ch = parseFloat(kusok);
     return isFinite(ch) ? ch : NaN;
   }
 
@@ -8068,7 +8139,7 @@ const DB = {
           // цена уходит отдельно, в extraPriceRows — см. workToRow
           extraRows.push({
             id: e.id, project_id: p.id, name: txt(e.name), unit: txt(e.unit),
-            qty: num(e.qty), position: (ei+1) * 1000
+            qty: chisloIliPusto(e.qty), position: (ei+1) * 1000
           });
           if(canWritePrices(p)) extraPriceRows.push({ id: e.id, price: num(e.price) });
         }
@@ -8086,8 +8157,8 @@ const DB = {
           const matOk = m.matId && (cur.materials||[]).some(x=>x.id === m.matId);
           pmatRows.push({
             id: m.id, project_id: p.id, mat_id: matOk ? m.matId : null,
-            name: txt(m.name), unit: txt(m.unit), qty: num(m.qty),
-            note: txt(m.note), price: num(m.price), position: (mi+1) * 1000
+            name: txt(m.name), unit: txt(m.unit), qty: chisloIliPusto(m.qty),
+            note: txt(m.note), price: chisloIliPusto(m.price), position: (mi+1) * 1000
           });
         }
         wasPm.delete(m.id);
@@ -8165,7 +8236,7 @@ const DB = {
       const pm = wasMat.get(m.id);
       if(!pm || JSON.stringify(pm) !== JSON.stringify(m)){
         matRows.push({ id: m.id, user_id: uid_, cat: txt(m.cat), name: txt(m.name),
-                       unit: txt(m.unit), price: num(m.price) });
+                       unit: txt(m.unit), price: chisloIliPusto(m.price) });
       }
       wasMat.delete(m.id);
     });
@@ -8841,7 +8912,7 @@ const DB = {
       done_pct: (rw.donePct === '' || rw.donePct === null || rw.donePct === undefined)
                   ? null : Math.max(0, Math.min(100, Math.round(num(rw.donePct)))),
       done_note: txt(rw.doneNote),
-      manual_qty: num(rw.manualQty), manual_unit: txt(rw.manualUnit),
+      manual_qty: chisloIliPusto(rw.manualQty), manual_unit: txt(rw.manualUnit),
       // ПЕРЕБИТОЕ КОЛИЧЕСТВО (с 2026-08-10-74).
       // Человек может заменить посчитанное из размеров число своим:
       // плитка не на все стены, пол кроме зоны под ванной. Раньше поле
@@ -14777,11 +14848,20 @@ function calcParse(s){
   function factor(){
     if(peek() === '+'){ i++; return factor(); }
     if(peek() === '-'){ i++; return -factor(); }
-    if(peek() === '('){ i++; const v = expr(); if(peek() === ')') i++; return v; }
+    // СКОБКУ ЗАКРЫВАТЬ ОБЯЗАТЕЛЬНО. Прежде незакрытая просто
+    // пропускалась, и «(1+2» считалось как 3 — человек видел число
+    // там, где выражение недописано.
+    if(peek() === '('){ i++; const v = expr();
+                        if(peek() !== ')') throw new Error('скобка не закрыта');
+                        i++; return v; }
     const st = i;
     while(i < s.length && /[0-9.]/.test(s[i])) i++;
     if(st === i) throw new Error('пусто');
-    return parseFloat(s.slice(st, i));
+    // ДВЕ ТОЧКИ В ЧИСЛЕ — ЭТО НЕ ЧИСЛО. `parseFloat('1..2')` отдаёт 1,
+    // и «1..2+1» тихо превращалось в 2.
+    const kusok = s.slice(st, i);
+    if(!/^\d*\.?\d+$|^\d+\.$/.test(kusok)) throw new Error('не число: ' + kusok);
+    return parseFloat(kusok);
   }
   function term(){
     let v = factor();
@@ -14814,7 +14894,11 @@ function calcNum(v){
   if(!/^[0-9.+\-*/()]+$/.test(s)) return num(s);       // посторонние знаки — не считаем
   try{
     const r = calcParse(s);
-    return isFinite(r) ? r : num(s);
+    // Выражение разобрано целиком, но счёт не сошёлся — это деление
+    // на ноль. Прежде отсюда падали в `num(s)`, а тот берёт первое
+    // число строки: «2/0» превращалось в 2 — числитель вместо ответа.
+    // Ноль честнее: ответа нет.
+    return isFinite(r) ? r : 0;
   }catch(_){ return num(s); }
 }
 function wallBase(w){
@@ -16799,7 +16883,14 @@ function validateCustomer(field, v){
     case 'passSeries': return /^\d{4}$/.test(v) ? '' : 'Серия — 4 цифры';
     case 'passNumber': return /^\d{6}$/.test(v) ? '' : 'Номер — 6 цифр';
     case 'passCode':   return /^\d{3}-?\d{3}$/.test(v) ? '' : 'Формат 123-456';
-    case 'advance':    return isFinite(num(v)) ? '' : 'Число';
+    // АВАНС ПРОВЕРЯЕМ ОБРАЗЦОМ, А НЕ ЧЕРЕЗ isFinite(num(v)).
+    // `num` на любом тексте отдаёт ноль, а ноль конечен — значит проверка
+    // пропускала что угодно, вплоть до «абв», и в договор уходило
+    // «аванс в размере 0 (Ноль) рублей». Найдено 5 сентября 2026
+    // сторонней проверкой кода, подтверждено замером:
+    // validateCustomer('advance','абв') возвращал пустую строку, то есть
+    // «ошибок нет».
+    case 'advance':    return /^\d+([.,]\d{1,2})?$/.test(v) ? '' : 'Число, например 50000 или 50000,50';
     case 'termDays':   return /^\d+$/.test(v) ? '' : 'Целое число дней';
     default: return '';
   }
@@ -20669,12 +20760,8 @@ function attachHandlers(){
   const dupBtn = document.getElementById('duplicateProject');
   if(dupBtn) dupBtn.onclick = ()=>{
     if(!allow('project')) return;
-    const copy = JSON.parse(JSON.stringify(proj));
-    copy.id = uid('p'); copy.name = proj.name + ' (копия)'; copy.createdAt = Date.now();
-    copy.seq = nextProjectSeq();
-    copy.rooms.forEach(r=>r.id = uid('r'));
-    state.projects.push(copy);
-    state.currentProjectId = copy.id;
+    state.projects.push(dublikatProekta(proj));
+    state.currentProjectId = state.projects[state.projects.length-1].id;
     scheduleSave(); render();
   };
   document.getElementById('addRoom').onclick = ()=>{
