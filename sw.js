@@ -7,7 +7,7 @@
    старый index.html из кэша.
    ============================================================ */
 
-const CACHE_VERSION = '2026-09-05-242';
+const CACHE_VERSION = '2026-09-05-243';
 
 const CACHE_APP = 'smeta-app-' + CACHE_VERSION;   // файлы приложения — своя версия у каждой сборки
 
@@ -38,8 +38,10 @@ function fotoHranilishche(hostname){
 }
 
 // файлы приложения — кладём в кэш сразу при установке
+// './' здесь НЕТ намеренно: это тот же файл, что и './index.html', но
+// другой ключ кэша — приложение весом полтора мегабайта легло бы дважды.
+// Чтение всё равно идёт по './index.html' (см. ветку навигации).
 const APP_SHELL = [
-  './',
   './index.html',
   './privacy.html',
   './manifest.webmanifest',
@@ -63,9 +65,17 @@ self.addEventListener('install', (e)=>{
   e.waitUntil((async ()=>{
     const app = await caches.open(CACHE_APP);
     // addAll падает целиком, если хоть один файл недоступен, — кладём по одному
+    // и ЗАПОМИНАЕМ, что не легло: этим решается, можно ли выбрасывать
+    // прежний кэш при активации (см. activate ниже).
+    const nelegli = [];
     await Promise.all(APP_SHELL.map(u =>
-      app.add(new Request(u, { cache: 'reload' })).catch(()=>{})
+      app.add(new Request(u, { cache: 'reload' })).catch(()=> nelegli.push(u))
     ));
+    // Что именно не легло — видно в отладчике; решение «сносить ли старый
+    // кэш» принимает activate, и принимает его по факту: лежит ли в новом
+    // кэше само приложение. Так надёжнее переменной: работник между
+    // install и activate может быть выгружен, и переменная не переживёт.
+    if(nelegli.length) console.warn('Не закэшировано при установке:', nelegli);
 
     const lib = await caches.open(CACHE_LIB);
     await Promise.all(CRITICAL_LIBS.map(async (u)=>{
@@ -87,10 +97,18 @@ self.addEventListener('install', (e)=>{
 self.addEventListener('activate', (e)=>{
   e.waitUntil((async ()=>{
     const keys = await caches.keys();
-    await Promise.all(
-      keys.filter(k => k.startsWith('smeta-app-') && k !== CACHE_APP)
-          .map(k => caches.delete(k))
-    );
+    // ПРЕЖНИЙ КЭШ УБИРАЕМ, ТОЛЬКО ЕСЛИ НОВЫЙ ПОЛОН.
+    // Установка кладёт файлы по одному и молча терпит неудачи —
+    // значит работник может установиться с половиной приложения.
+    // Снести после этого рабочий кэш означало бы отобрать офлайн
+    // у человека, у которого просто моргнула связь.
+    const est = await (await caches.open(CACHE_APP)).match('./index.html');
+    if(est){
+      await Promise.all(
+        keys.filter(k => k.startsWith('smeta-app-') && k !== CACHE_APP)
+            .map(k => caches.delete(k))
+      );
+    }
     // Старые кэши библиотек убираем: в них лежат файлы с чужих серверов
     // (jsDelivr, Google, cdnjs), приложение к ним больше не обращается.
     // Текущий CACHE_LIB намеренно НЕ трогаем — библиотеки должны пережить обновление.
@@ -128,7 +146,6 @@ self.addEventListener('fetch', (e)=>{
 
   // Запросы к Supabase (данные, авторизация) НИКОГДА не кэшируем:
   // иначе человек увидит чужие или устаревшие сметы.
-  // Капча Cloudflare — тоже мимо кэша.
   // Свой сервер отдаёт две разные вещи, и обращаться с ними надо по-разному:
   //   /static/... — шрифты и библиотеки, их НУЖНО кэшировать,
   //                 без них приложение не открывается без интернета;
@@ -160,15 +177,36 @@ self.addEventListener('fetch', (e)=>{
   // Хуже того, ответ сохранялся ПОД ИМЕНЕМ index.html и портил кэш
   // приложения. Со стороны это выглядело так: первое нажатие на ссылку
   // перезагружает приложение, и лишь второе открывает политику.
+  // ГЛАВНАЯ СТРАНИЦА — ЭТО ОДИН АДРЕС, А НЕ «ВСЁ, ЧТО КОНЧАЕТСЯ КОСОЙ».
+  // Прежде здесь стояло `pathname.endsWith('/')`, и главной считался любой
+  // адрес с косой чертой на конце. Приложение лежит в корне, значит
+  // и /docs/, и /admin/, и любая будущая папка попали бы сюда — а эта
+  // ветка ПИШЕТ ответ в кэш под именем index.html. Одного такого адреса
+  // хватило бы, чтобы подменить приложение. Найдено 5 сентября 2026
+  // сторонней проверкой кода.
+  //
+  // Считаем от области самого работника: она и есть тот каталог,
+  // где живёт приложение.
+  const koren = new URL('./', self.registration.scope).pathname;
   const isAppPage = (url.origin === self.location.origin) &&
-                    (url.pathname === '/' ||
-                     url.pathname.endsWith('/index.html') ||
-                     url.pathname.endsWith('/'));
+                    (url.pathname === koren || url.pathname === koren + 'index.html');
   if(req.mode === 'navigate' && isAppPage){
     e.respondWith((async ()=>{
       const cache = await caches.open(CACHE_APP);
+      // В КЭШ ПРИЛОЖЕНИЯ КЛАДЁМ ТОЛЬКО УСПЕШНЫЙ HTML СО СВОЕГО СЕРВЕРА.
+      //
+      // Прежде сюда шёл ЛЮБОЙ ответ: 404, 500, страница провайдера,
+      // проверка Cloudflare. Он ложился под именем index.html — и человек
+      // получал вместо приложения чужую страницу, НАВСЕГДА: приложение
+      // офлайн-первое, оно берёт из кэша не глядя, и починить это можно
+      // было бы только очисткой данных сайта.
+      //
+      // Самая опасная находка проверки 5 сентября 2026: тихая, необратимая
+      // для человека и тем более вероятная, чем хуже у него связь.
+      const godnyy = (res)=> !!res && res.ok && res.type === 'basic' &&
+        /text\/html/i.test(res.headers.get('content-type') || '');
       const net = fetch(req).then(res=>{
-        cache.put('./index.html', res.clone());
+        if(godnyy(res)) e.waitUntil(cache.put('./index.html', res.clone()));
         return res;
       }).catch(()=> null);
       // держим Service Worker живым, пока фоновая загрузка не закончится
@@ -191,9 +229,19 @@ self.addEventListener('fetch', (e)=>{
     return;
   }
 
-  // Библиотеки и шрифты с чужих сайтов: сначала кэш (быстро и работает офлайн),
-  // в фоне обновляем.
-  if(url.origin !== self.location.origin){
+  // Библиотеки и шрифты С НАШЕГО СЕРВЕРА: сначала кэш (быстро и работает
+  // офлайн), в фоне обновляем.
+  //
+  // БЕЛЫЙ СПИСОК, А НЕ «ВСЁ ЧУЖОЕ». Прежде условием было «origin не наш» —
+  // и в CACHE_LIB оседал любой сторонний GET, какой бы ни случился.
+  // Этот кэш нарочно переживает смену сборки и ничем не чистится, то есть
+  // растёт без предела. Одну такую утечку уже чинили 27 августа 2026
+  // (снимки по подписанным адресам) — заплаткой на конкретный случай.
+  // Заплатка ловит известное; белый список ловит и то, о чём не подумали.
+  const nashiStatika = (url.hostname === 'api.smetaraschet.ru' ||
+                        url.hostname === 'data.smetaraschet.ru') &&
+                       url.pathname.startsWith('/static/');
+  if(nashiStatika){
     e.respondWith((async ()=>{
       const cache = await caches.open(CACHE_LIB);
       const hit = await cache.match(req);
