@@ -3289,6 +3289,10 @@
      деньги главнее, процент рядом. */
   .smeta-total.otm-itog{border-top:none;padding-top:0;}
   .smeta-total.otm-itog .value{color:var(--ink-soft);font-size:16px;}
+  /* Вычет — тем же спокойным серым, что и «Готовность». Красным его
+     красить нечем: исключение это не ошибка и не долг, а согласованное
+     сторонами изменение договора. */
+  .smeta-total.isk-itog .label{text-transform:none;letter-spacing:0.02em;}
   #otmOverlay .refcfg-foot{display:flex;gap:10px;}
   #otmOverlay .refcfg-foot .btn{flex:1 1 0;}
 
@@ -3994,7 +3998,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-05-231';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-05-232';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -17966,6 +17970,38 @@ function renderEmptyState(){
   `;
 }
 
+// ИСКЛЮЧЁННОЕ ВИДНО ПОД ИТОГОМ.
+//
+// Исключённая позиция из итога уходит сразу — это делает
+// `buildEstimateData`, одной проверкой на все семь мест. Но на экране
+// итог просто становился меньше, и убедиться, что вычет случился,
+// было нечем: строка в помещении зачёркнута, а число внизу то же самое
+// по виду. Владелец 5 сентября 2026: «как проверить, что смета вычитает
+// эту позицию, просто так же окончательная цифра в конце».
+//
+// Показываем ровно то, чего не хватало: сколько вычтено и каким
+// соглашением. Число НЕ хранится и не складывается отдельно — оно
+// считается из тех же исключённых строк, что печатает соглашение
+// (`isklyuchyonnye`). Считай мы его своей суммой, документ и экран
+// разошлись бы на первой же правке.
+//
+// Вид тот же, что у строки «Готовность»: одинаковое по смыслу —
+// одинаково и на вид.
+function iskStrokaItoga(proj){
+  const isk = isklyuchyonnye(proj);
+  if(!isk.length) return '';
+  const summa = isk.reduce((a,x)=> a + x.sum, 0);
+  const nomera = [];
+  isk.forEach(x=>{ if(x.nomer && nomera.indexOf(x.nomer) === -1) nomera.push(x.nomer); });
+  const podpis = nomera.length === 1
+    ? 'Исключено соглашением № ' + nomera[0]
+    : 'Исключено соглашениями № ' + nomera.join(', ');
+  return `<div class="smeta-total otm-itog isk-itog">
+      <span class="label">${escapeHtml(podpis)}</span>
+      <span class="value">− ${fmtMoney(summa)}</span>
+    </div>`;
+}
+
 function renderSmetaBlock(proj){
   const grandTotal = smetaTotal(proj);
   // Таблица сметы убрана с экрана: её видно в готовом документе.
@@ -17975,6 +18011,7 @@ function renderSmetaBlock(proj){
       <span class="label">Итого по проекту</span>
       <span class="value">${fmtMoney(grandTotal)}</span>
     </div>
+    ${iskStrokaItoga(proj)}
     ${otmStrokaItoga(proj)}`;
 }
 
@@ -18425,6 +18462,11 @@ function dopPodpisOpen(projectId){
   const gotovy = dopKPodpisi(p);
   const skolko = gotovy.length;
   const summa = gotovy.reduce((a,e)=> a + num(e.qty)*num(e.price), 0);
+  // «0 позиций на 0 ₽» читается как поломка. Когда добавлять нечего,
+  // говорим прямо, зачем окно открыто.
+  const podzagolovok = skolko
+    ? skolko + ' ' + plural(skolko,'позиция','позиции','позиций') + ' на ' + fmtMoney(summa)
+    : 'без новых работ — только исключение из сметы';
   // Недозаполненные НЕ подписываем и говорим об этом прямо: иначе они
   // молча уехали бы в соглашение и заморозились навсегда.
   const nedodelanyh = (p.extraWorks||[]).filter(e=> !(e.dopNo||'').trim() && !dopGotova(e)).length;
@@ -18433,7 +18475,7 @@ function dopPodpisOpen(projectId){
       <div class="refcfg-head">
         <div>
           <div class="refcfg-title">Подписать доп. соглашение</div>
-          <div class="refcfg-sub">${skolko} ${plural(skolko,'позиция','позиции','позиций')} на ${fmtMoney(summa)}</div>
+          <div class="refcfg-sub">${escapeHtml(podzagolovok)}</div>
         </div>
         <button class="plan-close" id="dopPodpisX" aria-label="Закрыть">✕</button>
       </div>
@@ -18484,7 +18526,10 @@ function iskVyborNarisovat(proj){
   const spisok = iskKandidaty(proj);
   if(!spisok.length){ box.innerHTML = ''; return; }
   const vybrano = dopPodpis.isk;
-  const otkryt = vybrano.size > 0;
+  // Раскрыт, если что-то уже отмечено ИЛИ подписывать больше нечего:
+  // во втором случае человек пришёл сюда именно за исключением,
+  // и свёрнутый список был бы пустым окном.
+  const otkryt = vybrano.size > 0 || !dopKPodpisi(proj).length;
   let tek = '';
   const stroki = spisok.map(x=>{
     let shapka = '';
@@ -18759,7 +18804,17 @@ function renderExtraWorksBlock(proj){
         </div>
         <div class="ew-actions">
           <button class="add-link" data-add-extra="1">+ Своя позиция</button>
-          ${dopKPodpisi(proj).length ? `<button class="btn btn-outline ew-podpisat" data-dop-podpisat="${proj.id}">Подписать соглашение № ${escapeHtml(dopSleduyuschiyNomer(proj))}</button>` : ''}
+          <!-- КНОПКА ЕСТЬ И БЕЗ ДОП. РАБОТ. Соглашение состоит из двух
+               половин: добавленные работы и исключённые позиции сметы, —
+               и любой из них достаточно. Само подписание это уже умело
+               (dopPodpisApply), а вот войти в него было нельзя: кнопка
+               показывалась только при готовой доп. работе, и чтобы
+               исключить позицию, приходилось выдумывать вторую.
+               Владелец 5 сентября 2026: «никак не могу сделать доп.
+               соглашение на исключённую позицию, обязательно должна
+               присутствовать другая позиция». -->
+          ${(dopKPodpisi(proj).length || iskKandidaty(proj).length)
+            ? `<button class="btn btn-outline ew-podpisat" data-dop-podpisat="${proj.id}">Подписать соглашение № ${escapeHtml(dopSleduyuschiyNomer(proj))}</button>` : ''}
         </div>
       </div>
     </div>`;
