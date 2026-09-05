@@ -3998,7 +3998,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-05-232';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-05-233';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -18088,6 +18088,11 @@ const ZN_CHELOVEK = ZN('<circle cx="12" cy="8" r="3.5"/><path d="M4.5 20a7.5 7.5
 const ZN_KAMERA   = ZN('<path d="M3 8h3l1.5-2h9L18 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.5"/>', 0.9, 1.2, 0.75);
 const ZN_NET_SETI = ZN('<path d="M2 2l20 20"/><path d="M5 12.5a10 10 0 0 1 3.2-2.2"/><path d="M8.5 16a5 5 0 0 1 1.7-1.2"/><circle cx="12" cy="19.5" r="1"/><path d="M19 12.5a10 10 0 0 0-4.8-2.7"/>', 0.9, 1.2, 1.2);
 const ZN_GLAZ     = ZN('<path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="2.6"/>', 0.9, 1.2, 1.2);
+// ИСКЛЮЧИТЬ ПОЗИЦИЮ — круг с чертой. Не крестик: крестик в этой же
+// строке уже стоит и означает «убрать из черновика», а исключение —
+// другое по смыслу: строка остаётся в смете зачёркнутой, с номером
+// соглашения. Два разных действия обязаны выглядеть по-разному.
+const ZN_ISKLYUCHIT = ZN('<circle cx="12" cy="12" r="8.5"/><path d="M6.5 17.5 17.5 6.5"/>', 0.95, 0.6, 0.6);
 const ZN_SOLNCE   = ZN('<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>', 0.9, 1.2, 1.2);
 const ZN_MESYATS  = ZN('<path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z"/>', 1.079, -0.59, -1.32);
 // ШЕСТЕРЁНКА. Сначала оставил типографскую ⚙ — она одноцветная, менять
@@ -18437,7 +18442,10 @@ function iskKandidaty(proj){
   return out;
 }
 
-function dopPodpisOpen(projectId){
+// lidSrazu — строка, с которой пришли. Задан, когда окно открыли
+// кнопкой в самой смете: человек уже выбрал, что убирает, и искать
+// свою же строку в списке ещё раз ему незачем.
+function dopPodpisOpen(projectId, lidSrazu){
   const p = (state.projects||[]).find(x=>x.id===projectId);
   if(!p) return;
   const d = new Date();
@@ -18448,8 +18456,8 @@ function dopPodpisOpen(projectId){
           '-' + String(d.getDate()).padStart(2,'0'),
     // Какие позиции сметы уходят из неё этим же соглашением.
     // Пусто по умолчанию: исключение — решение, а не побочный эффект
-    // подписания.
-    isk: new Set()
+    // подписания. Кроме случая, когда пришли кнопкой от самой строки.
+    isk: new Set(lidSrazu ? [lidSrazu] : [])
   };
   let ov = document.getElementById('dopPodpisOverlay');
   if(!ov){
@@ -19422,7 +19430,10 @@ function renderRoomWorks(room){
                   data-qty-over="${room.id}|${rw.lid}">`}
       ${line.over ? `<button class="btn-icon qty-reset" data-qty-reset="${room.id}|${rw.lid}" title="Вернуть расчёт из размеров помещения">↺</button>` : ''}
       ${unitField}
-      ${isk ? `<span class="isk-metka">исключена · соглашение № ${escapeHtml(rw.excludedDopNo)}</span>` : ''}
+      ${isk
+        ? `<span class="isk-metka">исключена · соглашение № ${escapeHtml(rw.excludedDopNo)}</span>`
+        : `<button class="btn-icon isk-knopka" data-isk-odnu="${room.id}|${rw.lid}"
+                   title="Исключить соглашением: позиция уйдёт из сметы, останется зачёркнутой с номером соглашения">${ZN_ISKLYUCHIT}</button>`}
       <button type="button" class="otm-knopka${otmKlass(rw)}" data-otm="${room.id}|${rw.lid}"
               title="Готовность работы">${otmPodpis(rw)}</button>
       <span class="wsum" data-wsum="${room.id}|${rw.lid}">${fmt(line.qty)} ${workUnitLabel(work,rw)} · ${fmtMoney(line.sum)}</span>
@@ -20724,6 +20735,22 @@ function attachHandlers(){
   });
   main.querySelectorAll('[data-podelitsya]').forEach(el=>{
     el.onclick = ()=> podelitsyaOpen(el.getAttribute('data-podelitsya'));
+  });
+  // ВХОД В СОГЛАШЕНИЕ ОТ САМОЙ СТРОКИ. Кнопка «Подписать соглашение»
+  // живёт в блоке доп. работ, и человек, который пришёл убрать позицию
+  // из сметы, туда не заглядывает — он смотрит на строку. Нажатие
+  // открывает то же самое окно подписания, с этой строкой уже
+  // отмеченной: отдельного «черновика исключения» в базе нет,
+  // и обещать его нельзя (см. задачу 2026-09-03-01).
+  main.querySelectorAll('[data-isk-odnu]').forEach(el=>{
+    el.onclick = ()=>{
+      // Тариф тут ни при чём: исключение — не расширенная возможность,
+      // а способ не соврать в подписанном документе. Кому нельзя
+      // (роль «смотрит», наряд, незакреплённый проект на бесплатном) —
+      // кнопка выключена общим правилом в applyViewerMode.
+      const lid = el.getAttribute('data-isk-odnu').split('|')[1];
+      dopPodpisOpen(proj.id, lid);
+    };
   });
   main.querySelectorAll('[data-dop-podpisat]').forEach(el=>{
     el.onclick = ()=> dopPodpisOpen(el.getAttribute('data-dop-podpisat'));
