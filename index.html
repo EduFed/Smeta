@@ -2653,8 +2653,20 @@
     display:none; position:fixed; inset:0;
     align-items:center; justify-content:center;
     background:var(--podlozhka-okna);
-    padding:20px 20px calc(20px + env(safe-area-inset-bottom, 0px));
+    /* ОТСТУП СВЕРХУ — ПОД ЧАСЫ И ЧЁЛКУ, как снизу под домашнюю полосу.
+       Снизу env() стоял с самого начала, сверху не было: на компьютере
+       разницы нет, а на iPhone высокое окно упиралось заголовком прямо
+       в системные часы. Владелец 5 сентября 2026: «само окно слишком
+       уходит вверх, это айфон, отступи немного». */
+    padding:calc(20px + env(safe-area-inset-top, 0px)) 20px
+            calc(20px + env(safe-area-inset-bottom, 0px));
     overflow-y:auto; -webkit-overflow-scrolling:touch;
+    /* ПРОКРУТКА НЕ УХОДИТ НА СТРАНИЦУ ПОД ОКНОМ. Без этого палец,
+       дойдя до края списка, продолжал листать смету за подложкой:
+       окно стоит, а под ним всё едет. Владелец: «скроллинг то
+       срабатывает, то срабатывает у самого приложения под данным
+       окном». */
+    overscroll-behavior:contain;
     /* ОБЫЧНОЕ ОКНО. Выше него только окна решения (2800) и просмотр
        снимка. Прежде конфигуратор стоял на 120 — ниже всего остального,
        и открылся бы под любым другим окном. Не всплывало только потому,
@@ -2672,11 +2684,19 @@
     border:1px solid var(--paper-line); border-radius:16px;
     box-shadow:var(--ten-okno);
   }
-  .refcfg-modal{max-width:560px;max-height:92vh;display:flex;flex-direction:column;overflow:hidden;}
+  /* Высота окна считается от того, что реально осталось: 92vh не знает
+     ни про чёлку, ни про домашнюю полосу, ни про панель браузера,
+     и на iPhone окно вылезало за оба края. dvh знает про панель,
+     env() — про чёлку. Строка с vh оставлена первой как запасная
+     для старых браузеров: они просто не поймут вторую. */
+  .refcfg-modal{max-width:560px;display:flex;flex-direction:column;overflow:hidden;
+    max-height:92vh;
+    max-height:calc(100dvh - 40px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));}
   .refcfg-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:18px 20px 14px;border-bottom:1px solid var(--paper-line);}
   .refcfg-title{font-family:'Space Grotesk','Inter',sans-serif;font-size:19px;font-weight:700;color:var(--ink);}
   .refcfg-sub{margin-top:3px;font-size:12px;color:var(--ink-soft);}
-  .refcfg-body{padding:14px 20px;overflow-y:auto;flex:1;}
+  .refcfg-body{padding:14px 20px;overflow-y:auto;flex:1;overscroll-behavior:contain;
+    -webkit-overflow-scrolling:touch;}
   .refcfg-row{margin-bottom:12px;}
   .refcfg-row>label{display:block;font-size:12px;font-weight:600;color:var(--ink-soft);margin-bottom:5px;}
   .refcfg-row select{width:100%;padding:9px 12px;border:1px solid var(--paper-line);border-radius:8px;background:var(--white);color:var(--ink);font-size:14px;}
@@ -2687,6 +2707,10 @@
   .refcfg-extra{display:flex;align-items:center;gap:4px;}
   .refcfg-extra input{width:80px;padding:9px 12px;border:1px solid var(--paper-line);border-radius:8px;background:var(--white);color:var(--ink);font-size:14px;text-align:right;}
   .refcfg-foot{padding:14px 20px 18px;border-top:1px solid var(--paper-line);background:var(--paper);}
+  /* Пустое сообщение места не занимает: иначе над кнопкой всегда висел
+     бы пробел в две строки ради ответа, которого чаще всего нет. */
+  .refcfg-foot .plan-lead-msg{margin-top:0;margin-bottom:10px;}
+  .refcfg-foot .plan-lead-msg:empty{display:none;}
   .refcfg-sum{display:flex;align-items:flex-end;justify-content:space-between;gap:14px;margin-bottom:12px;}
   .refcfg-name{font-size:13px;font-weight:600;color:var(--ink);line-height:1.4;}
   .refcfg-pct{margin-top:3px;font-size:12px;color:var(--ink-soft);}
@@ -4006,7 +4030,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-05-234';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-05-235';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -18502,9 +18526,14 @@ function dopPodpisOpen(projectId, lidSrazu){
         <div class="isk-vybor" id="dopIskVybor"></div>
         ${nedodelanyh ? `<div class="ownw-note" style="color:var(--amber);">${nedodelanyh} ${plural(nedodelanyh,'позиция','позиции','позиций')} без количества ${plural(nedodelanyh,'не войдёт','не войдут','не войдут')} в соглашение и ${plural(nedodelanyh,'останется','останутся','останутся')} в черновике. Заполните количество, если ${plural(nedodelanyh,'она нужна','они нужны','они нужны')} здесь.</div>` : ''}
         <div class="ownw-note">После подписания эти работы перестанут меняться: бумага у заказчика на руках, и правка в приложении сделала бы документ ложью. Ошиблись — исправляется новым соглашением или снятием подписания.</div>
-        <div class="plan-lead-msg" id="dopPodpisMsg"></div>
       </div>
+      <!-- СООБЩЕНИЕ РЯДОМ С КНОПКОЙ, А НЕ В ТЕЛЕ ОКНА.
+           В теле оно оказывалось ниже списка позиций, который бывает
+           на два экрана: человек нажимал «Подписать», ответ появлялся
+           за краем видимого, и кнопка выглядела мёртвой. Подвал окна
+           виден всегда — значит и ответ виден всегда. -->
       <div class="refcfg-foot">
+        <div class="plan-lead-msg" id="dopPodpisMsg"></div>
         <button class="btn btn-primary refcfg-add" id="dopPodpisOk">Подписать</button>
       </div>
     </div>`;
@@ -18611,13 +18640,27 @@ async function dopPodpisApply(){
       // на сервер, узкий запрос её не найдёт и она останется неподписанной,
       // а на экране выглядела бы подписанной.
       await persist();
-      const tronuty = await DB.podpisatDopSoglashenie(o.projectId, nom, o.data,
-                              dopKPodpisi(p).map(e=>e.id));
-      const po_id = new Map((tronuty||[]).map(r=>[r.id, r]));
-      (p.extraWorks||[]).forEach(e=>{
-        const r = po_id.get(e.id);
-        if(r){ e.dopNo = r.dop_no || ''; e.dopDate = r.dop_date || ''; }
-      });
+      // СОГЛАШЕНИЕ БЕЗ ДОП. РАБОТ — ЗАПРОС НЕ ЗОВЁМ ВОВСЕ.
+      // `podpisatDopSoglashenie` нарочно отбивает пустой список: правило
+      // стоит с 1 сентября 2026, когда «подписать всё неподписанное»
+      // уехало пятью недозаполненными строками в соглашение № 3.
+      // Защита верная, а звать её с пустым списком незачем: соглашение
+      // целиком из исключений доп. работ не содержит по определению.
+      // Пока звали, кнопка «Подписать» выглядела мёртвой — запрос падал,
+      // ошибка писалась в тело окна, а тело было прокручено к списку
+      // позиций, и человек её не видел. Владелец 5 сентября 2026:
+      // «кнопка подписать не работает, нажимается, но ничего
+      // не происходит».
+      const kPodpisi = dopKPodpisi(p);
+      if(kPodpisi.length){
+        const tronuty = await DB.podpisatDopSoglashenie(o.projectId, nom, o.data,
+                                kPodpisi.map(e=>e.id));
+        const po_id = new Map((tronuty||[]).map(r=>[r.id, r]));
+        (p.extraWorks||[]).forEach(e=>{
+          const r = po_id.get(e.id);
+          if(r){ e.dopNo = r.dop_no || ''; e.dopDate = r.dop_date || ''; }
+        });
+      }
       // ИСКЛЮЧЕНИЯ — ТЕМ ЖЕ НОМЕРОМ. Отдельным запросом: это другая
       // таблица. Порядок важен — сперва доп. работы, потом исключения:
       // если второй запрос не пройдёт, соглашение останется без
