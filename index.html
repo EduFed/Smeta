@@ -4037,7 +4037,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-05-236';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-05-237';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -18740,11 +18740,30 @@ async function dopSnyat(proj, nomer, ids, vopros){
       // Дошлём несохранённое до снятия: узкий запрос ищет строки
       // на сервере, и не доехавшую он не найдёт.
       await persist();
-      const tronuty = await DB.snyatPodpisanie(proj.id, nomer, ids);
-      const snyato = new Set((tronuty||[]).map(r=>r.id));
-      (proj.extraWorks||[]).forEach(e=>{
-        if(snyato.has(e.id)){ e.dopNo = ''; e.dopDate = ''; }
-      });
+      // У СОГЛАШЕНИЯ ИЗ ОДНИХ ИСКЛЮЧЕНИЙ ДОП. РАБОТ НЕТ — И СПРАШИВАТЬ
+      // О НИХ НЕ НАДО. `snyatPodpisanie` нарочно ругается, когда запрос
+      // не задел ни строки: «ничего не снято» отличает отказ прав
+      // от пустого попадания, и это правильно. Но у соглашения,
+      // собранного только из исключений, строк в доп. работах нет
+      // по определению — и снятие падало на ровном месте.
+      //
+      // Хуже, чем просто отказ: позиции к этому мгновению уже возвращены
+      // в смету запросом выше, а окно говорило «не удалось снять
+      // подписание». На экране всё оставалось по-старому, а в базе
+      // было по-новому — расхождение, которое видно только после
+      // перезагрузки. Владелец 5 сентября 2026: «соглашение 3, где есть
+      // исключённая позиция, нет возможности снять подписание».
+      // Та же грабля 76, с другой стороны.
+      const estRaboty = ids
+        ? true
+        : (proj.extraWorks||[]).some(e=> (e.dopNo||'').trim() === String(nomer));
+      if(estRaboty){
+        const tronuty = await DB.snyatPodpisanie(proj.id, nomer, ids);
+        const snyato = new Set((tronuty||[]).map(r=>r.id));
+        (proj.extraWorks||[]).forEach(e=>{
+          if(snyato.has(e.id)){ e.dopNo = ''; e.dopDate = ''; }
+        });
+      }
       markLocalClean();
     }
     // Печатать это соглашение больше нельзя, если в нём никого не осталось.
