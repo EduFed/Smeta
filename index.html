@@ -2815,10 +2815,17 @@
   .room-plan.bad .plan-poly{stroke:var(--orange);}
   .room-plan .plan-open{fill:none;stroke:currentColor;stroke-width:2;stroke-linejoin:round;}
   .room-plan .plan-gap{stroke:var(--orange);stroke-width:2;stroke-dasharray:5 4;}
-  .room-plan .plan-tick{stroke:currentColor;stroke-width:.8;opacity:.35;}
-  .room-plan .plan-dim{stroke:currentColor;stroke-width:1;opacity:.55;}
+  /* РАЗМЕРЫ НА СХЕМЕ ВЫГЛЯДЯТ ТАК ЖЕ, КАК В ОКНЕ ЧЕРЧЕНИЯ.
+     Раскладка у них общая с самого начала, а вот насыщенность линий
+     и чисел разошлась: на схеме всё было бледнее и читалось хуже.
+     Владельцу нравится вид из окна черчения — берём его значения
+     (.pd-dim-ext .45, .pd-dim-line .7, .pd-lbl без прозрачности).
+     Размер шрифта остаётся своим: холст схемы меньше, и число в нём
+     занимает столько же места относительно контура. */
+  .room-plan .plan-tick{stroke:currentColor;stroke-width:1;opacity:.45;}
+  .room-plan .plan-dim{stroke:currentColor;stroke-width:1.2;opacity:.7;}
   .room-plan .plan-dot{fill:currentColor;opacity:.5;}
-  .room-plan .plan-lbl{font-family:'JetBrains Mono',monospace;font-size:10px;fill:currentColor;opacity:.75;}
+  .room-plan .plan-lbl{font-family:'JetBrains Mono',monospace;font-size:10px;fill:var(--ink);opacity:1;}
   .room-plan .plan-lbl-bg{fill:var(--white);fill-opacity:.85;stroke:none;}
 
   /* канва черчения контура */
@@ -4030,7 +4037,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-05-235';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-05-236';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -12462,7 +12469,7 @@ function polyFromShape(shape, d){
 // Длины и углы из них выводятся, а не наоборот. Поэтому если точки есть,
 // план рисуется по ним — и уже сохранённые кривые контуры чинятся сами,
 // без перечерчивания.
-function roomPlanSVG(segs, dir0, drawn){
+function roomPlanSVG(segs, dir0, drawn, edinica){
   const okClosed = polyClosed(segs);
   const pts = (Array.isArray(drawn) && drawn.length >= 3)
     ? drawn.concat([drawn[0]])     // polyChain отдаёт замкнутую цепочку — повторяем вид
@@ -12510,8 +12517,10 @@ function roomPlanSVG(segs, dir0, drawn){
   // однажды — человек поверит подписи, а не чертежу.
   const labels = razmeryKontura(ring, {
     X, Y,
+    // fmt подставляется ниже, вместе с остальными различиями схемы
     mx: x => (x - ox)/k, my: y => (oy - y)/k,
     W, H,
+    fmt: m => fmtLenU(m, edinica || 'm'),
     shirina: t => t.length*6 + 8, vys: 13,
     // отступы мельче, чем в окне черчения: холст меньше и буквы мельче
     OT: 12, OT2: 12, ZAZOR: 3, GL_TXT: 11, GL_SHAG: 13,
@@ -12558,7 +12567,7 @@ function renderPolyEditor(room){
       Контур чертится по сетке: нажимайте узлы, обходя комнату по кругу.
       Стену можно тянуть пальцем, а нажатие на неё открывает поля длины и угла.
     </div>
-    <div class="wall-diagram">${roomPlanSVG(segs, d.dir0, polyDrawPts(d))}</div>
+    <div class="wall-diagram">${roomPlanSVG(segs, d.dir0, polyDrawPts(d), d.unit)}</div>
     <div class="poly-actions">
       <button class="btn btn-primary" data-poly-draw="${room.id}">${segs.length ? 'Изменить контур' : 'Начертить контур'}</button>
     </div>
@@ -12623,12 +12632,21 @@ function pdFromU(v){ return v / pdUnit().k; }
 // до сантиметра: заданные 1.234 м возвращались в поле как 1,23,
 // и следующая правка брала уже огрублённое значение. Для размеров
 // контура этого мало.
-function fmtLen(m){
-  const u = pdUnit();
+// ЕДИНИЦЫ ПРИНАДЛЕЖАТ КОНТУРУ, А НЕ ОТКРЫТОМУ ОКНУ.
+// `fmtLen` брал единицу из `polyDraw` — состояния окна черчения.
+// Пока окно открыто, всё сходится; а схема в карточке помещения
+// рисуется, когда окна нет вовсе, и та же стена подписывалась
+// «0,149» вместо «149». Один и тот же замер в двух видах в двух
+// местах — ровно то, чего в этом приложении быть не должно.
+// Владелец 5 сентября 2026: «почему отличается? мне нравится вид
+// размеров, когда проваливаешься в изменить контур».
+function fmtLenU(m, edinica){
+  const u = PD_UNITS[edinica] || PD_UNITS.m;
   const v = m * u.k;
   return (Math.round(v * Math.pow(10,u.dec)) / Math.pow(10,u.dec))
            .toLocaleString('ru-RU', { maximumFractionDigits: u.dec });
 }
+function fmtLen(m){ return fmtLenU(m, (polyDraw && polyDraw.unit) || 'm'); }
 
 const POLY_STEPS = [0.25, 0.5, 1];
 const POLY_COLS = 14, POLY_ROWS = 11;
@@ -12934,6 +12952,8 @@ function pdZamorozit(){
 //   X(mx), Y(my)   — метры в точки картинки;
 //   mx(x), my(y)   — обратно, нужно для проверки «внутри контура»;
 //   W, H           — размер картинки, чтобы число не вылезло за край;
+//   fmt(m)         — как написать длину: единицы задаёт контур,
+//                    а не открытое окно (см. fmtLenU);
 //   shirina(txt)   — ширина числа в точках, vys — высота;
 //   OT             — отступ цепи от габарита;
 //   OT2            — отступ размерной линии от стены в глубине;
@@ -12947,6 +12967,9 @@ function pdZamorozit(){
 function razmeryKontura(p, sr){
   let lbls = '';
   const kl = sr.kl;
+  // Единицы задаёт тот, кто зовёт раскладку: у окна черчения свои,
+  // у схемы в карточке — те, что записаны у самого помещения.
+  const pishem = sr.fmt || fmtLen;
   // РАЗМЕРНЫЕ ЦЕПИ — КАК НА СТРОИТЕЛЬНОМ ЧЕРТЕЖЕ.
   //
   // Сначала я рисовал каждой стене свою размерную линию рядом с ней.
@@ -13410,7 +13433,7 @@ function razmeryKontura(p, sr){
       // 1,05 от стены короба. Засечка на этом месте остаётся: она
       // показывает, где кончилась одна стена и началась другая.
       if(!svoya){ nuzhna[k] = true; nuzhna[k+1] = true; continue; }
-      const txt = fmtLen(dl);
+      const txt = pishem(dl);
       // число всегда повёрнуто вдоль размерной линии, поэтому вдоль неё
       // оно занимает w, а поперёк h — на любой из четырёх сторон
       const w = sr.shirina(txt), h = sr.vys;
@@ -13610,7 +13633,7 @@ function razmeryKontura(p, sr){
     // вверх, как принято на чертежах), у наклонной её настоящий угол.
     // Перевёрнутое вверх ногами разворачиваем на 180: читать надо слева
     // направо, а не как повезёт.
-    const txt = fmtLen(L);
+    const txt = pishem(L);
     const w = sr.shirina(txt), h = sr.vys;
     let ugChisla = 0;
     if(kosaya){
@@ -18786,17 +18809,44 @@ function renderExtraWorksBlock(proj){
         : `<button class="btn-icon" data-del-extra="${i}" title="Удалить">✕</button>`}
     </div>`;
 
+  // ИСКЛЮЧЁННАЯ ПОЗИЦИЯ — ТАКАЯ ЖЕ СТРОКА СОГЛАШЕНИЯ, КАК ДОБАВЛЕННАЯ.
+  // Соглашение состоит из двух половин, и обе подписаны одной бумагой.
+  // Пока здесь показывали только добавленные работы, соглашение из одних
+  // исключений не показывалось вовсе: номер есть, документ печатается,
+  // а в приложении пусто. Владелец 5 сентября 2026: «соглашение 3
+  // существует, но во вкладке доп. работы не отображается; исключение
+  // должно отображаться так же, как любая позиция».
+  //
+  // Вид берём тот же, что у подписанной доп. работы, плюс зачёркивание
+  // (`pozicia-isklyuchena` — тот же класс, что и у строки в помещении).
+  // Крестика и замка нет: одну исключённую строку вернуть нечем, это
+  // делается снятием подписания у всего соглашения — кнопка в шапке
+  // группы, и она возвращает обе половины.
+  const iskStroka = (x)=>`
+    <div class="sel-work extra-row extra-row-frozen pozicia-isklyuchena">
+      <span class="sel-work-name">${escapeHtml(x.name)}<span class="sel-work-sub">${escapeHtml(x.room)} · исключена из сметы</span></span>
+      <span class="extra-froz-cell extra-froz-qty">${fmt(x.qty)}</span>
+      <span class="extra-froz-cell extra-froz-unit">${escapeHtml(x.unit||'')}</span>
+      <span class="extra-froz-cell extra-froz-price">${fmtMoney(x.price)}</span>
+      <span class="wsum">− ${fmtMoney(x.sum)}</span>
+    </div>`;
+
   const gruppy = dopNomera(proj).map(nom=>{
     const svoi = vse.map((e,i)=>({e,i})).filter(x=> (x.e.dopNo||'').trim() === nom);
     const sum = svoi.reduce((a,x)=> a + num(x.e.qty)*num(x.e.price), 0);
-    const dat = dopDataSoglasheniya(proj, nom);
+    const isk = isklyuchyonnye(proj, nom);
+    const iskSum = isk.reduce((a,x)=> a + x.sum, 0);
+    const vsegoStrok = svoi.length + isk.length;
+    const dat = dopDataSoglasheniya(proj, nom) || (isk[0] && isk[0].data) || '';
     return `<div class="extra-group">
       <div class="extra-group-head">
         <span>Соглашение № ${escapeHtml(nom)}${dat ? ' от ' + fmtDate(dat) : ''} · подписано</span>
-        <span class="extra-group-sum">${svoi.length} ${plural(svoi.length,'позиция','позиции','позиций')} · ${fmtMoney(sum)}
-          <button class="extra-rassp" data-dop-rassp="${escapeAttr(nom)}" title="Вернуть все работы соглашения в черновик">снять подписание</button></span>
+        <span class="extra-group-sum">${vsegoStrok} ${plural(vsegoStrok,'позиция','позиции','позиций')} · ${sum ? fmtMoney(sum) : ''}${
+          isk.length ? `${sum ? ' · ' : ''}исключено ${fmtMoney(iskSum)}` : ''}
+          <button class="extra-rassp" data-dop-rassp="${escapeAttr(nom)}" title="Вернуть в черновик всё соглашение — и добавленные работы, и исключённые позиции">снять подписание</button></span>
       </div>
       ${svoi.map(x=> stroka(x.e, x.i, true)).join('')}
+      ${isk.map(iskStroka).join('')}
     </div>`;
   }).join('');
 
@@ -20819,11 +20869,17 @@ function attachHandlers(){
   main.querySelectorAll('[data-dop-rassp]').forEach(el=>{
     el.onclick = ()=>{
       const nom = el.getAttribute('data-dop-rassp');
-      const skolko = (proj.extraWorks||[]).filter(x=> (x.dopNo||'').trim() === nom).length;
+      // Считаем ОБЕ половины соглашения. Пока считали только доп. работы,
+      // у соглашения из одних исключений вопрос гласил «0 работ вернётся».
+      const rabot = (proj.extraWorks||[]).filter(x=> (x.dopNo||'').trim() === nom).length;
+      const iskl = isklyuchyonnye(proj, nom).length;
+      const chasti = [];
+      if(rabot) chasti.push(rabot + ' ' + plural(rabot,'доп. работа','доп. работы','доп. работ'));
+      if(iskl)  chasti.push(iskl + ' ' + plural(iskl,'исключённая позиция','исключённые позиции','исключённых позиций'));
       dopSnyat(proj, nom, null,
         'Снять подписание с соглашения № ' + nom + ' целиком?\n\n' +
-        skolko + ' ' + plural(skolko,'работа вернётся','работы вернутся','работ вернётся') +
-        ' в черновик, номер освободится.\n\nЕсли бумага уже у заказчика, ' +
+        chasti.join(' и ') + ' ' + plural(rabot + iskl,'вернётся','вернутся','вернётся') +
+        ' в смету, номер освободится.\n\nЕсли бумага уже у заказчика, ' +
         'ей это изменение не передастся.');
     };
   });
