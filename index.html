@@ -3312,6 +3312,9 @@
   .isk-stroka:last-child{border-bottom:none;}
   .isk-stroka b{margin-left:auto;font-family:'JetBrains Mono',monospace;
     font-size:12px;font-weight:500;color:var(--ink-soft);white-space:nowrap;}
+  /* Черновик отличается от подписанного не цветом, а словом: цвет
+     сказал бы «тревога», а это обычное рабочее состояние. */
+  .isk-metka-chernovik{border-style:dashed;}
   .isk-metka{flex:0 0 auto;font-size:10px;letter-spacing:.03em;
     color:var(--red);border:1px solid var(--red);border-radius:6px;
     padding:4px 7px;white-space:nowrap;opacity:.85;}
@@ -4037,7 +4040,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-05-237';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-05-238';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -7866,6 +7869,9 @@ const DB = {
       // строки сняло бы исключение молча.
       excludedDopNo: w.excluded_dop_no || '',
       excludedDate:  w.excluded_date || '',
+      // ЧЕРНОВИК ИСКЛЮЧЕНИЯ (задача 2026-09-05-02). Позиция уже не в смете,
+      // но соглашение ещё не подписано: правится и возвращается свободно.
+      excludedDraft: w.excluded_draft === true,
       workId: w.is_ref_lay ? REF_LAY_ID : (w.work_id || ('ghost_' + w.lid)),
       manualQty: w.manual_qty === null ? '' : w.manual_qty,
       // null из базы -> пустое поле («считать из размеров»),
@@ -8590,13 +8596,36 @@ const DB = {
   // «решил убрать, но ещё не оформил» нечем: сторож считает исключением
   // сам факт непустого номера. Значит исключение И ЕСТЬ оформление
   // соглашения. Отменяется снятием подписания, которое уже есть.
+  // ЧЕРНОВИК ИСКЛЮЧЕНИЯ — УЗКИМ ЗАПРОСОМ, как и само исключение.
+  // В общем сохранении сметы колонок excluded_* нет вовсе (см. сборку
+  // строки ниже): впиши их туда — и сохранение соседней строки сняло бы
+  // пометку молча.
+  // Пишем `false`, а не `null`: два написания одного состояния разойдутся
+  // при первом же сравнении. Сторож их приравнивает (coalesce), но
+  // полагаться на это в приложении незачем.
+  async chernovikIsklyucheniya(projectId, lid, da){
+    const { data, error } = await sb.from('room_works')
+      .update({ excluded_draft: !!da })
+      .eq('project_id', projectId)
+      .eq('lid', lid)
+      .is('excluded_dop_no', null)     // подписанное черновиком не делают
+      .select('lid, excluded_draft');
+    if(error) throw error;
+    if(!data || !data.length){
+      throw new Error('Строка не найдена или уже исключена подписанным соглашением.');
+    }
+    return data;
+  },
+
   async isklyuchitPozicii(projectId, lids, nomer, data_){
     const nom = String(nomer || '').trim();
     if(!nom) throw new Error('Номер соглашения не может быть пустым.');
     const spisok = (lids || []).filter(Boolean);
     if(!spisok.length) return [];
     const { data, error } = await sb.from('room_works')
-      .update({ excluded_dop_no: nom, excluded_date: data_ || null })
+      // Черновик гасим ЗДЕСЬ ЖЕ. Отдельной правкой было бы нельзя:
+      // как только номер проставлен, сторож морозит строку целиком.
+      .update({ excluded_dop_no: nom, excluded_date: data_ || null, excluded_draft: false })
       .eq('project_id', projectId)
       .in('lid', spisok)
       .is('excluded_dop_no', null)      // страховка от повторного исключения
@@ -18043,18 +18072,31 @@ function renderEmptyState(){
 // Вид тот же, что у строки «Готовность»: одинаковое по смыслу —
 // одинаково и на вид.
 function iskStrokaItoga(proj){
-  const isk = isklyuchyonnye(proj);
-  if(!isk.length) return '';
-  const summa = isk.reduce((a,x)=> a + x.sum, 0);
-  const nomera = [];
-  isk.forEach(x=>{ if(x.nomer && nomera.indexOf(x.nomer) === -1) nomera.push(x.nomer); });
-  const podpis = nomera.length === 1
-    ? 'Исключено соглашением № ' + nomera[0]
-    : 'Исключено соглашениями № ' + nomera.join(', ');
-  return `<div class="smeta-total otm-itog isk-itog">
+  const stroka = (podpis, summa)=> `<div class="smeta-total otm-itog isk-itog">
       <span class="label">${escapeHtml(podpis)}</span>
       <span class="value">− ${fmtMoney(summa)}</span>
     </div>`;
+  let out = '';
+  // ПОДПИСАННОЕ И ЧЕРНОВИК — ДВЕ РАЗНЫЕ СТРОКИ.
+  // Обе уже вычтены из итога, но состояние у них разное: одно закреплено
+  // бумагой, другое ещё можно вернуть одним нажатием. Слитая строка
+  // сказала бы, что решено всё.
+  const isk = isklyuchyonnye(proj);
+  if(isk.length){
+    const nomera = [];
+    isk.forEach(x=>{ if(x.nomer && nomera.indexOf(x.nomer) === -1) nomera.push(x.nomer); });
+    out += stroka(nomera.length === 1
+      ? 'Исключено соглашением № ' + nomera[0]
+      : 'Исключено соглашениями № ' + nomera.join(', '),
+      isk.reduce((a,x)=> a + x.sum, 0));
+  }
+  const chern = iskChernoviki(proj);
+  if(chern.length){
+    out += stroka('Отложено к исключению · ' + chern.length + ' '
+                  + plural(chern.length,'позиция','позиции','позиций'),
+                  chern.reduce((a,x)=> a + x.sum, 0));
+  }
+  return out;
 }
 
 function renderSmetaBlock(proj){
@@ -18393,8 +18435,45 @@ function docBtns(type, fmt2, fmt2label){
 // Здесь мы лишь не показываем полей, которые всё равно отобьются.
 // Исключена ли позиция сметы. Одно место на всё приложение — чтобы
 // признак не начал расходиться по копиям (задача 2026-09-03-01).
+// ТРИ СОСТОЯНИЯ, А НЕ ДВА (задача 2026-09-05-02):
+//   в смете            — ни черновика, ни номера;
+//   черновик исключения — из сметы ушла, но правится и возвращается;
+//   исключена           — номер соглашения стоит, строка заморожена.
+// `isklyuchena` отвечает на вопрос «считать ли её в смете» и потому
+// истинна для обоих последних. Кто спрашивает про вид строки —
+// спрашивает уточняющими.
 function isklyuchena(rw){
+  return iskPodpisana(rw) || iskChernovik(rw);
+}
+function iskPodpisana(rw){
   return !!(rw && (rw.excludedDopNo||'').trim());
+}
+function iskChernovik(rw){
+  return !!(rw && rw.excludedDraft && !(rw.excludedDopNo||'').trim());
+}
+
+// Позиции, отложенные к исключению, но ещё не подписанные.
+// Тот же вид записи, что у `isklyuchyonnye`, чтобы обе половины
+// соглашения собирались и печатались одинаково.
+function iskChernoviki(proj){
+  const byId = catalogById();
+  const k = condK(proj);
+  const out = [];
+  ((proj && proj.rooms) || []).forEach(room=>{
+    const g = calcRoomGeometry(room);
+    (room.works||[]).forEach(rw=>{
+      if(!iskChernovik(rw)) return;
+      const work = effWork(byId.get(rw.workId), rw);
+      if(!work) return;
+      const line = calcWorkLine(room, rw, work, g);
+      const price = Math.round(num(work.price) * k);
+      out.push({ lid: rw.lid, roomId: room.id, room: room.name || 'Помещение',
+                 name: rw.cfg ? REF_TILING.layName : (work.name || '—'),
+                 unit: workUnitLabel(work, rw) || '', qty: line.qty,
+                 price: price, sum: line.qty * price });
+    });
+  });
+  return out;
 }
 
 // Исключённые строки проекта — с помещением, количеством и суммой.
@@ -18406,7 +18485,10 @@ function isklyuchyonnye(proj, nomer){
   (proj.rooms||[]).forEach(room=>{
     const g = calcRoomGeometry(room);
     (room.works||[]).forEach(rw=>{
-      if(!isklyuchena(rw)) return;
+      // ТОЛЬКО ПОДПИСАННЫЕ. `isklyuchena` истинна и для черновика —
+      // он тоже вышел из сметы, — но здесь собираются строки соглашения,
+      // а у черновика соглашения ещё нет. Черновики отдаёт `iskChernoviki`.
+      if(!iskPodpisana(rw)) return;
       if(nomer !== undefined && nomer !== null &&
          (rw.excludedDopNo||'').trim() !== String(nomer).trim()) return;
       const work = effWork(byId.get(rw.workId), rw);
@@ -18472,6 +18554,8 @@ let dopPodpis = null;   // {projectId, nomer, data, isk:Set(lid)}
 
 // Строки сметы, которые ЕЩЁ можно исключить: не исключены и не пустые.
 // Пустую исключать бессмысленно — её просто убирают крестиком.
+// Нужна только затем, чтобы показать кнопку «Подписать соглашение»
+// там, где подписывать пока нечего; сам выбор перенесён в строку сметы.
 function iskKandidaty(proj){
   const byId = catalogById();
   const out = [];
@@ -18492,10 +18576,7 @@ function iskKandidaty(proj){
   return out;
 }
 
-// lidSrazu — строка, с которой пришли. Задан, когда окно открыли
-// кнопкой в самой смете: человек уже выбрал, что убирает, и искать
-// свою же строку в списке ещё раз ему незачем.
-function dopPodpisOpen(projectId, lidSrazu){
+function dopPodpisOpen(projectId){
   const p = (state.projects||[]).find(x=>x.id===projectId);
   if(!p) return;
   const d = new Date();
@@ -18504,10 +18585,11 @@ function dopPodpisOpen(projectId, lidSrazu){
     nomer: dopSleduyuschiyNomer(p),
     data: d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') +
           '-' + String(d.getDate()).padStart(2,'0'),
-    // Какие позиции сметы уходят из неё этим же соглашением.
-    // Пусто по умолчанию: исключение — решение, а не побочный эффект
-    // подписания. Кроме случая, когда пришли кнопкой от самой строки.
-    isk: new Set(lidSrazu ? [lidSrazu] : [])
+    // Какие позиции уходят в это соглашение. Это отложенные в смете
+    // черновики, и по умолчанию отмечены все: человек уже принял решение
+    // по каждой, нажав «исключить». Снять галочку — оставить позицию
+    // в черновике до следующего соглашения.
+    isk: new Set(iskChernoviki(p).map(x=>x.lid))
   };
   let ov = document.getElementById('dopPodpisOverlay');
   if(!ov){
@@ -18520,10 +18602,12 @@ function dopPodpisOpen(projectId, lidSrazu){
   const gotovy = dopKPodpisi(p);
   const skolko = gotovy.length;
   const summa = gotovy.reduce((a,e)=> a + num(e.qty)*num(e.price), 0);
+  const chern = iskChernoviki(p);
   // «0 позиций на 0 ₽» читается как поломка. Когда добавлять нечего,
   // говорим прямо, зачем окно открыто.
   const podzagolovok = skolko
     ? skolko + ' ' + plural(skolko,'позиция','позиции','позиций') + ' на ' + fmtMoney(summa)
+      + (chern.length ? ' · исключено ' + chern.length : '')
     : 'без новых работ — только исключение из сметы';
   // Недозаполненные НЕ подписываем и говорим об этом прямо: иначе они
   // молча уехали бы в соглашение и заморозились навсегда.
@@ -18586,13 +18670,15 @@ function dopPodpisOpen(projectId, lidSrazu){
 function iskVyborNarisovat(proj){
   const box = document.getElementById('dopIskVybor');
   if(!box || !dopPodpis) return;
-  const spisok = iskKandidaty(proj);
+  // В СПИСКЕ — ОТЛОЖЕННЫЕ, А НЕ ВСЯ СМЕТА.
+  // Прежде здесь стояли все строки сметы, и исключение начиналось прямо
+  // отсюда: другого места не было. Теперь позицию откладывают в самой
+  // смете, кнопкой «исключить», а окно только показывает отложенное
+  // и даёт снять галочку — оставить до следующего соглашения.
+  const spisok = iskChernoviki(proj);
   if(!spisok.length){ box.innerHTML = ''; return; }
   const vybrano = dopPodpis.isk;
-  // Раскрыт, если что-то уже отмечено ИЛИ подписывать больше нечего:
-  // во втором случае человек пришёл сюда именно за исключением,
-  // и свёрнутый список был бы пустым окном.
-  const otkryt = vybrano.size > 0 || !dopKPodpisi(proj).length;
+  const otkryt = true;
   let tek = '';
   const stroki = spisok.map(x=>{
     let shapka = '';
@@ -18605,8 +18691,8 @@ function iskVyborNarisovat(proj){
   }).join('');
   box.innerHTML = `
     <details class="isk-detali"${otkryt?' open':''}>
-      <summary>Исключить позиции из сметы${vybrano.size ? ` · выбрано ${vybrano.size}` : ''}</summary>
-      <div class="ownw-note">Позиция уйдёт из сметы этим же соглашением и перестанет меняться. Вернуть можно снятием подписания.</div>
+      <summary>Исключённые позиции${vybrano.size ? ` · выбрано ${vybrano.size}` : ''}</summary>
+      <div class="ownw-note">Эти позиции уже не считаются в смете. Соглашение закрепит их: после подписания строка перестанет меняться, вернуть её можно будет только снятием подписания. Снимите галочку, чтобы оставить позицию в черновике до следующего соглашения.</div>
       ${stroki}
     </details>`;
   box.querySelectorAll('[data-isk]').forEach(ch=>{
@@ -18616,7 +18702,7 @@ function iskVyborNarisovat(proj){
       // Перерисовываем только заголовок счётчика, чтобы не схлопнуть
       // раскрытый список под руками у человека.
       const sum = box.querySelector('summary');
-      if(sum) sum.textContent = 'Исключить позиции из сметы' + (vybrano.size ? ` · выбрано ${vybrano.size}` : '');
+      if(sum) sum.textContent = 'Исключённые позиции' + (vybrano.size ? ` · выбрано ${vybrano.size}` : '');
     };
   });
 }
@@ -18646,7 +18732,7 @@ async function dopPodpisApply(){
   }
 
   if(!dopKPodpisi(p).length && !(o.isk && o.isk.size)){
-    skazat('Нечего подписывать: заполните доп. работу или выберите позицию к исключению.', 'err');
+    skazat('Нечего подписывать: заполните доп. работу или отложите позицию кнопкой «исключить» в смете.', 'err');
     return;
   }
   const btn = document.getElementById('dopPodpisOk');
@@ -18656,7 +18742,9 @@ async function dopPodpisApply(){
     if(LOCAL_TEST){
       dopKPodpisi(p).forEach(e=>{ e.dopNo = nom; e.dopDate = o.data; });
       (p.rooms||[]).forEach(r=> (r.works||[]).forEach(w=>{
-        if(iskLids.indexOf(w.lid) !== -1){ w.excludedDopNo = nom; w.excludedDate = o.data; }
+        if(iskLids.indexOf(w.lid) !== -1){
+          w.excludedDopNo = nom; w.excludedDate = o.data; w.excludedDraft = false;
+        }
       }));
     } else {
       // ПЕРЕД подписанием дошлём несохранённое: если строка ещё не уехала
@@ -18694,7 +18782,8 @@ async function dopPodpisApply(){
         const po_lid = new Map((iskTronuty||[]).map(r=>[r.lid, r]));
         (p.rooms||[]).forEach(r=> (r.works||[]).forEach(w=>{
           const t = po_lid.get(w.lid);
-          if(t){ w.excludedDopNo = t.excluded_dop_no || ''; w.excludedDate = t.excluded_date || ''; }
+          if(t){ w.excludedDopNo = t.excluded_dop_no || ''; w.excludedDate = t.excluded_date || '';
+                 w.excludedDraft = false; }
         }));
       }
       markLocalClean();
@@ -18841,13 +18930,15 @@ function renderExtraWorksBlock(proj){
   // Крестика и замка нет: одну исключённую строку вернуть нечем, это
   // делается снятием подписания у всего соглашения — кнопка в шапке
   // группы, и она возвращает обе половины.
-  const iskStroka = (x)=>`
-    <div class="sel-work extra-row extra-row-frozen pozicia-isklyuchena">
-      <span class="sel-work-name">${escapeHtml(x.name)}<span class="sel-work-sub">${escapeHtml(x.room)} · исключена из сметы</span></span>
+  const iskStroka = (x, chernovik)=>`
+    <div class="sel-work extra-row${chernovik?'':' extra-row-frozen'} pozicia-isklyuchena">
+      <span class="sel-work-name">${escapeHtml(x.name)}<span class="sel-work-sub">${escapeHtml(x.room)} · ${chernovik ? 'отложена к исключению' : 'исключена из сметы'}</span></span>
       <span class="extra-froz-cell extra-froz-qty">${fmt(x.qty)}</span>
       <span class="extra-froz-cell extra-froz-unit">${escapeHtml(x.unit||'')}</span>
       <span class="extra-froz-cell extra-froz-price">${fmtMoney(x.price)}</span>
       <span class="wsum">− ${fmtMoney(x.sum)}</span>
+      ${chernovik ? `<button class="sel-work-isk" data-isk-vernut="${x.roomId}|${x.lid}"
+                             title="Вернуть позицию в смету">вернуть</button>` : ''}
     </div>`;
 
   const gruppy = dopNomera(proj).map(nom=>{
@@ -18865,17 +18956,26 @@ function renderExtraWorksBlock(proj){
           <button class="extra-rassp" data-dop-rassp="${escapeAttr(nom)}" title="Вернуть в черновик всё соглашение — и добавленные работы, и исключённые позиции">снять подписание</button></span>
       </div>
       ${svoi.map(x=> stroka(x.e, x.i, true)).join('')}
-      ${isk.map(iskStroka).join('')}
+      ${isk.map(x=> iskStroka(x, false)).join('')}
     </div>`;
   }).join('');
 
   const svobodnye = vse.map((e,i)=>({e,i})).filter(x=> !(x.e.dopNo||'').trim());
   const podpis = svobodnye.reduce((a,x)=> a + num(x.e.qty)*num(x.e.price), 0);
+  // ЧЕРНОВИК СОБИРАЕТСЯ ЗДЕСЬ ЦЕЛИКОМ — обе половины будущего соглашения
+  // рядом: добавленные работы и отложенные к исключению позиции.
+  // Ради этого задача и затевалась: отложил позицию, дописал работу,
+  // подписал одним соглашением.
+  const chern = iskChernoviki(proj);
+  const chernSum = chern.reduce((a,x)=> a + x.sum, 0);
+  const shapkaChern = (svobodnye.length || chern.length) && (gruppy || chern.length);
   const rows = gruppy + `<div class="extra-group extra-group-open">
-      ${(gruppy && svobodnye.length) ? `<div class="extra-group-head">
+      ${shapkaChern ? `<div class="extra-group-head">
         <span>Ещё не подписано · войдёт в соглашение № ${escapeHtml(dopSleduyuschiyNomer(proj))}</span>
-        <span class="extra-group-sum">${podpis ? fmtMoney(podpis) : ''}</span></div>` : ''}
+        <span class="extra-group-sum">${podpis ? fmtMoney(podpis) : ''}${
+          chern.length ? `${podpis ? ' · ' : ''}исключено ${fmtMoney(chernSum)}` : ''}</span></div>` : ''}
       ${svobodnye.map(x=> stroka(x.e, x.i, false)).join('')}
+      ${chern.map(x=> iskStroka(x, true)).join('')}
     </div>`;
 
   const filled = (proj.extraWorks||[]).filter(e=>(e.name||'').trim() || num(e.qty) || num(e.price));
@@ -18936,7 +19036,7 @@ function renderExtraWorksBlock(proj){
                Владелец 5 сентября 2026: «никак не могу сделать доп.
                соглашение на исключённую позицию, обязательно должна
                присутствовать другая позиция». -->
-          ${(dopKPodpisi(proj).length || iskKandidaty(proj).length)
+          ${(dopKPodpisi(proj).length || iskChernoviki(proj).length)
             ? `<button class="btn btn-outline ew-podpisat" data-dop-podpisat="${proj.id}">Подписать соглашение № ${escapeHtml(dopSleduyuschiyNomer(proj))}</button>` : ''}
         </div>
       </div>
@@ -19545,10 +19645,14 @@ function renderRoomWorks(room){
                   data-qty-over="${room.id}|${rw.lid}">`}
       ${line.over ? `<button class="btn-icon qty-reset" data-qty-reset="${room.id}|${rw.lid}" title="Вернуть расчёт из размеров помещения">↺</button>` : ''}
       ${unitField}
-      ${isk
+      ${iskPodpisana(rw)
         ? `<span class="isk-metka">исключена · соглашение № ${escapeHtml(rw.excludedDopNo)}</span>`
+        : iskChernovik(rw)
+        ? `<span class="isk-metka isk-metka-chernovik">исключена · черновик</span>
+           <button class="sel-work-isk" data-isk-vernut="${room.id}|${rw.lid}"
+                   title="Вернуть позицию в смету: она снова считается и правится">вернуть</button>`
         : `<button class="sel-work-isk" data-isk-odnu="${room.id}|${rw.lid}"
-                   title="Позиция уйдёт из сметы дополнительным соглашением: останется зачёркнутой, с номером соглашения. Вернуть можно снятием подписания.">исключить</button>`}
+                   title="Отложить позицию к исключению: она сразу уйдёт из сметы, а подписать соглашение можно позже — вместе с доп. работами">исключить</button>`}
       <button type="button" class="otm-knopka${otmKlass(rw)}" data-otm="${room.id}|${rw.lid}"
               title="Готовность работы">${otmPodpis(rw)}</button>
       <span class="wsum" data-wsum="${room.id}|${rw.lid}">${fmt(line.qty)} ${workUnitLabel(work,rw)} · ${fmtMoney(line.sum)}</span>
@@ -20857,15 +20961,44 @@ function attachHandlers(){
   // открывает то же самое окно подписания, с этой строкой уже
   // отмеченной: отдельного «черновика исключения» в базе нет,
   // и обещать его нельзя (см. задачу 2026-09-03-01).
+  // ИСКЛЮЧИТЬ — ЭТО ПОЛОЖИТЬ В ЧЕРНОВИК, А НЕ ПОДПИСАТЬ.
+  // Владелец 5 сентября 2026: «когда нажимаем кнопку исключить, не нужно
+  // сразу подписывать соглашение, а нужно просто добавить позицию
+  // исключения в соглашение, а подписать можно позже — возможно, после
+  // добавления ещё каких-либо доп. работ». Так же собирается вторая
+  // половина соглашения: доп. работу добавляют, а номер дают потом.
+  //
+  // Из сметы позиция уходит сразу — правило владельца от 3 сентября:
+  // «исключение действует сразу, подписание только замораживает».
+  // Тариф тут ни при чём: это не расширенная возможность, а способ
+  // не соврать в подписанном документе. Кому нельзя (роль «смотрит»,
+  // наряд, незакреплённый проект на бесплатном) — кнопка выключена
+  // общим правилом в applyViewerMode.
+  const chernovikPometit = async (el, atribut, da)=>{
+    const lid = el.getAttribute(atribut).split('|')[1];
+    const rw = (proj.rooms||[]).reduce((n,r)=> n || (r.works||[]).find(w=>w.lid===lid), null);
+    if(!rw) return;
+    el.disabled = true;
+    try{
+      if(!LOCAL_TEST){
+        await persist();                 // строка могла ещё не уехать на сервер
+        await DB.chernovikIsklyucheniya(proj.id, lid, da);
+        markLocalClean();
+      }
+      rw.excludedDraft = da;
+      render();
+    }catch(e){
+      console.error('Черновик исключения не прошёл', e);
+      el.disabled = false;
+      alert((da ? 'Не удалось отложить позицию: ' : 'Не удалось вернуть позицию: ')
+            + ((e && e.message) || 'проверьте связь'));
+    }
+  };
   main.querySelectorAll('[data-isk-odnu]').forEach(el=>{
-    el.onclick = ()=>{
-      // Тариф тут ни при чём: исключение — не расширенная возможность,
-      // а способ не соврать в подписанном документе. Кому нельзя
-      // (роль «смотрит», наряд, незакреплённый проект на бесплатном) —
-      // кнопка выключена общим правилом в applyViewerMode.
-      const lid = el.getAttribute('data-isk-odnu').split('|')[1];
-      dopPodpisOpen(proj.id, lid);
-    };
+    el.onclick = ()=> chernovikPometit(el, 'data-isk-odnu', true);
+  });
+  main.querySelectorAll('[data-isk-vernut]').forEach(el=>{
+    el.onclick = ()=> chernovikPometit(el, 'data-isk-vernut', false);
   });
   main.querySelectorAll('[data-dop-podpisat]').forEach(el=>{
     el.onclick = ()=> dopPodpisOpen(el.getAttribute('data-dop-podpisat'));
