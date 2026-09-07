@@ -4053,7 +4053,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-07-246';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-08-247';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -18227,13 +18227,36 @@ function renderSmetaBlock(proj){
   // итог, готовность.
   // Таблица сметы убрана с экрана: её видно в готовом документе.
   // Здесь остаётся только итог.
+  //
+  // РАЗБИВКА ПОЯВЛЯЕТСЯ ТОЛЬКО ТАМ, ГДЕ ЕСТЬ ЧТО РАЗБИВАТЬ
+  // (решение владельца 8 сентября 2026).
+  // Условие «показывать, только когда есть» стояло у одной строки доп.
+  // работ, а сама разбивка ставилась всегда. У проекта без доп. работ
+  // выходили два крупных числа подряд с одной и той же суммой — «Смета»
+  // и «Итого по проекту», — а таких проектов большинство. Нет доп.
+  // работ — одно крупное число, подписанное «Итого по проекту», как
+  // было до сборки 246; строки «Смета» и второго крупного нет вовсе.
+  //
+  // Признак «есть доп. работы» заново не считается: берём саму строку,
+  // которую вернул dopStrokaItoga. Своё условие рядом с чужим разошлось
+  // бы молча — грабли 42 и 43.
+  const dopStroka = dopStrokaItoga(proj);
+  if(!dopStroka){
+    return `
+    <div class="smeta-total">
+      <span class="label">Итого по проекту</span>
+      <span class="value">${fmtMoney(smetaTotal(proj))}</span>
+    </div>
+    ${iskStrokaItoga(proj)}
+    ${otmStrokaItoga(proj)}`;
+  }
   return `
     <div class="smeta-total">
       <span class="label">Смета</span>
       <span class="value">${fmtMoney(smetaTotal(proj))}</span>
     </div>
     ${iskStrokaItoga(proj)}
-    ${dopStrokaItoga(proj)}
+    ${dopStroka}
     <div class="smeta-total">
       <span class="label">Итого по проекту</span>
       <span class="value">${fmtMoney(projectTotal(proj))}</span>
