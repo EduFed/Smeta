@@ -4091,7 +4091,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-08-250';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-08-251';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -7486,13 +7486,30 @@ function snimokSmety(proj, sHodom){
       // Готовность идёт НА СТРОКЕ сметы, а не вторым списком тех же
       // работ: заказчик не должен читать одно и то же дважды.
       if(sHodom && i.gotov !== null && i.gotov !== undefined) st.gotov = i.gotov;
+      // Номер соглашения, которым позиция снята. Про мастеров здесь
+      // по-прежнему ничего: номер бумаги — это документ заказчика,
+      // он её и подписывал.
+      if(i.isk) st.isk = i.isk;
       return st;
     })
+  }));
+  // ИСКЛЮЧЁННОЕ — ОТДЕЛЬНОЙ СТРОКОЙ ИТОГОВ, ПО КАЖДОМУ СОГЛАШЕНИЮ СВОЕЙ.
+  // Строки исключённых позиций остаются в смете заказчика (он её
+  // подписывал), значит суммы по помещениям их включают. Без вычета
+  // «Стоимость работ» не сошлась бы с этими суммами, и заказчик решил
+  // бы, что его обсчитали.
+  const isklyucheno = [];
+  d.groups.forEach(g=> g.items.forEach(i=>{
+    if(!i.isk) return;
+    const est = isklyucheno.find(x=> x.nomer === i.isk);
+    if(est) est.summa = kop(est.summa + kop(i.sum));
+    else isklyucheno.push({ nomer: i.isk, summa: kop(i.sum) });
   }));
   // Итог складываем из ОКРУГЛЁННЫХ строк, а не округляем сумму сырых:
   // иначе на экране строки не сойдутся с итогом. То же правило,
   // что у condSum в приложении.
-  const itog = kop(gruppy.reduce((a,g)=> a + g.stroki.reduce((b,i)=> b + i.summa, 0), 0));
+  const itog = kop(gruppy.reduce((a,g)=> a + g.stroki.reduce((b,i)=> b + i.summa, 0), 0)
+                   - isklyucheno.reduce((a,x)=> a + x.summa, 0));
   const sn = {
     v: 1,                                  // версия снимка, на вырост
     sozdan: new Date().toISOString(),
@@ -7505,6 +7522,7 @@ function snimokSmety(proj, sHodom){
       kolvo: m.qty, pometka: m.note||''
     }))
   };
+  if(isklyucheno.length) sn.isklyucheno = isklyucheno;
   if(sHodom){
     // Отметка «ход работ показываем» живёт в САМОМ снимке: колонки под
     // неё в базе нет, а кнопка ⟳ переписывает снимок целиком — без этой
@@ -15293,6 +15311,18 @@ function condK(proj){
 // в договор, в расписку и в карточку заказчика: договор заключают
 // на смету, а доп. работы появляются позже своим соглашением.
 function smetaTotal(proj){
+  const d = buildEstimateData(proj, { bezDop:true });
+  return d.total - d.iskSum;
+}
+
+// СМЕТА КАК ЕЁ ПОДПИСАЛИ — вместе с позициями, снятыми доп. соглашением.
+// Решение владельца 8 сентября 2026: «Сумма сметы остаётся». Это число
+// стоит в самой смете — на экране, в PDF, в Excel, в тексте — и оно
+// не меняется от того, что позицию позже сняли.
+// smetaTotal отвечает на другой вопрос — сколько причитается по смете
+// сейчас, с учётом подписанных исключений; им живут договор, расписка,
+// акт и карточка заказчика.
+function smetaPodpisana(proj){
   return buildEstimateData(proj, { bezDop:true }).total;
 }
 
@@ -15323,7 +15353,9 @@ function dopRaboty(proj, nomer){
 // СУММА ПРОЕКТА ЦЕЛИКОМ — смета и доп. работы вместе. Ею живут список
 // проектов и акт приёма-сдачи: там нужно всё, что заказчик заплатит.
 function projectTotal(proj){
-  return buildEstimateData(proj).total;
+  // Итог = смета (как подписана) + доп. работы − исключённое соглашением.
+  const d = buildEstimateData(proj);
+  return d.total - d.iskSum;
 }
 
 // РАСКЛАД ПО ДЕНЬГАМ (с 2026-08-10-40).
@@ -15505,29 +15537,50 @@ function buildEstimateData(proj, opts){
   const groups = [];
   const byId = catalogById();
   const k = condK(proj);   // 1, если надбавки идут отдельной строкой
+  // Наряд мастера решается ДО сборки строк: от него зависит не только
+  // состав доп. работ, но и то, показывать ли исключённые позиции.
+  const naryad = isNaryad(proj);
+  // Сумма подписанных исключений, попавших в groups. Отдаётся наружу:
+  // из неё считаются и итог проекта, и строка вычета под ним. Считать
+  // её второй раз своей формулой нельзя — два счёта расходятся молча
+  // (грабли 42 и 43).
+  let iskSum = 0;
   (proj.rooms||[]).forEach(room=>{
     const items = [];
     const g = calcRoomGeometry(room);
     (room.works||[]).forEach(rw=>{
-      // ИСКЛЮЧЁННАЯ ПОЗИЦИЯ В ИТОГ НЕ ИДЁТ — ни в смету, ни в наряд,
-      // ни в PDF, ни в Excel, ни в Word, ни в снимок заказчику, ни в итог
-      // проекта. Всё это считается ЭТОЙ функцией, поэтому одна проверка
-      // здесь закрывает семь мест разом. Считай где-то ещё отдельно —
-      // и в двух документах будут разные суммы, а найдёт это заказчик.
-      if(isklyuchena(rw)) return;
+      // ИСКЛЮЧЁННАЯ ПОЗИЦИЯ ОСТАЁТСЯ В СМЕТЕ (решение владельца
+      // 8 сентября 2026, дословно: «Сумма сметы остаётся»).
+      //
+      // Смета — подписанный документ, и подписанное задним числом
+      // не меняют. Прежде строка исчезала отсюда, а значит и из PDF,
+      // из Excel, из текста, из снимка заказчику и из итога — заказчик,
+      // сверяющий бумагу с экраном, не находил строки, под которой стоит
+      // его подпись. Теперь строка стоит на своём месте, помечена словом,
+      // и её сумма по-прежнему в сумме сметы. Вычет уходит отдельной
+      // строкой в итог — по тому доп. соглашению, которое её и сняло.
+      //
+      // В НАРЯДЕ МАСТЕРА исключённой строки нет вовсе: наряд — задание
+      // на работу, а снятую работу не делают. Ни строки, ни вычета.
+      const iskNo = iskPodpisana(rw) ? (rw.excludedDopNo||'').trim() : '';
+      if(naryad && iskNo) return;
       const work = effWork(byId.get(rw.workId), rw);
       if(!work) return;
       const line = calcWorkLine(room, rw, work, g);
       // цену округляем до рубля, сумму считаем от неё — тогда в смете
       // кол-во × цена = сумма без расхождений на копейки
       const price = Math.round(num(work.price) * k);
+      const summa = line.qty*price;
+      if(iskNo) iskSum += summa;
       // ГОТОВНОСТЬ — ЗДЕСЬ, В ЕДИНСТВЕННОМ ИСТОЧНИКЕ СТРОК СМЕТЫ.
       // Снимок заказчику собирается из этих же строк. Считать готовность
       // отдельно и сопоставлять по названию — значит завести второй путь
       // к тем же данным, а два пути расходятся молча (грабля 43).
       // Пусто означает «не отмечали», а не ноль.
-      items.push({ name:work.name||'—', unit:workUnitLabel(work,rw)||'', qty:line.qty, price:price, sum:line.qty*price,
-                   gotov: otmChislo(rw) });
+      // У исключённой строки готовности нет: работу отменили, и «готово
+      // на 80 %» рядом со снятой позицией сказало бы заказчику неправду.
+      items.push({ name:work.name||'—', unit:workUnitLabel(work,rw)||'', qty:line.qty, price:price, sum:summa,
+                   gotov: iskNo ? null : otmChislo(rw), isk: iskNo });
     });
     if(items.length) groups.push({ room: room.name||'Помещение', items });
   });
@@ -15541,7 +15594,8 @@ function buildEstimateData(proj, opts){
   // Правим здесь, в сборке данных: отсюда кормятся и экран, и PDF,
   // и Excel, и текст, и общий итог. В каждом документе отдельно —
   // значит однажды поправить три места из четырёх.
-  const naryad = isNaryad(proj);
+  // Сам признак `naryad` объявлен выше: он нужен ещё и строкам сметы —
+  // исключённые позиции мастеру не показываем.
 
   // В наряде — только те доп. работы, что поручены этому мастеру
   // (с 2026-08-10-27). Не назначенные никому в наряд не идут: их никто
@@ -15584,8 +15638,21 @@ function buildEstimateData(proj, opts){
     groups.push({ room:'Условия объекта',
       items: cLines.map(l=>({ name:l.name, unit:'', qty:1, price:l.sum, sum:l.sum })) });
   }
+  // `total` — сумма ВСЕХ показанных строк, то есть смета как её подписали:
+  // исключённые в неё входят. Кому нужны деньги к оплате, тот вычитает
+  // `iskSum` — так делают smetaTotal и projectTotal.
   const total = groups.reduce((s,g)=> s + g.items.reduce((a,i)=> a + i.sum, 0), 0);
-  return { groups, total };
+  return { groups, total, iskSum };
+}
+
+// МЕТКА ИСКЛЮЧЁННОЙ СТРОКИ ДЛЯ ДОКУМЕНТОВ — СЛОВОМ.
+// В PDF, Excel и тексте отдельной колонки под метку нет, а человек должен
+// прочитать, почему строка стоит, но не считается. Слова те же, что
+// у метки на экране (.isk-metka): одно и то же состояние не должно
+// называться двумя способами.
+function imyaSMetkoy(it){
+  if(!it) return '';
+  return it.isk ? it.name + ' (исключена · соглашение № ' + it.isk + ')' : it.name;
 }
 
 function smetaPdfDef(proj){
@@ -15602,7 +15669,7 @@ function smetaPdfDef(proj){
       no++;
       body.push([
         {text:String(no),style:'td'},
-        {text:it.name,style:'td'},
+        {text:imyaSMetkoy(it),style:'td'},
         {text:it.unit,style:'td',alignment:'center'},
         {text:fmt(it.qty),style:'td',alignment:'right'},
         {text:fmt(it.price),style:'td',alignment:'right'},
@@ -15658,7 +15725,7 @@ function smetaXlsxBlob(proj){
   let no = 0;
   groups.forEach(g=>{
     aoa.push([g.room,'','','','','']);
-    g.items.forEach(it=>{ no++; aoa.push([no, it.name, it.unit, Math.round(it.qty*100)/100, it.price, Math.round(it.sum)]); });
+    g.items.forEach(it=>{ no++; aoa.push([no, imyaSMetkoy(it), it.unit, Math.round(it.qty*100)/100, it.price, Math.round(it.sum)]); });
   });
   aoa.push(['','','','','Итого:', Math.round(total)]);
   const ws = XLSX.utils.aoa_to_sheet(aoa);
@@ -15692,7 +15759,7 @@ function smetaText(proj){
     L.push('— ' + g.room.toUpperCase() + ' —');
     g.items.forEach(it=>{
       no++;
-      L.push(no + '. ' + it.name);
+      L.push(no + '. ' + imyaSMetkoy(it));
       L.push('   ' + fmt(it.qty) + ' ' + it.unit +
              ' × ' + fmtMoney(it.price) +
              ' = ' + fmtMoney(it.sum));
@@ -18393,13 +18460,18 @@ function iskStrokaItoga(proj){
   // бумагой, другое ещё можно вернуть одним нажатием. Слитая строка
   // сказала бы, что решено всё.
   const isk = isklyuchyonnye(proj);
-  if(isk.length){
+  // СУММА — ИЗ ТОЙ ЖЕ СБОРКИ, ЧТО И ИТОГ. Своё сложение по строкам
+  // соглашения врало бы в наряде мастера: там исключённых строк нет
+  // вовсе, и вычитать из его итога нечего. Номера соглашений при этом
+  // берутся из документа — их знает только он.
+  const iskSum = buildEstimateData(proj).iskSum;
+  if(isk.length && iskSum){
     const nomera = [];
     isk.forEach(x=>{ if(x.nomer && nomera.indexOf(x.nomer) === -1) nomera.push(x.nomer); });
     out += stroka(nomera.length === 1
       ? 'Исключено соглашением № ' + nomera[0]
       : 'Исключено соглашениями № ' + nomera.join(', '),
-      isk.reduce((a,x)=> a + x.sum, 0));
+      iskSum);
   }
   // Черновика здесь нет намеренно: он не вычтен, вычитать нечего.
   // Сколько отложено и на какую сумму — видно в «Дополнительных работах»,
@@ -18468,22 +18540,28 @@ function renderSmetaBlock(proj){
   // Признак «есть доп. работы» заново не считается: берём саму строку,
   // которую вернул dopStrokaItoga. Своё условие рядом с чужим разошлось
   // бы молча — грабли 42 и 43.
+  //
+  // РАЗБИВКУ ЗОВЁТ НЕ ТОЛЬКО ДОП. РАБОТА, НО И ИСКЛЮЧЕНИЕ (8 сентября
+  // 2026). Смета теперь считается вместе с исключёнными позициями, и без
+  // разбивки вышло бы одно крупное число, которое не сходится ни со
+  // сметой, ни с тем, что причитается. Строки читаются сверху вниз
+  // как арифметика: смета − исключено + доп. работы = итог.
   const dopStroka = dopStrokaItoga(proj);
-  if(!dopStroka){
+  const iskStroka = iskStrokaItoga(proj);
+  if(!dopStroka && !iskStroka){
     return `
     <div class="smeta-total">
       <span class="label">Итого по проекту</span>
       <span class="value">${fmtMoney(smetaTotal(proj))}</span>
     </div>
-    ${iskStrokaItoga(proj)}
     ${otmStrokaItoga(proj)}`;
   }
   return `
     <div class="smeta-total">
       <span class="label">Смета</span>
-      <span class="value">${fmtMoney(smetaTotal(proj))}</span>
+      <span class="value">${fmtMoney(smetaPodpisana(proj))}</span>
     </div>
-    ${iskStrokaItoga(proj)}
+    ${iskStroka}
     ${dopStroka}
     <div class="smeta-total">
       <span class="label">Итого по проекту</span>

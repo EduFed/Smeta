@@ -20,11 +20,13 @@
      и присланный PDF. */
   :root{
     --paper:#F6F3EC; --paper-line:#D9D2BE; --ink:#1E2A32; --ink-soft:#5B6B74;
-    --white:#FFFDF9; --orange:#E8622C; --green:#4A7C59; --radius:10px;
+    --white:#FFFDF9; --orange:#E8622C; --green:#4A7C59; --red:#B33A2E;
+    --radius:10px;
   }
   @media (prefers-color-scheme: dark){
     :root{ --paper:#191C1F; --paper-line:#333A40; --ink:#E8E6E1;
-           --ink-soft:#9AA5AC; --white:#111417; --green:#5E9A6E; }
+           --ink-soft:#9AA5AC; --white:#111417; --green:#5E9A6E;
+           --red:#D2554A; }
   }
   *{box-sizing:border-box;}
   body{
@@ -63,6 +65,16 @@
     padding:5px 7px;white-space:nowrap;color:var(--ink-soft);font-weight:600;}
   .gotov-chast{border-color:var(--orange);color:var(--orange);}
   .gotov-vsyo{border-color:var(--green);color:var(--green);}
+  /* ИСКЛЮЧЁННАЯ ПОЗИЦИЯ. Смету заказчик подписывал, значит строка
+     остаётся на своём месте — зачёркнутая, с меткой словом и номером
+     соглашения, которым её сняли. Вид взят у приложения целиком
+     (.pozicia-isklyuchena и .isk-metka): прораб и заказчик обсуждают
+     одну и ту же строку, и выглядеть она должна одинаково. */
+  .stroka.isklyuchena .nazv, .stroka.isklyuchena .summa{
+    text-decoration:line-through;opacity:.55;}
+  .isk-metka{flex:0 0 auto;font-size:10px;letter-spacing:.03em;
+    color:var(--red);border:1px solid var(--red);border-radius:6px;
+    padding:4px 7px;white-space:nowrap;opacity:.85;}
   .itogi{margin-top:18px;padding-top:12px;border-top:1px solid var(--paper-line);
     display:flex;flex-direction:column;gap:6px;max-width:440px;}
   .itog{display:flex;justify-content:space-between;align-items:baseline;gap:14px;
@@ -251,7 +263,9 @@ function narisovat(d){
       ch.push('<div class="gruppa"><div class="gruppa-shapka"><span>' + ekran(g.nazvanie) +
         '</span><span class="chislo">' + dengi(summa) + '</span></div>' +
         (g.stroki||[]).map(i=>
-          '<div class="stroka"><span class="nazv">' + ekran(i.nazvanie) + '</span>' +
+          '<div class="stroka' + (i.isk ? ' isklyuchena' : '') + '">' +
+          '<span class="nazv">' + ekran(i.nazvanie) + '</span>' +
+          (i.isk ? '<span class="isk-metka">исключена · соглашение № ' + ekran(i.isk) + '</span>' : '') +
           gotovnost(i.gotov) +
           '<span class="chislo">' + chislo(i.kolvo) + ' ' + ekran(i.edinica) + '</span>' +
           '<span class="chislo">× ' + dengi(i.cena) + '</span>' +
@@ -273,6 +287,13 @@ function narisovat(d){
     // как три разные вещи.
     if(sn.gotovnost !== null && sn.gotovnost !== undefined)
       ch.push('<div class="itog"><span>Готовность</span><b>' + ekran(sn.gotovnost) + ' %</b></div>');
+    // ВЫЧЕТ ПО ДОП. СОГЛАШЕНИЮ — отдельной строкой, до стоимости работ.
+    // Суммы по помещениям включают исключённые позиции (смета такая,
+    // какой её подписали), и без этой строки «Стоимость работ» не сошлась
+    // бы с ними. У старых снимков поля нет — тогда и строки нет.
+    (sn.isklyucheno || []).forEach(x=>
+      ch.push('<div class="itog"><span>Исключено соглашением № ' + ekran(x.nomer) +
+        '</span><b>− ' + dengi(x.summa) + '</b></div>'));
     ch.push('<div class="itog"><span>Стоимость работ</span><b>' + dengi(itog) + '</b></div>');
     if(opl.length) ch.push('<div class="itog"><span>Получено</span><b>' + dengi(poluch) + '</b></div>');
     ch.push('<div class="itog itog-glavnyy"><span>' + (ost < 0 ? 'Переплата' : 'Остаток к оплате') +
