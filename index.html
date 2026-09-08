@@ -2361,7 +2361,7 @@
   /* Подложка и слой — из общего правила окон. Здесь только своё. */
   .plan-modal{
     max-width:760px;padding:28px;
-    max-height:90vh;overflow-y:auto;
+    /* потолок высоты и прокрутка — в общем правиле окон ниже */
   }
   .plan-modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:6px;}
   .plan-modal-title{font-family:'Space Grotesk','Inter',sans-serif;font-weight:700;font-size:20px;color:var(--ink);}
@@ -2658,7 +2658,20 @@
      снимка и предпросмотр документа — у них своя задача и свой вид. */
   .refcfg-overlay, .plan-overlay, .conflict-overlay,
   .support-overlay, .pd-overlay{
-    display:none; position:fixed; inset:0;
+    display:none; position:fixed; left:0; right:0;
+    /* ВЕРХ И ВЫСОТА — ОТ ВИДИМОЙ ЧАСТИ ЭКРАНА, А НЕ ОТ СТРАНИЦЫ.
+       На iPhone клавиатура не сжимает страницу, а сдвигает её: окно
+       остаётся прибитым к странице и уезжает вверх, под часы и чёлку.
+       Владелец 8 сентября 2026, третья жалоба про то же самое:
+       «выходит окно и как-то некорректно отображается на айфоне,
+       уезжает наверх. И не прокручивается».
+       Поэтому верх берём из window.visualViewport.offsetTop, а высоту —
+       из visualViewport.height: их пишет oknaVymerit(). Запасное
+       значение 0/100% работает, пока замер не сделан и на всём,
+       где visualViewport нет. */
+    top:var(--okno-verh, 0px);
+    height:100%;
+    height:var(--okno-vysota, 100%);
     align-items:center; justify-content:center;
     background:var(--podlozhka-okna);
     /* ОТСТУП СВЕРХУ — ПОД ЧАСЫ И ЧЁЛКУ, как снизу под домашнюю полосу.
@@ -2691,15 +2704,32 @@
     width:100%; background:var(--white);
     border:1px solid var(--paper-line); border-radius:16px;
     box-shadow:var(--ten-okno);
+    /* ПОТОЛОК ВЫСОТЫ — ОДИН НА ВСЕ ОКНА. 100% — это высота подложки,
+       а подложка стоит ровно по видимой части экрана. Значит окно
+       никогда не выше того, что человек видит: ни под чёлку, ни под
+       клавиатуру не уйдёт. Прежде потолок был только у .refcfg-modal
+       и считался через dvh — а dvh про клавиатуру не знает.
+       Прокрутка своя: раз окно упёрлось в потолок, листать его должно
+       оно само, а не подложка под ним. Окна со своим устройством
+       (.refcfg-modal, .pd-modal) ниже перебивают это на overflow:hidden —
+       у них внутри есть отдельное прокручиваемое тело. */
+    max-height:100%;
+    overflow-y:auto; -webkit-overflow-scrolling:touch; overscroll-behavior:contain;
   }
-  /* Высота окна считается от того, что реально осталось: 92vh не знает
-     ни про чёлку, ни про домашнюю полосу, ни про панель браузера,
-     и на iPhone окно вылезало за оба края. dvh знает про панель,
-     env() — про чёлку. Строка с vh оставлена первой как запасная
-     для старых браузеров: они просто не поймут вторую. */
-  .refcfg-modal{max-width:560px;display:flex;flex-direction:column;overflow:hidden;
-    max-height:92vh;
-    max-height:calc(100dvh - 40px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));}
+  /* Окно тарифа само по себе ниже общего потолка: оно широкое, и во весь
+     экран выглядит тяжело. min() — чтобы при поднятой клавиатуре
+     побеждал общий потолок, а не 90vh. */
+  .plan-modal{max-height:min(90vh, 100%);}
+  /* Потолок высоты — из общего правила окон выше (100% подложки).
+     Здесь стояло 92vh, потом calc(100dvh - поля - env()). Обе меры
+     верны про панель браузера и чёлку и обе НЕ знают про клавиатуру:
+     с поднятой клавиатурой окно считало себя во весь экран, значит
+     прокручивать ему было нечего, а кнопка уходила вниз за клавиатуру.
+     Оставлять их запасными смысла нет — 100% понимает любой браузер,
+     и он всё равно окажется последним.
+     overflow:hidden своё: внутри есть отдельное прокручиваемое тело
+     (.refcfg-body), и вторая прокрутка поверх него только мешает. */
+  .refcfg-modal{max-width:560px;display:flex;flex-direction:column;overflow:hidden;}
   .refcfg-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:18px 20px 14px;border-bottom:1px solid var(--paper-line);}
   .refcfg-title{font-family:'Space Grotesk','Inter',sans-serif;font-size:19px;font-weight:700;color:var(--ink);}
   .refcfg-sub{margin-top:3px;font-size:12px;color:var(--ink-soft);}
@@ -2865,12 +2895,12 @@
      неудобным. Теперь окно занимает почти весь экран, но с полями
      и потолком по ширине: во весь монитор чертёж растягивать незачем —
      глазу тяжело, и пропадает ощущение окна, которое можно закрыть. */
-  .pd-modal{width:min(1180px, 96vw);max-width:none;height:94vh;max-height:94vh;display:flex;flex-direction:column;background:var(--white);border-radius:16px;overflow:hidden;box-shadow:var(--ten-okno);}
+  .pd-modal{width:min(1180px, 96vw);max-width:none;height:94vh;max-height:min(94vh, 100%);display:flex;flex-direction:column;background:var(--white);border-radius:16px;overflow:hidden;box-shadow:var(--ten-okno);}
   /* На телефоне — весь экран: любая рамка съедает ту самую площадь,
      ради которой всё и делается, а контекст за окном там не виден. */
   @media (max-width: 720px){
     .pd-overlay{padding:0;}
-    .pd-modal{width:100vw;height:100dvh;max-height:none;border-radius:0;}
+    .pd-modal{width:100vw;height:100%;max-height:100%;border-radius:0;}
   }
   /* Холст занимает всё, что осталось от шапки и подвала, и картинка
      тянется по высоте, а не только по ширине. */
@@ -4061,7 +4091,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-08-249';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-08-250';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -7686,6 +7716,56 @@ if(window.visualViewport){
   window.visualViewport.addEventListener('resize', schyotyPodnyat);
   window.visualViewport.addEventListener('scroll', schyotyPodnyat);
 }
+
+/* ===== ГДЕ СЕЙЧАС ВИДИМАЯ ЧАСТЬ ЭКРАНА — ОДИН ЗАМЕР НА ВСЕ ОКНА =====
+   (8 сентября 2026, третья жалоба владельца про одно и то же)
+
+   На iPhone клавиатура НЕ уменьшает страницу. Она уменьшает видимую
+   часть и сдвигает страницу вверх, чтобы поле оказалось над ней.
+   Окно с position:fixed прибито к странице, а не к видимой части, —
+   значит вместе со страницей оно уезжает вверх: заголовок оказывается
+   выше края экрана, под часами, а низ с кнопкой прячется за
+   клавиатурой. И прокручивать окну нечего: по своим меркам оно
+   целиком помещается на экран, хотя человек видит от него треть.
+
+   window.innerHeight про это ничего не знает — он про страницу.
+   Знает window.visualViewport: offsetTop — насколько видимая часть
+   сдвинута относительно страницы, height — сколько её осталось.
+   Тот же способ уже применяется у полоски со знаками (schyotyPodnyat).
+
+   Пишем два значения в корень документа, а правило подложки окна
+   (.refcfg-overlay и родня) их читает. Ни одно окно своего правила
+   для этого не заводит.
+
+   При увеличении пальцами (scale больше единицы) замер не применяем:
+   там видимая часть — это то, что человек разглядывает, и подгонять
+   под неё окно нельзя. */
+function oknaVymerit(){
+  const k = document.documentElement;
+  const vv = window.visualViewport;
+  let verh = '0px', vysota = '100%';
+  if(vv && Math.abs(vv.scale - 1) < 0.01 && vv.height > 0){
+    verh = Math.max(0, Math.round(vv.offsetTop)) + 'px';
+    vysota = Math.round(vv.height) + 'px';
+  }
+  // Пишем, только если изменилось: событие scroll у visualViewport
+  // приходит часто, а лишняя запись стиля — лишний пересчёт страницы.
+  if(k.style.getPropertyValue('--okno-verh') !== verh) k.style.setProperty('--okno-verh', verh);
+  if(k.style.getPropertyValue('--okno-vysota') !== vysota) k.style.setProperty('--okno-vysota', vysota);
+}
+if(window.visualViewport){
+  window.visualViewport.addEventListener('resize', oknaVymerit);
+  window.visualViewport.addEventListener('scroll', oknaVymerit);
+}
+window.addEventListener('resize', oknaVymerit);
+// Поворот и появление клавиатуры досчитываются не мгновенно: iOS шлёт
+// событие, а размеры устаканиваются кадром-двумя позже. Поэтому мерим
+// ещё раз с задержкой — замер дешёвый, а без него окно один раз
+// встаёт по старым числам.
+window.addEventListener('orientationchange', ()=> setTimeout(oknaVymerit, 300));
+document.addEventListener('focusin', ()=>{ setTimeout(oknaVymerit, 350); }, true);
+document.addEventListener('focusout', ()=>{ setTimeout(oknaVymerit, 350); }, true);
+oknaVymerit();
 
 document.addEventListener('focusin', e=>{
   const el = e.target;
