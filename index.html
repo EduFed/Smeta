@@ -4053,7 +4053,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-08-247';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-08-248';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -7238,9 +7238,13 @@ function podelitNarisovat(){
             const proshla  = sh.expires_at && new Date(sh.expires_at) < new Date();
             const sost = otozvana ? 'отозвана' : (proshla ? 'срок вышел' : 'действует');
             const oblast = (OBLASTI_SSYLKI.find(o=>o[0]===sh.scope)||[])[1] || sh.scope;
+            // Дата снимка — это то, что заказчик видит сейчас. Без неё
+            // не отличить свежую ссылку от выданной месяц назад.
+            const snDate = sh.sozdan ? ' · смета от ' + fmtDate(sh.sozdan) : '';
             return `<div class="sel-work">
               <span class="sel-work-name">${escapeHtml(oblast)}${sh.show_personal?' · с личными данными':''}
-                <span class="sel-work-sub">${sost}${sh.expires_at ? ' · до ' + fmtDate(sh.expires_at) : ''}</span></span>
+                <span class="sel-work-sub">${sost}${sh.expires_at ? ' · до ' + fmtDate(sh.expires_at) : ''}${snDate}</span></span>
+              ${(otozvana||proshla) ? '' : `<button class="btn-icon" data-pod-obnov="${escapeAttr(sh.id)}" title="Обновить смету в ссылке">⟳</button>`}
               ${(otozvana||proshla) ? '' : `<button class="btn-icon" data-pod-kopir="${escapeAttr(sh.token)}" title="Скопировать ссылку">⧉</button>`}
               ${otozvana ? '' : `<button class="btn-icon" data-pod-otozvat="${escapeAttr(sh.id)}" title="Отозвать">✕</button>`}
             </div>`;
@@ -7266,8 +7270,9 @@ function podelitNarisovat(){
             <i>телефон, почта, адрес. Паспорт не показывается никогда — свой паспорт заказчик знает, а ссылка может уйти в чужой чат</i></span>
         </label>
         <div class="ownw-note" style="margin-top:12px;">
-          Смета уйдёт снимком — такой, какая она сейчас. Поправите её потом — поделитесь заново.
-          Оплаты и снимки заказчик будет видеть свежими.
+          Смета уйдёт снимком — такой, какая она сейчас. Поправите её потом —
+          нажмите ⟳ у выданной ссылки, и заказчик увидит новые числа по прежнему адресу.
+          Оплаты и снимки заказчик видит свежими.
         </div>
         <div class="plan-lead-msg" id="podelitMsg"></div>
         <div class="tc-label" style="margin-top:18px;">Выданные ссылки</div>
@@ -7289,6 +7294,9 @@ function podelitNarisovat(){
   });
   const l = ov.querySelector('[data-pod-lichnye]');
   if(l) l.onchange = ()=>{ uiPodelit.lichnye = l.checked; };
+  ov.querySelectorAll('[data-pod-obnov]').forEach(b=>{
+    b.onclick = ()=> podelitObnovit(b.getAttribute('data-pod-obnov'));
+  });
   ov.querySelectorAll('[data-pod-kopir]').forEach(b=>{
     b.onclick = ()=> podelitKopir(b.getAttribute('data-pod-kopir'));
   });
@@ -7333,6 +7341,39 @@ async function podelitSozdat(){
     console.error('Ссылка не создалась', e);
     u.zanyat = false; podelitNarisovat();
     podelitSkazat('Не удалось создать ссылку: ' + ((e && e.message) || 'проверьте связь'), 'err');
+  }
+}
+
+// ОБНОВИТЬ СНИМОК У ВЫДАННОЙ ССЫЛКИ (8 сентября 2026).
+//
+// Только по нажатию и только со спросом. Молча — например при открытии
+// окна — снимок не переписываем нигде: заказчик увидел бы одни числа,
+// а через час другие, без чьего-либо решения.
+async function podelitObnovit(id){
+  const u = uiPodelit;
+  if(!u || u.zanyat) return;
+  const p = (state.projects||[]).find(x=>x.id===u.projectId);
+  if(!p) return;
+  if(!await sprosit('Обновить смету в этой ссылке?\n\nЗаказчик по прежнему адресу увидит смету и материалы по нынешнему состоянию. Прежний снимок при этом пропадёт.')) return;
+  u.zanyat = true; podelitNarisovat();
+  try{
+    if(LOCAL_TEST){
+      u.zanyat = false; podelitNarisovat();
+      podelitSkazat('Локальный режим: ссылка не обновляется.');
+      return;
+    }
+    // Дошлём несохранённое ровно по той же причине, что при выдаче:
+    // снимок считается из того, что на экране, а оплаты и снимки
+    // заказчик видит с сервера. Разойдись они — числа будут разной поры.
+    await persist();
+    await DB.obnovitSsylku(id, p);
+    u.spisok = await DB.spisokSsylok(u.projectId);
+    u.zanyat = false; podelitNarisovat();
+    podelitSkazat('Смета в ссылке обновлена. Адрес прежний — пересылать заново не нужно.', 'ok');
+  }catch(e){
+    console.error('Обновление ссылки не прошло', e);
+    u.zanyat = false; podelitNarisovat();
+    podelitSkazat('Не удалось обновить: ' + ((e && e.message) || 'проверьте связь'), 'err');
   }
 }
 
@@ -8614,13 +8655,49 @@ const DB = {
     return data;
   },
 
+  // Дату снимка берём стрелкой из jsonb, а не тянем весь снимок:
+  // он весит десятки килобайт на каждую ссылку, а нужна одна строка.
+  // Не понял сервер такой выборки — спрашиваем без неё: список
+  // выданных ссылок важнее подписи под ним.
   async spisokSsylok(projectId){
-    const { data, error } = await sb.from('project_shares')
-      .select('id, token, scope, show_personal, expires_at, revoked_at, created_at')
+    const POLYA = 'id, token, scope, show_personal, expires_at, revoked_at, created_at';
+    let r = await sb.from('project_shares')
+      .select(POLYA + ', sozdan:estimate_snapshot->>sozdan')
       .eq('project_id', projectId)
       .order('created_at', { ascending:false });
+    if(r.error){
+      console.warn('Дата снимка не пришла, берём список без неё', r.error);
+      r = await sb.from('project_shares')
+        .select(POLYA)
+        .eq('project_id', projectId)
+        .order('created_at', { ascending:false });
+    }
+    if(r.error) throw r.error;
+    return r.data || [];
+  },
+
+  // ОБНОВИТЬ СНИМОК У ВЫДАННОЙ ССЫЛКИ (8 сентября 2026).
+  //
+  // До сегодня снимок нельзя было переписать вовсе: поправил смету
+  // или подписал доп. соглашение — заказчик по старой ссылке видел
+  // прежние числа, а выходом было только отозвать её и выдать новую.
+  //
+  // Пишем ТОЛЬКО снимок. Область, срок и флажок личных данных не трогаем:
+  // это решения, принятые при выдаче, и менять их заодно нельзя.
+  // Отозванную ссылку не обновляем вовсе — отзыв окончателен.
+  async obnovitSsylku(id, proj){
+    const { data, error } = await sb.from('project_shares')
+      .update({ estimate_snapshot: snimokSmety(proj) })
+      .eq('id', id)
+      .is('revoked_at', null)
+      .select('id');
     if(error) throw error;
-    return data || [];
+    // Правка через политику доступа не отказывает, а не находит строк
+    // (грабля 45): единственное доказательство — сколько строк задето.
+    if(!data || !data.length){
+      throw new Error('Ссылка не найдена, отозвана или обновлять её вы не вправе.');
+    }
+    return data[0];
   },
 
   // Отзыв - не удаление: отозванная ссылка остаётся видна в списке,
