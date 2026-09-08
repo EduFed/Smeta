@@ -20,11 +20,11 @@
      и присланный PDF. */
   :root{
     --paper:#F6F3EC; --paper-line:#D9D2BE; --ink:#1E2A32; --ink-soft:#5B6B74;
-    --white:#FFFDF9; --orange:#E8622C; --radius:10px;
+    --white:#FFFDF9; --orange:#E8622C; --green:#4A7C59; --radius:10px;
   }
   @media (prefers-color-scheme: dark){
     :root{ --paper:#191C1F; --paper-line:#333A40; --ink:#E8E6E1;
-           --ink-soft:#9AA5AC; --white:#111417; }
+           --ink-soft:#9AA5AC; --white:#111417; --green:#5E9A6E; }
   }
   *{box-sizing:border-box;}
   body{
@@ -54,6 +54,15 @@
   .chislo{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--ink-soft);
     white-space:nowrap;}
   .summa{margin-left:auto;font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--ink);white-space:nowrap;}
+  /* Готовность — тот же вид, что метка готовности в приложении
+     (.otm-knopka): сплошная рамка, моноширинное число, оранжевое —
+     частично, зелёное — целиком. Второго вида того же самого
+     не заводим: прораб и заказчик обсуждают одну и ту же строку. */
+  .gotov{flex:0 0 auto;border:1px solid var(--paper-line);border-radius:8px;
+    font-family:'JetBrains Mono',monospace;font-size:11px;line-height:1;
+    padding:5px 7px;white-space:nowrap;color:var(--ink-soft);font-weight:600;}
+  .gotov-chast{border-color:var(--orange);color:var(--orange);}
+  .gotov-vsyo{border-color:var(--green);color:var(--green);}
   .itogi{margin-top:18px;padding-top:12px;border-top:1px solid var(--paper-line);
     display:flex;flex-direction:column;gap:6px;max-width:440px;}
   .itog{display:flex;justify-content:space-between;align-items:baseline;gap:14px;
@@ -167,6 +176,17 @@ function data(v){
   return isNaN(d) ? '' : d.toLocaleDateString('ru-RU', { day:'numeric', month:'long', year:'numeric' });
 }
 
+// ГОТОВНОСТЬ СТРОКИ. Её кладут в снимок, только если прораб отметил
+// галочку «Показать ход работ»; нет отметки — нет и знака, а не ноль:
+// ноль означал бы «не начато», а не «не отмечали».
+function gotovnost(v){
+  if(v === null || v === undefined) return '';
+  const n = Number(v);
+  if(!isFinite(n)) return '';
+  return '<span class="gotov ' + (n >= 100 ? 'gotov-vsyo' : 'gotov-chast') + '">' +
+         (n >= 100 ? 'готово' : n + ' %') + '</span>';
+}
+
 function beda(zagolovok, poyasnenie){
   document.getElementById('koren').innerHTML =
     '<div class="beda"><h1>' + ekran(zagolovok) + '</h1>' +
@@ -232,6 +252,7 @@ function narisovat(d){
         '</span><span class="chislo">' + dengi(summa) + '</span></div>' +
         (g.stroki||[]).map(i=>
           '<div class="stroka"><span class="nazv">' + ekran(i.nazvanie) + '</span>' +
+          gotovnost(i.gotov) +
           '<span class="chislo">' + chislo(i.kolvo) + ' ' + ekran(i.edinica) + '</span>' +
           '<span class="chislo">× ' + dengi(i.cena) + '</span>' +
           '<span class="summa">' + dengi(i.summa) + '</span></div>'
@@ -246,6 +267,12 @@ function narisovat(d){
   if(gruppy.length){
     const ost = itog - poluch;
     ch.push('<div class="itogi">');
+    // Общая готовность — первой строкой итогов: заказчик чаще спрашивает
+    // «что сделано», чем «сколько осталось заплатить». Слово «Готовность»
+    // то же, что в приложении: три названия одного и того же читаются
+    // как три разные вещи.
+    if(sn.gotovnost !== null && sn.gotovnost !== undefined)
+      ch.push('<div class="itog"><span>Готовность</span><b>' + ekran(sn.gotovnost) + ' %</b></div>');
     ch.push('<div class="itog"><span>Стоимость работ</span><b>' + dengi(itog) + '</b></div>');
     if(opl.length) ch.push('<div class="itog"><span>Получено</span><b>' + dengi(poluch) + '</b></div>');
     ch.push('<div class="itog itog-glavnyy"><span>' + (ost < 0 ? 'Переплата' : 'Остаток к оплате') +
@@ -289,8 +316,12 @@ function narisovat(d){
     ).join('') + '</div>');
   }
 
+  // Прежде здесь стояло «попросите прислать ссылку заново». С 8 сентября
+  // 2026 это неверно: прораб обновляет ту же ссылку, адрес не меняется.
+  // Обещать за него, что он обновит, нельзя — поэтому только про адрес.
   ch.push('<div class="podval">Смета составлена в приложении «СМЕТА | РАСЧЁТ». ' +
-    'Это копия на день, указанный вверху: если работы менялись позже, попросите прислать ссылку заново.</div>');
+    'Это копия на день, указанный вверху. Адрес ссылки не меняется: когда данные обновят, ' +
+    'они появятся здесь же — достаточно открыть эту страницу заново.</div>');
 
   document.getElementById('koren').innerHTML = ch.join('');
   document.title = (p.name ? p.name + ' — ' : '') + 'Смета';

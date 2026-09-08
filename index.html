@@ -1160,6 +1160,14 @@
     .sel-work .manual-unit{flex:0 0 auto;}
     .sel-work .wsum{flex:1 1 auto;}
     .sel-work .btn-icon{margin-left:auto;}
+    /* ЗНАЧКИ СТОЯТ ВМЕСТЕ, А НЕ ВРАЗБРОС (8 сентября 2026).
+       Отступ «прижать вправо» доставался КАЖДОМУ значку, и три знака
+       у выданной ссылки расползались по всей ширине телефона. Прижимаем
+       только первый — остальные встают вплотную за ним, ровно как
+       на широком экране, где их и так собирает растянутое название.
+       Правим общее правило, а не одну строку ссылок: место со значками
+       у нас не одно, и второй вид того же самого заводить нельзя. */
+    .sel-work .btn-icon + .btn-icon{margin-left:0;}
   }
   .work-search{position:relative;}
   .work-search-input{width:100%;box-sizing:border-box;font-family:'Inter',sans-serif;font-size:13px;border:1px solid var(--paper-line);border-radius:var(--radius);padding:9px 11px;background:var(--white);color:var(--ink);}
@@ -4053,7 +4061,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-08-248';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-08-249';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -7198,7 +7206,7 @@ function ssylkaAdres(token){
 async function podelitsyaOpen(projectId){
   const p = (state.projects||[]).find(x=>x.id===projectId);
   if(!p) return;
-  uiPodelit = { projectId, oblast:'both', srok:90, lichnye:false, spisok:null, zanyat:false };
+  uiPodelit = { projectId, oblast:'both', srok:90, lichnye:false, hod:false, spisok:null, zanyat:false };
   let ov = document.getElementById('podelitOverlay');
   if(!ov){
     ov = document.createElement('div');
@@ -7242,9 +7250,9 @@ function podelitNarisovat(){
             // не отличить свежую ссылку от выданной месяц назад.
             const snDate = sh.sozdan ? ' · смета от ' + fmtDate(sh.sozdan) : '';
             return `<div class="sel-work">
-              <span class="sel-work-name">${escapeHtml(oblast)}${sh.show_personal?' · с личными данными':''}
+              <span class="sel-work-name">${escapeHtml(oblast)}${sh.show_personal?' · с личными данными':''}${String(sh.hod)==='true'?' · с ходом работ':''}
                 <span class="sel-work-sub">${sost}${sh.expires_at ? ' · до ' + fmtDate(sh.expires_at) : ''}${snDate}</span></span>
-              ${(otozvana||proshla) ? '' : `<button class="btn-icon" data-pod-obnov="${escapeAttr(sh.id)}" title="Обновить смету в ссылке">⟳</button>`}
+              ${(otozvana||proshla) ? '' : `<button class="btn-icon" data-pod-obnov="${escapeAttr(sh.id)}" title="Обновить данные в ссылке">⟳</button>`}
               ${(otozvana||proshla) ? '' : `<button class="btn-icon" data-pod-kopir="${escapeAttr(sh.token)}" title="Скопировать ссылку">⧉</button>`}
               ${otozvana ? '' : `<button class="btn-icon" data-pod-otozvat="${escapeAttr(sh.id)}" title="Отозвать">✕</button>`}
             </div>`;
@@ -7269,6 +7277,12 @@ function podelitNarisovat(){
           <span>Показать данные заказчика
             <i>телефон, почта, адрес. Паспорт не показывается никогда — свой паспорт заказчик знает, а ссылка может уйти в чужой чат</i></span>
         </label>
+        ${u.oblast === 'photos' ? '' : `
+        <label class="conds-spread">
+          <input type="checkbox" data-pod-hod ${u.hod?'checked':''}>
+          <span>Показать ход работ
+            <i>готовность у каждой строки сметы и общая по объекту. Кому назначена работа и что вы писали в примечаниях к отметкам, заказчик не видит. Уходит снимком вместе со сметой — обновляется той же кнопкой ⟳</i></span>
+        </label>`}
         <div class="ownw-note" style="margin-top:12px;">
           Смета уйдёт снимком — такой, какая она сейчас. Поправите её потом —
           нажмите ⟳ у выданной ссылки, и заказчик увидит новые числа по прежнему адресу.
@@ -7290,10 +7304,17 @@ function podelitNarisovat(){
   if(ok) ok.onclick = podelitSozdat;
   ov.querySelectorAll('[data-pod-set]').forEach(b=>{
     b.onclick = ()=>{ const [k,v] = b.getAttribute('data-pod-set').split('|');
-      uiPodelit[k] = (k==='srok') ? parseInt(v,10) : v; podelitNarisovat(); };
+      uiPodelit[k] = (k==='srok') ? parseInt(v,10) : v;
+      // «Только снимки» — сметы в ссылке нет вовсе, а готовность живёт
+      // на её строках. Значит и хода работ там нет: галочка, которая
+      // ничего не делает, врёт убедительнее отсутствующей.
+      if(k === 'oblast' && v === 'photos') uiPodelit.hod = false;
+      podelitNarisovat(); };
   });
   const l = ov.querySelector('[data-pod-lichnye]');
   if(l) l.onchange = ()=>{ uiPodelit.lichnye = l.checked; };
+  const hd = ov.querySelector('[data-pod-hod]');
+  if(hd) hd.onchange = ()=>{ uiPodelit.hod = hd.checked; };
   ov.querySelectorAll('[data-pod-obnov]').forEach(b=>{
     b.onclick = ()=> podelitObnovit(b.getAttribute('data-pod-obnov'));
   });
@@ -7333,7 +7354,7 @@ async function podelitSozdat(){
     // а заказчик увидит его вместе со снимками и оплатами с сервера.
     // Разойдись они — заказчик увидел бы смету одной поры, а оплаты другой.
     await persist();
-    const sh = await DB.vydatSsylku(p, u.oblast, u.srok, u.lichnye);
+    const sh = await DB.vydatSsylku(p, u.oblast, u.srok, u.lichnye, u.hod);
     u.spisok = await DB.spisokSsylok(u.projectId);
     u.zanyat = false; podelitNarisovat();
     await podelitKopir(sh.token);
@@ -7354,7 +7375,7 @@ async function podelitObnovit(id){
   if(!u || u.zanyat) return;
   const p = (state.projects||[]).find(x=>x.id===u.projectId);
   if(!p) return;
-  if(!await sprosit('Обновить смету в этой ссылке?\n\nЗаказчик по прежнему адресу увидит смету и материалы по нынешнему состоянию. Прежний снимок при этом пропадёт.')) return;
+  if(!await sprosit('Обновить данные в этой ссылке?\n\nЗаказчик по прежнему адресу увидит смету, материалы и — если ссылка их показывает — ход работ по нынешнему состоянию. Прежний снимок при этом пропадёт.')) return;
   u.zanyat = true; podelitNarisovat();
   try{
     if(LOCAL_TEST){
@@ -7369,7 +7390,7 @@ async function podelitObnovit(id){
     await DB.obnovitSsylku(id, p);
     u.spisok = await DB.spisokSsylok(u.projectId);
     u.zanyat = false; podelitNarisovat();
-    podelitSkazat('Смета в ссылке обновлена. Адрес прежний — пересылать заново не нужно.', 'ok');
+    podelitSkazat('Данные в ссылке обновлены. Адрес прежний — пересылать заново не нужно.', 'ok');
   }catch(e){
     console.error('Обновление ссылки не прошло', e);
     u.zanyat = false; podelitNarisovat();
@@ -7406,7 +7427,18 @@ async function podelitOtozvat(id){
 // В снимок кладём ТОЛЬКО то, что видит заказчик. Ничего про мастеров:
 // ни исполнителей, ни долей, ни выплат. Сервер за этим больше не следит -
 // он отдаёт снимок как есть, значит следим здесь.
-function snimokSmety(proj){
+//
+// ХОД РАБОТ (`sHodom`) — ТОЛЬКО ПО ГАЛОЧКЕ В ОКНЕ «ПОДЕЛИТЬСЯ».
+// Галочка снята — готовности в снимке нет вовсе: ни по строкам, ни общей.
+// Не «есть, но спрятано»: снимок уходит на сервер как есть, и всё, что
+// в нём лежит, заказчик при желании прочитает.
+//
+// ИСПОЛНИТЕЛЯ И ПРИМЕЧАНИЯ К ОТМЕТКАМ НЕ КЛАДЁМ НИКОГДА, ни при какой
+// галочке. Решение владельца 8 сентября 2026: «заказчик не должен видеть,
+// кому назначена работа. А видеть должен ровным счётом строку сметы
+// и готовность, всё». Примечание к отметке («ждём плитку», «переделать
+// за Серёгой») — рабочая запись прораба, а не отчёт заказчику.
+function snimokSmety(proj, sHodom){
   const d = buildEstimateData(proj, { dlyaZakazchika:true });
   // ДО КОПЕЙКИ, А НЕ КАК ВЫШЛО. Количество бывает дробным (8,12 м.п.),
   // и сумма строки в двоичной арифметике получается вида
@@ -7416,16 +7448,22 @@ function snimokSmety(proj){
   const kop = v => Math.round((Number(v)||0) * 100) / 100;
   const gruppy = d.groups.map(g=>({
     nazvanie: g.room,
-    stroki: g.items.map(i=>({
-      nazvanie: i.name, edinica: i.unit,
-      kolvo: i.qty, cena: i.price, summa: kop(i.sum)
-    }))
+    stroki: g.items.map(i=>{
+      const st = {
+        nazvanie: i.name, edinica: i.unit,
+        kolvo: i.qty, cena: i.price, summa: kop(i.sum)
+      };
+      // Готовность идёт НА СТРОКЕ сметы, а не вторым списком тех же
+      // работ: заказчик не должен читать одно и то же дважды.
+      if(sHodom && i.gotov !== null && i.gotov !== undefined) st.gotov = i.gotov;
+      return st;
+    })
   }));
   // Итог складываем из ОКРУГЛЁННЫХ строк, а не округляем сумму сырых:
   // иначе на экране строки не сойдутся с итогом. То же правило,
   // что у condSum в приложении.
   const itog = kop(gruppy.reduce((a,g)=> a + g.stroki.reduce((b,i)=> b + i.summa, 0), 0));
-  return {
+  const sn = {
     v: 1,                                  // версия снимка, на вырост
     sozdan: new Date().toISOString(),
     itog: itog,
@@ -7437,6 +7475,20 @@ function snimokSmety(proj){
       kolvo: m.qty, pometka: m.note||''
     }))
   };
+  if(sHodom){
+    // Отметка «ход работ показываем» живёт в САМОМ снимке: колонки под
+    // неё в базе нет, а кнопка ⟳ переписывает снимок целиком — без этой
+    // отметки обновление молча выключило бы ход работ у выданной ссылки.
+    sn.hod = true;
+    // Общая готовность — тем же счётом, что и в приложении (по деньгам,
+    // otmDolya). Второго способа считать её не заводим: разойдутся.
+    // Пока не отмечено ничего, не пишем и ноль: ноль сказал бы «не начато»
+    // там, где на деле просто не отмечали.
+    const otmecheno = (proj.rooms||[]).some(r=> (r.works||[]).some(otmEst));
+    const vsego = otmecheno ? otmDolya(proj.rooms, proj) : null;
+    if(vsego !== null) sn.gotovnost = vsego;
+  }
+  return sn;
 }
 
 // ---------- КАЛЬКУЛЯТОР В ПОЛЯХ ВВОДА (1 сентября 2026) ----------
@@ -8637,7 +8689,7 @@ const DB = {
   // Значит следить, чтобы в снимок не попало лишнее, - наша работа,
   // а не сервера. В `snimokSmety` кладётся только то, что видит
   // заказчик: ни исполнителей, ни долей, ни выплат.
-  async vydatSsylku(proj, oblast, srokDney, lichnye){
+  async vydatSsylku(proj, oblast, srokDney, lichnye, hod){
     const token = newUuid() + newUuid().replace(/-/g,'');   //
     const do_ = srokDney
       ? new Date(Date.now() + srokDney*24*3600*1000).toISOString()
@@ -8649,7 +8701,7 @@ const DB = {
       show_personal: !!lichnye,
       expires_at: do_,
       created_by: currentUser.id,
-      estimate_snapshot: snimokSmety(proj)
+      estimate_snapshot: snimokSmety(proj, !!hod)
     }).select('id, token, scope, show_personal, expires_at, created_at').single();
     if(error) throw error;
     return data;
@@ -8662,7 +8714,7 @@ const DB = {
   async spisokSsylok(projectId){
     const POLYA = 'id, token, scope, show_personal, expires_at, revoked_at, created_at';
     let r = await sb.from('project_shares')
-      .select(POLYA + ', sozdan:estimate_snapshot->>sozdan')
+      .select(POLYA + ', sozdan:estimate_snapshot->>sozdan, hod:estimate_snapshot->>hod')
       .eq('project_id', projectId)
       .order('created_at', { ascending:false });
     if(r.error){
@@ -8686,8 +8738,21 @@ const DB = {
   // это решения, принятые при выдаче, и менять их заодно нельзя.
   // Отозванную ссылку не обновляем вовсе — отзыв окончателен.
   async obnovitSsylku(id, proj){
+    // ХОД РАБОТ — РЕШЕНИЕ, ПРИНЯТОЕ ПРИ ВЫДАЧЕ, И ЖИВЁТ ОНО В СНИМКЕ.
+    // Отдельной колонки под него нет, а снимок мы переписываем целиком:
+    // не спросив прежний, обновление молча выключило бы ход работ у той
+    // ссылки, где прораб его включал. Спрашиваем у базы, а не у списка
+    // на экране: список мог прийти запасным запросом, без этого поля.
+    const pred = await sb.from('project_shares')
+      .select('hod:estimate_snapshot->>hod')
+      .eq('id', id)
+      .is('revoked_at', null)
+      .maybeSingle();
+    if(pred.error) throw pred.error;
+    if(!pred.data) throw new Error('Ссылка не найдена, отозвана или обновлять её вы не вправе.');
+    const sHodom = String(pred.data.hod) === 'true';
     const { data, error } = await sb.from('project_shares')
-      .update({ estimate_snapshot: snimokSmety(proj) })
+      .update({ estimate_snapshot: snimokSmety(proj, sHodom) })
       .eq('id', id)
       .is('revoked_at', null)
       .select('id');
@@ -15376,7 +15441,13 @@ function buildEstimateData(proj, opts){
       // цену округляем до рубля, сумму считаем от неё — тогда в смете
       // кол-во × цена = сумма без расхождений на копейки
       const price = Math.round(num(work.price) * k);
-      items.push({ name:work.name||'—', unit:workUnitLabel(work,rw)||'', qty:line.qty, price:price, sum:line.qty*price });
+      // ГОТОВНОСТЬ — ЗДЕСЬ, В ЕДИНСТВЕННОМ ИСТОЧНИКЕ СТРОК СМЕТЫ.
+      // Снимок заказчику собирается из этих же строк. Считать готовность
+      // отдельно и сопоставлять по названию — значит завести второй путь
+      // к тем же данным, а два пути расходятся молча (грабля 43).
+      // Пусто означает «не отмечали», а не ноль.
+      items.push({ name:work.name||'—', unit:workUnitLabel(work,rw)||'', qty:line.qty, price:price, sum:line.qty*price,
+                   gotov: otmChislo(rw) });
     });
     if(items.length) groups.push({ room: room.name||'Помещение', items });
   });
