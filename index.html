@@ -1066,6 +1066,44 @@
   }
   .ph-item:hover .ph-del{display:block;}
   .ph-count{font-family:'JetBrains Mono',monospace;text-transform:none;letter-spacing:0;}
+  /* СВОРАЧИВАНИЕ БЛОКА ФОТОГРАФИЙ (задача 2026-09-09-05).
+     Владелец 9 сентября 2026: «лента фото слишком большая, фото лучше
+     спрятать за кнопку». Своего вида раскрывающегося блока не заводим —
+     берём .cust-acc целиком, как «Материалы» и «Условия объекта».
+     Здесь только то, чего у них нет: кнопка съёмки справа от заголовка
+     и метки, которые закрытый блок не вправе спрятать. */
+  .ph-shapka{display:flex;align-items:center;gap:4px;}
+  /* Счёт — сведение, а не заголовок: тем же весом, что подписи рядом. */
+  .ph-shapka .ph-count{font-size:12px;font-weight:400;color:var(--ink-soft);}
+  .ph-shapka .cust-head{flex:1 1 auto;min-width:0;flex-wrap:wrap;padding:12px 14px;gap:6px;}
+  /* Тело раскрытого блока: сверху нужен отступ, у .cust-acc его нет —
+     там первым идёт содержимое со своим полем. */
+  .ph-block.cust-acc.open > .cust-body{padding-top:12px;}
+  /* Кнопка съёмки видна и при закрытом блоке: мастер стоит на объекте
+     с телефоном в руках, и лишнее нажатие здесь дороже места на экране. */
+  .ph-add-shapka{
+    flex:0 0 auto;display:inline-flex;align-items:center;gap:5px;
+    min-height:38px;padding:8px 12px;margin-right:10px;
+    border:1px dashed var(--orange);border-radius:var(--radius);
+    background:transparent;color:var(--orange);cursor:pointer;
+    font-family:inherit;font-size:14px;line-height:1;
+  }
+  .ph-add-shapka:hover{ background:color-mix(in srgb, var(--orange) 8%, transparent); }
+  .ph-add-shapka:active{ background:color-mix(in srgb, var(--orange) 16%, transparent); }
+  /* МЕТКИ В ЗАГОЛОВКЕ. Закрытый блок не имеет права спрятать
+     «ждёт отправки»: снимок, который человек считает сделанным, обязан
+     быть сделан (задача 2026-09-03-03). То же про новые комментарии —
+     значок разговора живёт на плитке, а плиток у закрытого блока нет.
+     Когда блок раскрыт, метки убираем: всё это видно на самих плитках. */
+  .ph-metki{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;}
+  .ph-block.open .ph-metki{display:none;}
+  .ph-metka-zhdyot{
+    background:var(--pv-plotnaya);color:var(--pv-tekst);
+    font-family:'JetBrains Mono',monospace;font-size:10px;text-transform:none;letter-spacing:0;
+    padding:3px 7px;border-radius:5px;line-height:1.3;
+  }
+  /* Значок разговора тот же самый, что на плитке, — только не наложением */
+  .ph-shapka-komm .ph-komm{position:static;}
   /* КНОПКА «ДОБАВИТЬ ФОТО».
      Раньше это была обычная ссылка-добавление, как «+ добавить окно», —
      и терялась среди них. Здесь действие другое: человек стоит
@@ -1091,6 +1129,7 @@
   /* Тот, кто только смотрит, снимки видит, но не добавляет и не удаляет.
      Прячем стилями, а не вырезанием из разметки. */
   .viewer-mode .ph-add,
+  .viewer-mode .ph-add-shapka,
   .viewer-mode .ph-del{display:none !important;}
   /* Скачивание — только тем, кто вправе править. Класс viewer-mode
      стоит на главной области, а просмотрщик снимка живёт отдельно,
@@ -4126,7 +4165,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-09-258';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-09-259';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -7043,6 +7082,7 @@ function applyViewerMode(){
       btn.hasAttribute('data-mat-toggle')   ||   // раскрыть «Материалы»
       btn.hasAttribute('data-extra-toggle') ||   // раскрыть «Дополнительные работы»
       btn.hasAttribute('data-conds-toggle') ||   // раскрыть «Условия объекта»
+      btn.hasAttribute('data-ph-toggle')    ||   // раскрыть «Фотографии»
       btn.hasAttribute('data-pay-toggle')   ||   // раскрыть «Расклад по деньгам»
       btn.hasAttribute('data-applies-toggle')||  // раскрывающийся список — только смотрит
       btn.hasAttribute('data-more')         ||
@@ -11588,6 +11628,8 @@ async function kommMetaZagruzit(){
   }
 }
 
+const KOMM_ZNACHOK_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 9.9 9.9 0 0 1-3.2-.5L3 21l1.7-4.6A8.2 8.2 0 0 1 3 11.5a8.4 8.4 0 0 1 9-8.4 8.4 8.4 0 0 1 9 8.4z"/></svg>';
+
 function kommZnachkiRisovat(){
   document.querySelectorAll('[data-ph-komm]').forEach(el=>{
     const z = kommMeta.get(el.getAttribute('data-ph-komm'));
@@ -11595,8 +11637,25 @@ function kommZnachkiRisovat(){
     const novoe = z.novyh > 0;
     el.innerHTML = `<span class="ph-komm ${novoe ? 'ph-komm-novoe' : ''}"
         title="${novoe ? z.novyh + ' новых из ' + z.vsego : 'комментариев: ' + z.vsego}">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 9.9 9.9 0 0 1-3.2-.5L3 21l1.7-4.6A8.2 8.2 0 0 1 3 11.5a8.4 8.4 0 0 1 9-8.4 8.4 8.4 0 0 1 9 8.4z"/></svg>
+      ${KOMM_ZNACHOK_SVG}
       ${novoe ? z.novyh : z.vsego}</span>`;
+  });
+  // ЗАГОЛОВОК ЗАКРЫТОГО БЛОКА. Значок разговора живёт на плитке, а плиток
+  // у закрытого блока нет вовсе — новое сообщение стало бы невидимым.
+  // Значок тот же самый и тем же кодом, только в шапке.
+  // Показываем ТОЛЬКО новое: «разговор есть» видно на плитках, а звать
+  // человека в закрытый блок должно лишь непрочитанное.
+  const proj = currentProject();
+  document.querySelectorAll('[data-ph-novoe]').forEach(el=>{
+    const spisok = proj ? roomPhotos(proj, el.getAttribute('data-ph-novoe')) : [];
+    let vsego = 0, novyh = 0;
+    for(const a of spisok){
+      const z = kommMeta.get(a.id);
+      if(z){ vsego += z.vsego; novyh += z.novyh; }
+    }
+    if(!novyh){ el.innerHTML = ''; return; }
+    el.innerHTML = `<span class="ph-komm ph-komm-novoe"
+        title="${novyh} новых из ${vsego}">${KOMM_ZNACHOK_SVG} ${novyh}</span>`;
   });
 }
 
@@ -20578,23 +20637,16 @@ function renderRoom(room){
 // хранилище закрыто, адрес выдаётся обработчиком на минуты. Поэтому
 // сначала ставим рамки, а картинки подставляет photoFillThumbs,
 // когда сервер ответит.
-function renderRoomPhotos(room){
-  kommMetaPozzhe();      // один сбор на всё дерево, с отсрочкой
-  const proj = currentProject();
-  const list = roomPhotos(proj, room.id);
-  const lim  = photoLimit(proj);
-  const total = projectPhotos(proj).length;
-  // Счётчик показываем только когда предел известен. Пока тариф не приехал,
-  // «0 из 5» соврало бы платящему (грабля 48).
-  const cnt = (lim === null)
-    ? (total ? String(list.length) : '')
-    : (list.length + ' · всего ' + total + ' из ' + lim);
+// Какие блоки фотографий раскрыты — по помещению, в пределах сессии.
+// По умолчанию закрыт: решение владельца 9 сентября 2026.
+let uiFotoOpen = {};
+
+// ПЛИТКИ СНИМКОВ отдельной функцией. Закрытый блок их не рисует вовсе:
+// пока в разметке нет ни одного <img>, браузеру нечего тянуть, и помещение
+// открывается без десятка запросов за картинками. Это и есть выгода
+// сворачивания на плохой связи, а не только место на экране.
+function phPlitkiHtml(list){
   return `
-    <div class="subsection ph-block" data-ph-room="${room.id}">
-      <div class="subsection-title">
-        Фотографии ${cnt ? `<span class="ph-count">${escapeHtml(cnt)}</span>` : ''}
-      </div>
-      <div class="ph-grid" data-ph-grid="${room.id}">
         ${list.map(a=>`
           <div class="ph-item${ocheredZhdyot(a.id)?' foto-zhdyot':''}" data-ph-id="${a.id}" title="${escapeAttr(photoHint(a))}">
             <div class="ph-thumb" data-ph-thumb="${a.id}">${
@@ -20616,13 +20668,49 @@ function renderRoomPhotos(room){
             }</div>
             <span class="ph-komm-mesto" data-ph-komm="${a.id}"></span>
             <button type="button" class="ph-del no-print" data-ph-del="${a.id}" title="Удалить снимок">✕</button>
-          </div>`).join('')}
+          </div>`).join('')}`;
+}
+
+function renderRoomPhotos(room){
+  kommMetaPozzhe();      // один сбор на всё дерево, с отсрочкой
+  const proj = currentProject();
+  const list = roomPhotos(proj, room.id);
+  const lim  = photoLimit(proj);
+  const total = projectPhotos(proj).length;
+  // Счётчик показываем только когда предел известен. Пока тариф не приехал,
+  // «0 из 5» соврало бы платящему (грабля 48).
+  const cnt = (lim === null)
+    ? (total ? String(list.length) : '')
+    : (list.length + ' · всего ' + total + ' из ' + lim);
+  // По умолчанию блок закрыт (задача 2026-09-09-05).
+  const open = !!uiFotoOpen[room.id];
+  // Сколько снимков помещения ещё не уехало на сервер.
+  const zhdut = list.filter(a=> ocheredZhdyot(a.id)).length;
+  return `
+    <div class="subsection ph-block cust-acc ${open?'open':''}" data-ph-room="${room.id}">
+      <div class="ph-shapka">
+        <button type="button" class="cust-head no-print" data-ph-toggle="${room.id}" aria-expanded="${open}">
+          <span class="chev">▾</span>
+          <span class="zn-ryad">${ZN_KAMERA}<span>Фотографии</span></span>
+          ${cnt ? `<span class="ph-count">${escapeHtml(cnt)}</span>` : ''}
+          <span class="ph-metki">
+            ${zhdut ? `<span class="ph-metka-zhdyot">${zhdut} ${plural(zhdut,'ждёт','ждут','ждут')} отправки</span>` : ''}
+            <span class="ph-shapka-komm" data-ph-novoe="${room.id}"></span>
+          </span>
+        </button>
+        <button type="button" class="ph-add-shapka no-print" data-ph-add="${room.id}"
+                title="Добавить фото" aria-label="Добавить фото">
+          <span class="ph-add-ico" aria-hidden="true">${ZN_KAMERA}</span><span>+</span>
+        </button>
       </div>
-      <input type="file" accept="image/*" multiple class="ph-file" data-ph-file="${room.id}" hidden>
-      <button type="button" class="ph-add no-print zn-ryad po-centru" data-ph-add="${room.id}">
-        <span class="ph-add-ico" aria-hidden="true">${ZN_KAMERA}</span><span>Добавить фото</span>
-      </button>
-      <div class="ph-msg" data-ph-msg="${room.id}"></div>
+      <div class="cust-body">
+        <div class="ph-grid" data-ph-grid="${room.id}">${open ? phPlitkiHtml(list) : ''}</div>
+        <input type="file" accept="image/*" multiple class="ph-file" data-ph-file="${room.id}" hidden>
+        <button type="button" class="ph-add no-print zn-ryad po-centru" data-ph-add="${room.id}">
+          <span class="ph-add-ico" aria-hidden="true">${ZN_KAMERA}</span><span>Добавить фото</span>
+        </button>
+        <div class="ph-msg" data-ph-msg="${room.id}"></div>
+      </div>
     </div>
   `;
 }
@@ -20649,6 +20737,9 @@ function photoHint(a){
 // несколько помещений, «первая на странице» перестанет быть «той самой»
 // (грабля 49).
 async function photoFillThumbs(roomId){
+  // Закрытый блок картинок не тянет вовсе — ради этого он и закрыт
+  // (задача 2026-09-09-05). Плиток в нём нет, ставить нечего и некуда.
+  if(!uiFotoOpen[roomId]) return;
   const proj = currentProject();
   const list = roomPhotos(proj, roomId);
   if(!list.length) return;
@@ -20682,6 +20773,69 @@ async function photoFillThumbs(roomId){
       if(!c.querySelector('img')) c.innerHTML = '<span class="ph-wait">' + pochemu + '</span>';
     });
   }
+}
+
+// СОБЫТИЯ ПЛИТОК — открыть снимок на весь экран и удалить его.
+// Отдельной функцией потому, что плитки появляются двумя путями: при
+// перерисовке дерева и при раскрытии блока фотографий. Один код на оба
+// пути: похожие, но свои правила расходятся молча.
+function fotoPlitkiSobytiya(scope){
+  // Нажатие ловим на рамке, а не на самой картинке: у картинки отключены
+  // события, чтобы телефон не перехватывал долгое нажатие своим меню.
+  scope.querySelectorAll('[data-ph-thumb]').forEach(el=>{
+    el.onclick = ()=>{
+      const id = el.getAttribute('data-ph-thumb');
+      const box = el.closest('.ph-block[data-ph-room]');
+      if(box) photoViewerOpen(box.getAttribute('data-ph-room'), id);
+    };
+  });
+  scope.querySelectorAll('[data-ph-del]').forEach(el=>{
+    el.onclick = async ()=>{
+      const id = el.getAttribute('data-ph-del');
+      // Спрашиваем всегда: снимок скрытых работ, удалённый по ошибке,
+      // не восстановить, а спор с заказчиком может начаться через полгода.
+      if(!await sprosit('Удалить снимок? Восстановить его будет нельзя.',
+                        { da:'Удалить', opasno:true })) return;
+      try{
+        await photoDelete(currentProject(), id);
+        render();
+      }catch(e){
+        console.error('Photo delete failed', e);
+        soobschit('Не удалось удалить снимок: ' + (e && e.message ? e.message : 'сервер отказал'));
+      }
+    };
+  });
+}
+
+// РАСКРЫТЬ ИЛИ ЗАКРЫТЬ блок фотографий. Одно место на оба повода: нажали
+// заголовок и нажали «добавить фото» при закрытом блоке. Раскрытие идёт
+// тем же способом, что у «Материалов» и «Условий объекта», — accBeforeToggle
+// / accAfterToggle, класс .open на .cust-acc.
+function fotoBlokPokazat(roomId, open){
+  uiFotoOpen[roomId] = open;
+  const box = document.querySelector(`.ph-block[data-ph-room="${roomId}"]`);
+  if(!box) return;
+  const grid = box.querySelector('.ph-grid');
+  if(open && grid && !grid.firstElementChild){
+    const proj = currentProject();
+    grid.innerHTML = phPlitkiHtml(proj ? roomPhotos(proj, roomId) : []);
+    fotoPlitkiSobytiya(grid);
+    // Тому, кто только смотрит, запрещаем ВСЁ на новых плитках: белый
+    // список кнопок отработал при перерисовке и этих кнопок ещё не видел.
+    if(box.closest('.viewer-mode')){
+      grid.querySelectorAll('button').forEach(b=>{
+        b.disabled = true; b.setAttribute('aria-disabled','true');
+      });
+    }
+    kommZnachkiRisovat();
+  }
+  const body = box.querySelector('.cust-body');
+  accBeforeToggle(body, open);
+  box.classList.toggle('open', open);
+  accAfterToggle(body);
+  const knopka = box.querySelector('[data-ph-toggle]');
+  if(knopka) knopka.setAttribute('aria-expanded', open);
+  if(open) photoFillThumbs(roomId);
 }
 
 // ОДИН СПОСОБ СЧЁТА, А НЕ ДВА.
@@ -21422,8 +21576,22 @@ function attachHandlers(){
                   'Снимок, который негде сохранить, хуже неснятого.');
         return;
       }
+      // Блок раскрываем сразу, ещё до выбора файла: ход отправки и новая
+      // плитка живут внутри, и человек должен их видеть, а не гадать,
+      // уехал ли снимок. Делаем это синхронно, в том же нажатии, —
+      // иначе iOS не откроет камеру.
+      if(!uiFotoOpen[roomId]) fotoBlokPokazat(roomId, true);
       const inp = main.querySelector(`[data-ph-file="${roomId}"]`);
       if(inp) inp.click();
+    };
+  });
+
+  // Свернуть/развернуть блок фотографий — тем же способом, что «Материалы»
+  // и «Условия объекта». Своего вида раскрывающихся блоков не заводим.
+  main.querySelectorAll('[data-ph-toggle]').forEach(el=>{
+    el.onclick = ()=>{
+      const roomId = el.getAttribute('data-ph-toggle');
+      fotoBlokPokazat(roomId, !uiFotoOpen[roomId]);
     };
   });
 
@@ -21464,33 +21632,9 @@ function attachHandlers(){
     };
   });
 
-  // Нажатие на миниатюру — открыть на весь экран.
-  // Ловим на рамке, а не на самой картинке: у картинки отключены
-  // события, чтобы телефон не перехватывал долгое нажатие своим меню.
-  main.querySelectorAll('[data-ph-thumb]').forEach(el=>{
-    el.onclick = ()=>{
-      const id = el.getAttribute('data-ph-thumb');
-      const box = el.closest('.ph-block[data-ph-room]');
-      if(box) photoViewerOpen(box.getAttribute('data-ph-room'), id);
-    };
-  });
-
-  main.querySelectorAll('[data-ph-del]').forEach(el=>{
-    el.onclick = async ()=>{
-      const id = el.getAttribute('data-ph-del');
-      // Спрашиваем всегда: снимок скрытых работ, удалённый по ошибке,
-      // не восстановить, а спор с заказчиком может начаться через полгода.
-      if(!await sprosit('Удалить снимок? Восстановить его будет нельзя.',
-                        { da:'Удалить', opasno:true })) return;
-      try{
-        await photoDelete(proj, id);
-        render();
-      }catch(e){
-        console.error('Photo delete failed', e);
-        soobschit('Не удалось удалить снимок: ' + (e && e.message ? e.message : 'сервер отказал'));
-      }
-    };
-  });
+  // Нажатие на миниатюру и удаление — общей функцией: те же обработчики
+  // нужны плиткам, которые появляются при раскрытии блока.
+  fotoPlitkiSobytiya(main);
 
   // Подставить картинки в нарисованные рамки. Идём по блокам, а не по
   // всей странице: помещений на экране несколько, и «первый найденный»
