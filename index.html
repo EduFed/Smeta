@@ -4091,7 +4091,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-08-251';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-09-252';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -8475,58 +8475,119 @@ const DB = {
       }
     };
 
-    // ПОРЯДОК ВАЖЕН. Строка сметы ссылается на позицию прайса, материал
-    // объекта — на справочник материалов. Поэтому справочники пишутся
-    // ПЕРВЫМИ: иначе база отобьёт запись «ссылка ведёт в никуда»
-    // (ошибка 23503, ловили её 1 августа).
-    await put('catalog_items', catRows, 'id');
-    await put('material_items', matRows, 'id');
+    // ОТПРАВКА ВОЛНАМИ (с 8 сентября 2026).
+    //
+    // Раньше все запросы шли строго друг за другом: до двух десятков
+    // ожиданий подряд на одно сохранение. Сервер отвечает за десятки
+    // миллисекунд — время уходило не на работу, а на само число шагов.
+    // Владелец 5 и 8 сентября 2026: «полное сохранение дольше пятнадцати
+    // секунд», «ссылка заказчику долго формируется» (она ждёт того же
+    // сохранения).
+    //
+    // Теперь то, что друг от друга не зависит, уходит РАЗОМ, а зависимое —
+    // волнами: сперва родители, потом дети. Отбор изменившегося не тронут
+    // вовсе, изменилось только то, как запросы уходят.
+    //
+    // ЗАВИСИМОСТИ (внешние ключи, сняты с боевой базы 8 сентября 2026):
+    //   rooms, project_customers, project_extra_works, project_materials,
+    //   customer_payments, master_payouts  ->  projects
+    //   room_works, room_openings          ->  rooms
+    //   room_work_prices                   ->  room_works
+    //   extra_work_prices                  ->  project_extra_works
+    //   room_works.work_id -> catalog_items, project_materials.mat_id ->
+    //   material_items (оба ON DELETE SET NULL, поэтому справочники
+    //   пишутся первыми, а удаляются последними — как и было).
+    // Всё, что стоит в одной волне, между собой не связано ничем.
+    //
+    // ОТКАЗ НЕ ТЕРЯЕТСЯ, и это здесь главное. Внутри волны ждём ВСЕ
+    // ответы, а не первый отказ: при обычном Promise.all второй отказ стал
+    // бы необработанным обещанием и до человека бы не дошёл. Хоть один
+    // отказ в волне — следующие волны не идут вовсе (иначе дети полетели
+    // бы к несозданным родителям), а наверх уходит ошибка первой по
+    // порядку таблицы: в ней сохраняются code и details, по которым onFail
+    // объясняет причину. Тексты остальных дописаны к её сообщению, чтобы
+    // ни один не пропал.
+    const volna = async (...zaprosy)=>{
+      const ishody = await Promise.allSettled(zaprosy);
+      const otkazy = ishody.filter(r=> r.status === 'rejected')
+                           .map(r=> r.reason || new Error('отказ без причины'));
+      if(!otkazy.length) return;
+      if(otkazy.length === 1) throw otkazy[0];
+      const glavnaya = otkazy[0];
+      const svodka = new Error(otkazy.map(e=> (e && e.message) || String(e)).join(' | '));
+      svodka.code    = glavnaya.code;
+      svodka.status  = glavnaya.status;
+      svodka.details = glavnaya.details;
+      svodka.hint    = glavnaya.hint;
+      throw svodka;
+    };
 
-    // затем удаления внутри проектов — сверху вниз, от детей к родителям
-    await drop('room_works', 'lid', delWorks);
-    await drop('room_openings', 'id', delOpens);
-    await drop('project_extra_works', 'id', delExtra);
-    await drop('project_materials', 'id', delPmat);
-    await drop('customer_payments', 'id', delPay);
-    await drop('master_payouts', 'id', delVyp);
-    await drop('rooms', 'id', delRooms);
-    await drop('projects', 'id', delProjects);
+    // Волна 1. Справочники (на них ссылаются строки смет и материалы
+    // объекта) и удаления внутри проектов — сверху вниз, от детей
+    // к родителям. Ни одна из этих таблиц не зависит от другой.
+    await volna(
+      put('catalog_items', catRows, 'id'),
+      put('material_items', matRows, 'id'),
+      drop('room_works', 'lid', delWorks),
+      drop('room_openings', 'id', delOpens),
+      drop('project_extra_works', 'id', delExtra),
+      drop('project_materials', 'id', delPmat),
+      drop('customer_payments', 'id', delPay),
+      drop('master_payouts', 'id', delVyp)
+    );
 
-    // и сама смета
-    await put('projects', projRows, 'id');
-    await put('project_customers', custRows, 'project_id');
-    await put('rooms', roomRows, 'id');
-    await put('room_openings', openRows, 'id');
-    await put('room_works', workRows, 'lid');
-    await put('project_extra_works', extraRows, 'id');
-    await put('project_materials', pmatRows, 'id');
-    await put('customer_payments', payRows, 'id');
-    await put('master_payouts', vypRows, 'id');
+    // Волна 2. Помещения — только после своих детей.
+    await volna( drop('rooms', 'id', delRooms) );
 
-    // ЦЕНЫ — ПОСЛЕДНИМИ. У таблицы цен внешний ключ на строку сметы:
-    // пока строки нет, цену записать некуда. Порядок обязателен.
+    // Волна 3. Проекты — последними из удаляемых.
+    await volna( drop('projects', 'id', delProjects) );
+
+    // Волна 4. Сам проект — родитель всего остального.
+    await volna( put('projects', projRows, 'id') );
+
+    // Волна 5. Всё, что ссылается на проект напрямую.
+    await volna(
+      put('project_customers', custRows, 'project_id'),
+      put('rooms', roomRows, 'id'),
+      put('project_extra_works', extraRows, 'id'),
+      put('project_materials', pmatRows, 'id'),
+      put('customer_payments', payRows, 'id'),
+      put('master_payouts', vypRows, 'id')
+    );
+
+    // Волна 6. Дети помещения и цены разовых работ.
     // Строки без цены пропускаем: пустая цена означает «не положено
     // видеть», и записывать её как ноль нельзя.
-    await put('room_work_prices',  workPriceRows.filter(r=> r.price !== null && r.price !== undefined), 'lid');
-    await put('extra_work_prices', extraPriceRows.filter(r=> r.price !== null && r.price !== undefined), 'id');
+    await volna(
+      put('room_openings', openRows, 'id'),
+      put('room_works', workRows, 'lid'),
+      put('extra_work_prices', extraPriceRows.filter(r=> r.price !== null && r.price !== undefined), 'id')
+    );
 
-    // удаление справочников — В САМОМ КОНЦЕ. Если на позицию ещё
-    // ссылались строки смет, база сама обнулит ссылку (ON DELETE SET NULL),
-    // а название и цена в строке останутся — смета не пострадает.
-    await drop('catalog_items', 'id', delCat);
-    await drop('material_items', 'id', delMat);
-
+    // Волна 7. Цены строк сметы — у них внешний ключ на строку сметы,
+    // раньше волны 6 их записать некуда.
+    // Здесь же удаление справочников — В САМОМ КОНЦЕ, как и было: если
+    // на позицию ещё ссылались строки смет, база сама обнулит ссылку
+    // (ON DELETE SET NULL), а название и цена в строке останутся.
+    // И реквизиты с настройками — они не зависят ни от чего, но пусть
+    // уходят там же, где уходили прежде: в конце.
+    const posledniye = [
+      put('room_work_prices',  workPriceRows.filter(r=> r.price !== null && r.price !== undefined), 'lid'),
+      drop('catalog_items', 'id', delCat),
+      drop('material_items', 'id', delMat)
+    ];
     if(execChanged){
       const e = cur.executor || {};
-      await put('user_executor', [{
+      posledniye.push(put('user_executor', [{
         user_id: uid_, fio: txt(e.fio), birth: txt(e.birth), email: txt(e.email),
         phone: txt(e.phone), pass_series: txt(e.passSeries), pass_number: txt(e.passNumber),
         pass_date: txt(e.passDate), pass_code: txt(e.passCode), pass_issued_by: txt(e.passIssuedBy)
-      }], 'user_id');
+      }], 'user_id'));
     }
     if(setChanged){
-      await put('user_settings', [{ user_id: uid_, ref: cur.ref || {}, ui: cur.ui || {} }], 'user_id');
+      posledniye.push(put('user_settings', [{ user_id: uid_, ref: cur.ref || {}, ui: cur.ui || {} }], 'user_id'));
     }
+    await volna(...posledniye);
 
     serverSnap = cur;      // всё прошло — этот слепок теперь и есть сервер
     saveServerSnap();      // и на устройство: без него досылка после
