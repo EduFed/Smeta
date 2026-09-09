@@ -2606,6 +2606,19 @@
      размером — это `.uzkiy`. Подсветка у всех одна и та же: третьего
      вида того же самого не заводим (CLAUDE.md). */
   .calc-mode-btn.uzkiy{font-size:12px;padding:8px 12px;min-width:0;flex:1 1 auto;white-space:nowrap;}
+  /* Строка проёма в раскладке — та же `.sk-proyom`, что в строительном
+     калькуляторе. Здесь только две поправки размещения: переключатель
+     «дверь/окно» не растягивается на всю строку, и числа моноширинно,
+     как в остальных полях раскладки. */
+  .tc-proyomy{margin-top:12px;}
+  /* Переключатель «дверь/окно» занимает свою строку: у полей ниже
+     подпись сверху, и в одну линию с кнопками они не встали бы ровно. */
+  .tc-pr-vid{margin:0 0 4px;flex:1 1 100%;gap:6px;}
+  .tc-proyomy .sk-proyom{align-items:flex-end;padding-bottom:8px;
+    border-bottom:1px solid var(--paper-line);margin-bottom:10px;}
+  .tc-proyomy .sk-proyom:last-of-type{border-bottom:none;}
+  .tc-proyomy .tc-field{flex:1 1 110px;min-width:0;}
+  .tc-pr-ubrat{margin-bottom:2px;}
   .tc-corner{display:grid;grid-template-columns:1fr 1fr;gap:6px;max-width:150px;}
   .tc-corner .calc-mode-btn{font-size:16px;padding:8px;flex:none;}
   .tc-hint{font-size:11px;color:var(--ink-soft);line-height:1.45;margin-top:8px;}
@@ -4113,7 +4126,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-09-256';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-09-257';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -23056,17 +23069,22 @@ bootstrap();
    ============================================================ */
 
 // типы поверхности → набор полей (все размеры поверхности и проёмов — в метрах)
+// ПРОЁМОВ НА ПОВЕРХНОСТИ МОЖЕТ БЫТЬ СКОЛЬКО УГОДНО. Владелец
+// 8 сентября 2026: «стена может быть с двумя дверьми к примеру и окнами».
+//
+// Раньше вырез задавал САМ вид поверхности: «стена с дверью», «стена
+// с окном» — и вырез был ровно один. Двух дверей на такой стене
+// не задать вовсе, двери с окном тоже, короба с дверью тоже.
+//
+// Теперь вид поверхности отвечает только за её размеры, а проёмы лежат
+// списком — тем же, что у стен в строительном калькуляторе (`.sk-proyom`
+// и «+ Проём»). Третьего вида того же самого не заводим.
 const TC_SURFACES = {
   floor:      { label:'Пол',            fields:[['W','Ширина, м'],['H','Длина, м']] },
-  wall:       { label:'Глухая стена',   fields:[['W','Ширина, м'],['H','Высота, м']] },
-  wallDoor:   { label:'Стена с дверью', fields:[['W','Ширина стены, м'],['H','Высота стены, м'],
-                                                 ['doorW','Ширина двери, м'],['doorH','Высота двери, м'],
-                                                 ['doorX','Отступ двери слева, м']] },
-  wallWindow: { label:'Стена с окном',  fields:[['W','Ширина стены, м'],['H','Высота стены, м'],
-                                                 ['winW','Ширина окна, м'],['winH','Высота окна, м'],
-                                                 ['winX','Отступ окна слева, м'],['winY','От пола до низа окна, м']] },
+  wall:       { label:'Стена',          fields:[['W','Ширина, м'],['H','Высота, м']], proyomy:true },
   box:        { label:'С коробом',      fields:[['W','Ширина, м'],['H','Высота, м'],
-                                                 ['boxW','Ширина короба, м'],['boxD','Высота короба, м']], corner:true },
+                                                 ['boxW','Ширина короба, м'],['boxD','Высота короба, м']],
+                                        corner:true, proyomy:true },
 };
 
 // Одна поверхность: тип и её размеры. Плитка, шов, рисунок и способ
@@ -23074,9 +23092,15 @@ const TC_SURFACES = {
 // одну и ту же плитку на пол и на стены санузла, а не разную.
 function tcPustaya(){
   return { surface:'floor', W:'', H:'',
-           doorW:'', doorH:'', doorX:'',
-           winW:'', winH:'', winX:'', winY:'',
+           proyomy:[],
            boxW:'', boxD:'', boxCorner:'BL' };
+}
+
+// Пустой проём. Дверь стоит на полу, поэтому «от пола» у неё нет вовсе;
+// у окна оно есть и спрашивается отдельным полем — разница между дверью
+// и окном ровно в этом, и она сохранена.
+function tcPustoyProyom(){
+  return { vid:'dver', w:'', h:'', x:'', y:'' };
 }
 
 // состояние (только в памяти, сбрасывается при закрытии)
@@ -23097,30 +23121,78 @@ const tc = {
   inited:false,
 };
 
-// вырез (проём/короб) как прямоугольник в координатах поверхности, либо null
-function tcHole(pv){
-  const tc = pv;                    // вырез считается по своей поверхности
-  const W=num(tc.W), H=num(tc.H);
-  const clamp=(r)=>({ x0:Math.max(0,Math.min(W,r.x0)), x1:Math.max(0,Math.min(W,r.x1)),
-                      y0:Math.max(0,Math.min(H,r.y0)), y1:Math.max(0,Math.min(H,r.y1)) });
-  if(tc.surface==='wallDoor'){
-    const w=num(tc.doorW), h=num(tc.doorH), x=num(tc.doorX);
-    if(w>0&&h>0) return clamp({x0:x, y0:0, x1:x+w, y1:h});          // дверь стоит на полу
-  }
-  if(tc.surface==='wallWindow'){
-    const w=num(tc.winW), h=num(tc.winH), x=num(tc.winX), y=num(tc.winY);
-    if(w>0&&h>0) return clamp({x0:x, y0:y, x1:x+w, y1:y+h});        // окно висит
-  }
-  if(tc.surface==='box'){
-    const w=num(tc.boxW), d=num(tc.boxD), c=tc.boxCorner||'BL';
+// ВЫРЕЗЫ ПОВЕРХНОСТИ СПИСКОМ — прямоугольники в её координатах.
+// Пустой список означает «вырезов нет»; проёмы, целиком уехавшие
+// за край, отбрасываются здесь же, чтобы дальше их никто не считал.
+function tcHoles(pv){
+  const W=num(pv.W), H=num(pv.H);
+  const vid = TC_SURFACES[pv.surface];
+  const spisok = [];
+  const dobavit = (r)=>{
+    const c = { x0:Math.max(0,Math.min(W,r.x0)), x1:Math.max(0,Math.min(W,r.x1)),
+                y0:Math.max(0,Math.min(H,r.y0)), y1:Math.max(0,Math.min(H,r.y1)) };
+    if(c.x1-c.x0 > 1e-9 && c.y1-c.y0 > 1e-9) spisok.push(c);
+  };
+  // ПОКАЗ И СЧЁТ БЕРУТ ОДИН СПИСОК. Блок «Проёмы» показывается только
+  // там, где он есть у вида поверхности (у пола дверей не бывает).
+  // Считать проёмы там, где их не показываем, нельзя: человек
+  // переключил бы стену на пол и молча потерял бы площадь двери,
+  // не увидев на экране ни одного проёма. Сами введённые проёмы
+  // при этом никуда не деваются — вернул «Стену», и они на месте.
+  ((vid && vid.proyomy) ? (pv.proyomy || []) : []).forEach(o=>{
+    const w=num(o.w), h=num(o.h), x=num(o.x);
+    if(!(w>0 && h>0)) return;
+    const y = (o.vid === 'okno') ? num(o.y) : 0;   // дверь стоит на полу, окно висит
+    dobavit({x0:x, y0:y, x1:x+w, y1:y+h});
+  });
+  if(pv.surface==='box'){
+    const w=num(pv.boxW), d=num(pv.boxD), c=pv.boxCorner||'BL';
     if(w>0&&d>0){
-      if(c==='BL') return clamp({x0:0,   y0:0,   x1:w,   y1:d});
-      if(c==='BR') return clamp({x0:W-w, y0:0,   x1:W,   y1:d});
-      if(c==='TL') return clamp({x0:0,   y0:H-d, x1:w,   y1:H});
-      if(c==='TR') return clamp({x0:W-w, y0:H-d, x1:W,   y1:H});
+      if(c==='BL') dobavit({x0:0,   y0:0,   x1:w,   y1:d});
+      if(c==='BR') dobavit({x0:W-w, y0:0,   x1:W,   y1:d});
+      if(c==='TL') dobavit({x0:0,   y0:H-d, x1:w,   y1:H});
+      if(c==='TR') dobavit({x0:W-w, y0:H-d, x1:W,   y1:H});
     }
   }
-  return null;
+  return spisok;
+}
+
+// ПЛОЩАДЬ ОБЪЕДИНЕНИЯ ПРЯМОУГОЛЬНИКОВ. Два налезающих друг на друга
+// проёма нельзя сложить площадями: общая часть посчиталась бы дважды,
+// и площадь поверхности вышла бы меньше настоящей, а отходы — больше.
+// Считаем по клеткам: режем плоскость всеми краями и берём те клетки,
+// что накрыты хоть одним прямоугольником.
+function tcUnionArea(rects){
+  if(!rects || !rects.length) return 0;
+  if(rects.length === 1) return (rects[0].x1-rects[0].x0)*(rects[0].y1-rects[0].y0);
+  const xs=[], ys=[];
+  rects.forEach(r=>{ xs.push(r.x0, r.x1); ys.push(r.y0, r.y1); });
+  xs.sort((a,b)=>a-b); ys.sort((a,b)=>a-b);
+  let s=0;
+  for(let i=0;i<xs.length-1;i++){
+    const dx = xs[i+1]-xs[i]; if(dx<=0) continue;
+    const cx = (xs[i]+xs[i+1])/2;
+    for(let j=0;j<ys.length-1;j++){
+      const dy = ys[j+1]-ys[j]; if(dy<=0) continue;
+      const cy = (ys[j]+ys[j+1])/2;
+      if(rects.some(r=> cx>r.x0 && cx<r.x1 && cy>r.y0 && cy<r.y1)) s += dx*dy;
+    }
+  }
+  return s;
+}
+
+// какая часть прямоугольника попала в вырезы — с учётом их наложения
+function tcHolesOverlap(ax0,ay0,ax1,ay1, holes){
+  if(!holes || !holes.length) return 0;
+  const chasti=[];
+  for(const hl of holes){
+    const x0=Math.max(ax0,hl.x0), y0=Math.max(ay0,hl.y0);
+    const x1=Math.min(ax1,hl.x1), y1=Math.min(ay1,hl.y1);
+    if(x1>x0 && y1>y0) chasti.push({x0,y0,x1,y1});
+  }
+  if(!chasti.length) return 0;
+  if(chasti.length===1) return (chasti[0].x1-chasti[0].x0)*(chasti[0].y1-chasti[0].y0);
+  return tcUnionArea(chasti);
 }
 
 // площадь пересечения двух прямоугольников
@@ -23151,6 +23223,23 @@ function tcSubtract(ax0,ay0,ax1,ay1, hx0,hy0,hx1,hy1){
     return left>e ? {x0:ax0,y0:ay0,x1:bx0,y1:ay1} : {x0:bx1,y0:ay0,x1:ax1,y1:ay1};
   }
   return null;                                                         // вырез в углу куска → «Г»
+}
+
+// «прямоугольник минус ВСЕ вырезы»: вычитаем по очереди. Пока остаток
+// остаётся прямоугольником, ответ точен; как только перестал —
+// это фигурный кусок, он режется по месту. Правило про «Г»-образные
+// куски не менялось, оно просто распространилось на список.
+//
+// Отсюда же ответ на «кусок, задетый двумя проёмами»: он проходит
+// оба вычитания и считается ОДИН раз — либо прямым подрезом, либо
+// фигурным. Ни задвоиться, ни потеряться ему негде.
+function tcSubtractAll(ax0,ay0,ax1,ay1, holes){
+  let r = {x0:ax0,y0:ay0,x1:ax1,y1:ay1};
+  for(const hl of (holes||[])){
+    r = tcSubtract(r.x0,r.y0,r.x1,r.y1, hl.x0,hl.y0,hl.x1,hl.y1);
+    if(!r) return null;
+  }
+  return r;
 }
 
 // сколько целых плиток нужно, чтобы нарезать эти куски (обычная плитка: разворот можно).
@@ -23193,7 +23282,7 @@ function tcCompute(pv){
   if((W/px)*(H/py) > 6000) return {ok:false, tooMany:true};         // защита от опечатки в единицах
 
   const eps = 1e-6;
-  const hole = tcHole(pv);
+  const holes = tcHoles(pv);
 
   // левый/нижний край опорной колонки/ряда по режиму старта
   const refEdge=(mode, span, cell, svoyo)=>{
@@ -23251,7 +23340,7 @@ function tcCompute(pv){
       if(tx1<=eps || tx0>=W-eps) continue;
       const outer = tcInter(tx0,ty0,tx1,ty1, 0,0,W,H);        // часть плитки на поверхности
       if(outer<=eps) continue;                                // целиком снаружи — не считаем
-      const holeOv = hole ? tcInter(tx0,ty0,tx1,ty1, hole.x0,hole.y0,hole.x1,hole.y1) : 0;
+      const holeOv = tcHolesOverlap(tx0,ty0,tx1,ty1, holes);   // с учётом наложения проёмов
       if(outer - holeOv <= eps) continue;                     // целиком в вырезе — не считаем
       const fullyInside = (tx0>=-eps && ty0>=-eps && tx1<=W+eps && ty1<=H+eps);
       const isWhole = fullyInside && holeOv<=eps;             // целая = вся на поверхности и не задела вырез
@@ -23260,7 +23349,7 @@ function tcCompute(pv){
       const ax0=Math.max(tx0,0), ay0=Math.max(ty0,0), ax1=Math.min(tx1,W), ay1=Math.min(ty1,H);
       let kept, complex=false;
       if(holeOv>eps){
-        kept = tcSubtract(ax0,ay0,ax1,ay1, hole.x0,hole.y0,hole.x1,hole.y1);
+        kept = tcSubtractAll(ax0,ay0,ax1,ay1, holes);
         if(!kept){ complex=true; kept={x0:ax0,y0:ay0,x1:ax1,y1:ay1}; }   // «Г» — габарит для показа
       } else {
         kept = {x0:ax0,y0:ay0,x1:ax1,y1:ay1};
@@ -23309,7 +23398,7 @@ function tcCompute(pv){
   }
   const cutReuse = tilesW + tilesH + cornerCut + shapedCount;   // плиток на всю подрезку с учётом остатков
 
-  const holeArea = hole ? (hole.x1-hole.x0)*(hole.y1-hole.y0) : 0;
+  const holeArea = tcUnionArea(holes);            // общая часть двух проёмов — один раз
   const surfArea = Math.max(0, W*H - holeArea);
   const total = whole+cut;
   const totalReuse = whole + cutReuse;                   // «с учётом остатков»
@@ -23319,7 +23408,7 @@ function tcCompute(pv){
   // Полосы отдаём наружу: обрезки одной поверхности годятся другой —
   // плитка и рисунок общие. Складывать их надо один раз на весь расчёт,
   // а не по поверхности, иначе экономия теряется ровно там, где она есть.
-  return {ok:true, W,H, tiles, whole, cut, total, totalReuse, saved, surfArea, waste, hole, cutList, shapedCount,
+  return {ok:true, W,H, tiles, whole, cut, total, totalReuse, saved, surfArea, waste, holes, cutList, shapedCount,
           polosy:{widL, widR, hgtB, hgtT, cornerCut}};
 }
 
@@ -23392,12 +23481,15 @@ function tcSVG(r){
     rects += `<rect x="${rx.toFixed(1)}" y="${ry.toFixed(1)}" width="${rw.toFixed(1)}" height="${rh.toFixed(1)}" fill="${fill}" stroke="${stroke}" stroke-width="0.6" data-tc-tile="1" data-kind="${kind}" data-w="${pw}" data-h="${ph}" style="cursor:pointer"/>`;
   });
   const surf = `<rect x="${X(0).toFixed(1)}" y="${Y(r.H).toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}"/>`;
+  // Проёмы рисуем ВСЕ, а не первый: картинка и число расходиться
+  // не должны — человек верит глазам.
   let holeSvg='';
-  if(r.hole && (r.hole.x1-r.hole.x0)>eps0 && (r.hole.y1-r.hole.y0)>eps0){
-    const hx=X(r.hole.x0), hy=Y(r.hole.y1);
-    const hw=(r.hole.x1-r.hole.x0)*sc, hh=(r.hole.y1-r.hole.y0)*sc;
-    holeSvg = `<rect x="${hx.toFixed(1)}" y="${hy.toFixed(1)}" width="${hw.toFixed(1)}" height="${hh.toFixed(1)}" fill="var(--paper)" stroke="var(--ink-soft)" stroke-width="1" stroke-dasharray="4 3"/>`;
-  }
+  (r.holes || []).forEach(hl=>{
+    if(!((hl.x1-hl.x0)>eps0 && (hl.y1-hl.y0)>eps0)) return;
+    const hx=X(hl.x0), hy=Y(hl.y1);
+    const hw=(hl.x1-hl.x0)*sc, hh=(hl.y1-hl.y0)*sc;
+    holeSvg += `<rect x="${hx.toFixed(1)}" y="${hy.toFixed(1)}" width="${hw.toFixed(1)}" height="${hh.toFixed(1)}" fill="var(--paper)" stroke="var(--ink-soft)" stroke-width="1" stroke-dasharray="4 3"/>`;
+  });
   const outline = `<rect x="${X(0).toFixed(1)}" y="${Y(r.H).toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" fill="none" stroke="var(--ink)" stroke-width="1.5"/>`;
   return `<svg viewBox="0 0 ${vbW.toFixed(1)} ${vbH.toFixed(1)}" width="${vbW.toFixed(0)}" height="${vbH.toFixed(0)}" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
     <defs><clipPath id="${clipId}">${surf}</clipPath></defs>
@@ -23479,16 +23571,61 @@ function tcFieldInput(key,label,i){
 
 // Куда писать по адресу из разметки.
 function tcKuda(adres){
+  // проём: pr:<номер поверхности>:<номер проёма>:<поле>
+  if(adres.indexOf('pr:') === 0){
+    const ch = adres.split(':');
+    const pv = tc.poverhnosti[parseInt(ch[1])];
+    const o = pv && (pv.proyomy || [])[parseInt(ch[2])];
+    return { o: o || null, k: ch[3] };
+  }
   if(adres.indexOf('p:') !== 0) return { o: tc, k: adres };
   const [, i, k] = adres.split(':');
   return { o: tc.poverhnosti[parseInt(i)], k: k };
 }
+// СПИСОК ПРОЁМОВ. Вид берём целиком у строительного калькулятора
+// (`skProyomyHtml`): те же классы, тот же порядок полей, та же кнопка
+// «+ Проём» и тот же крестик. Одинаковое по смыслу — одинаково и на вид.
+//
+// Отличие ровно одно и оно по делу: у раскладки плитки проём бывает
+// дверью или окном. Дверь стоит на полу, поэтому «от пола» у неё
+// не спрашивается вовсе; у окна поле появляется. Переключатель —
+// `.calc-mode-btn`, как везде.
+function tcProyomyHTML(pv, i){
+  const spisok = pv.proyomy || [];
+  const stroki = spisok.map((o,j)=>{
+    const okno = (o.vid === 'okno');
+    // Поля с подписями, а не с подсказками внутри: заполненное поле
+    // подсказку теряет, и на телефоне «2,1» уже не отличить от «0,5».
+    // Подпись — та же `.tc-field`, что у размеров поверхности на этом
+    // же экране.
+    const pole = (k,l)=> `<div class="tc-field"><label>${l}</label>`+
+      `<input type="text" inputmode="decimal" data-tc="pr:${i}:${j}:${k}" `+
+      `value="${escapeAttr(o[k]||'')}" placeholder="0"></div>`;
+    return `<div class="sk-proyom">
+      <div class="calc-mode tc-pr-vid">
+        <button type="button" class="calc-mode-btn uzkiy${okno?'':' active'}" data-tc-set="pr:${i}:${j}:vid|dver">Дверь</button>
+        <button type="button" class="calc-mode-btn uzkiy${okno?' active':''}" data-tc-set="pr:${i}:${j}:vid|okno">Окно</button>
+      </div>
+      ${pole('w', okno ? 'Ширина окна, м' : 'Ширина двери, м')}
+      ${pole('h', okno ? 'Высота окна, м' : 'Высота двери, м')}
+      ${pole('x','Отступ слева, м')}
+      ${okno ? pole('y','От пола до низа окна, м') : ''}
+      <button type="button" class="btn-icon tc-pr-ubrat" data-tc-pr-del="${i}:${j}" title="Убрать проём">✕</button>
+    </div>`;
+  }).join('');
+  return `<div class="sk-proyomy tc-proyomy">
+    <div class="sk-podzag">Проёмы</div>
+    ${stroki || '<div class="mat-note">Окон и дверей нет.</div>'}
+    <button type="button" class="add-link" data-tc-pr-add="${i}">+ Проём</button>
+  </div>`;
+}
+
 // поля вкладки «Данные»: Поверхность + Плитка
 function tcControlsDataHTML(){
   let h='';
   h += `<div class="tc-sec-title">Поверхности</div>`;
   h += `<div class="sk-steny">` + (tc.poverhnosti||[]).map((pv,i)=>{
-    const s = TC_SURFACES[pv.surface];
+    const s = TC_SURFACES[pv.surface] || TC_SURFACES.wall;
     let b = `<div class="sk-stena">
       <div class="sk-stena-shapka">
         <div class="tc-label" style="margin:0;flex:1 1 auto;">${escapeHtml(s.label)} ${i+1}</div>
@@ -23506,6 +23643,7 @@ function tcControlsDataHTML(){
             `<button type="button" class="calc-mode-btn uzkiy${(pv.boxCorner||'BL')===v?' active':''}" data-tc-set="p:${i}:boxCorner|${v}">${l}</button>`
           ).join('') + `</div>`;
     }
+    if(s.proyomy) b += tcProyomyHTML(pv, i);
     return b + `</div>`;
   }).join('') +
   (isPro()
@@ -24445,6 +24583,22 @@ function tcAttach(){
     if(ubr){
       tc.poverhnosti.splice(parseInt(ubr.getAttribute('data-tc-pov-del')), 1);
       if(!tc.poverhnosti.length) tc.poverhnosti.push(tcPustaya());
+      tcRenderBody(); return;
+    }
+    const prDob = e.target.closest('[data-tc-pr-add]');
+    if(prDob){
+      const pv = tc.poverhnosti[parseInt(prDob.getAttribute('data-tc-pr-add'))];
+      if(pv){
+        if(!Array.isArray(pv.proyomy)) pv.proyomy = [];
+        pv.proyomy.push(tcPustoyProyom());
+      }
+      tcRenderBody(); return;
+    }
+    const prUbr = e.target.closest('[data-tc-pr-del]');
+    if(prUbr){
+      const ch = prUbr.getAttribute('data-tc-pr-del').split(':');
+      const pv = tc.poverhnosti[parseInt(ch[0])];
+      if(pv && Array.isArray(pv.proyomy)) pv.proyomy.splice(parseInt(ch[1]), 1);
       tcRenderBody(); return;
     }
     const setBtn = e.target.closest('[data-tc-set]');
