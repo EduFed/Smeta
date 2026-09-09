@@ -4126,7 +4126,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-09-257';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-09-258';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -23783,17 +23783,38 @@ function skListyRaschet(d){
 
   const proyomy = (st.proyomy || [])
     .map(o=>({ x: Math.round(num(o.x)*1000), y: Math.round(num(o.y)*1000),
-               w: Math.round(num(o.w)*1000), h: Math.round(num(o.h)*1000),
-               n: Math.max(1, Math.round(num(o.n) || 1)) }))
+               w: Math.round(num(o.w)*1000), h: Math.round(num(o.h)*1000) }))
     .filter(o=> o.w > 0 && o.h > 0);
-  // Несколько одинаковых проёмов — ставим их подряд от указанного места.
+  // Проём обрезаем по стене: уехавший за край не должен ни вычитаться
+  // из площади, ни рисоваться мимо стены. Раньше проём шириной 6 м
+  // на стене 5 м вычитал все 6 — площадь выходила меньше настоящей.
+  //
+  // Поля «шт.» здесь больше нет: каждый проём стоит на своём месте
+  // (см. `skProyomyHtml`), и ставить одинаковые подряд от одной точки
+  // было неверно для двух дверей в разных концах стены.
   const dyry = [];
   proyomy.forEach(o=>{
-    for(let i = 0; i < o.n; i++) dyry.push({ x: o.x + i*o.w, y: o.y, w: o.w, h: o.h });
+    const px1 = Math.max(0, o.x), px2 = Math.min(dlina, o.x + o.w);
+    const py1 = Math.max(0, o.y), py2 = Math.min(vysota, o.y + o.h);
+    if(px2 > px1 && py2 > py1) dyry.push({ x: px1, y: py1, w: px2 - px1, h: py2 - py1 });
   });
+  // Те же дыры прямоугольниками (x0,y0,x1,y1) — в таком виде их берут
+  // общие помощники раскладки плитки, `tcUnionArea` и `tcHolesOverlap`.
+  // Второго счёта того же самого не заводим: расходящиеся счёты одного
+  // и того же расходятся молча (CLAUDE.md).
+  const dyryPr = dyry.map(o=>({ x0:o.x, y0:o.y, x1:o.x+o.w, y1:o.y+o.h }));
 
-  const vDyre = (x1,y1,x2,y2)=> dyry.some(o=>
-    x1 >= o.x && x2 <= o.x + o.w && y1 >= o.y && y2 <= o.y + o.h);
+  // КЛЕТКА НЕ НУЖНА, ЕСЛИ ЕЁ НАКРЫВАЮТ ПРОЁМЫ ВСЕ ВМЕСТЕ, а не какой-то
+  // один. Две двери вплотную: клетка лежит на обеих, но целиком
+  // не помещается ни в одну — и лист под неё засчитывался, хотя стены
+  // там нет вовсе. Ошибка была тихая и в сторону завышения: покупатель
+  // брал лишний лист. Та же стена, заданная одним проёмом 1,8 м,
+  // давала на лист меньше — два способа записать одно и то же считались
+  // по-разному. Исправлено 9 сентября 2026.
+  const vDyre = (x1,y1,x2,y2)=>{
+    const s = (x2 - x1) * (y2 - y1);
+    return s > 0 && tcHolesOverlap(x1, y1, x2, y2, dyryPr) >= s - 1e-6;
+  };
 
   // ЧТО ВЫРЕЗАЛИ ИЗ ЛИСТА ПОД ПРОЁМ. Владелец 4 сентября 2026:
   // «вырезанное не может быть потерянным, эти обрезки могут пойти наверх».
@@ -23807,13 +23828,50 @@ function skListyRaschet(d){
   // Если проёмов в одной клетке несколько, остальные не считаем:
   // мелкие куски всё равно в дело не идут, а обещать их — врать
   // в выгодную сторону, что хуже.
+  //
+  // НО ДВЕ ДВЕРИ ВПЛОТНУЮ — ЭТО ОДНА ПОЛОСА, А НЕ ДВА КУСКА. Замер
+  // 9 сентября 2026: стена 5 x 2,7, лист 2000 x 1000 горизонтально.
+  // Две двери 0,9 подряд давали 7 листов «с докладкой», та же стена
+  // одним проёмом 1,8 — 6. Одна стена, два способа записи, разные
+  // числа: ровно та ошибка, ради которой задача и заведена.
+  // Поэтому куски, стоящие вплотную и совпадающие по второй стороне,
+  // склеиваем: склеенное — настоящий прямоугольный обрезок, его так
+  // и выпилят одним куском. Мелочь, лежащую врозь, по-прежнему
+  // не считаем — обещать её значило бы врать в выгодную сторону.
+  // Клетка, накрытая проёмами целиком, сюда вообще не доходит:
+  // её отсеивает `vDyre`.
   const vyrezIzKletki = (x1,y1,x2,y2)=>{
-    let luchshiy = null;
+    // Куски клетки, попавшие в проёмы.
+    const chasti = [];
     dyry.forEach(o=>{
       const ix1 = Math.max(x1, o.x), ix2 = Math.min(x2, o.x + o.w);
       const iy1 = Math.max(y1, o.y), iy2 = Math.min(y2, o.y + o.h);
-      const w = ix2 - ix1, h = iy2 - iy1;
-      if(w > 0 && h > 0 && (!luchshiy || w*h > luchshiy.w*luchshiy.h)) luchshiy = { w:w, h:h };
+      if(ix2 > ix1 && iy2 > iy1) chasti.push({ x0:ix1, y0:iy1, x1:ix2, y1:iy2 });
+    });
+    // Склейка соседних. Условие строгое: у обоих кусков вторая сторона
+    // совпадает целиком, и сами они соприкасаются. Тогда склеенное —
+    // прямоугольник, а не приблизительная оценка.
+    let skleili = true;
+    while(skleili){
+      skleili = false;
+      for(let i = 0; i < chasti.length && !skleili; i++){
+        for(let j = i + 1; j < chasti.length && !skleili; j++){
+          const a = chasti[i], b = chasti[j];
+          const ryadomPoX = (a.y0 === b.y0 && a.y1 === b.y1 && a.x0 <= b.x1 && b.x0 <= a.x1);
+          const ryadomPoY = (a.x0 === b.x0 && a.x1 === b.x1 && a.y0 <= b.y1 && b.y0 <= a.y1);
+          if(ryadomPoX || ryadomPoY){
+            a.x0 = Math.min(a.x0, b.x0); a.x1 = Math.max(a.x1, b.x1);
+            a.y0 = Math.min(a.y0, b.y0); a.y1 = Math.max(a.y1, b.y1);
+            chasti.splice(j, 1);
+            skleili = true;
+          }
+        }
+      }
+    }
+    let luchshiy = null;
+    chasti.forEach(c=>{
+      const w = c.x1 - c.x0, h = c.y1 - c.y0;
+      if(!luchshiy || w*h > luchshiy.w*luchshiy.h) luchshiy = { w:w, h:h };
     });
     return luchshiy;
   };
@@ -23834,7 +23892,10 @@ function skListyRaschet(d){
   }
 
   ploschadSteny += dlina * vysota / 1e6;
-  ploschadDyr += dyry.reduce((a,o)=> a + o.w*o.h, 0) / 1e6;
+  // Площадь проёмов — по ОБЪЕДИНЕНИЮ прямоугольников: налезающие друг
+  // на друга не задваиваются, иначе площадь стены вышла бы меньше
+  // настоящей, а расход материала — больше.
+  ploschadDyr += tcUnionArea(dyryPr) / 1e6;
   steny.push({ imya: (st.imya||'').trim(), dlina: dlina, vysota: vysota,
                setka: setka, dyry: dyry });
   });   // конец обхода стен
@@ -23995,9 +24056,12 @@ function skPloschadiRaschet(d){
     if(!(s > 0)) return;
     const proyomy = (pv.proyomy || []).reduce((a,o)=>
       a + num(o.w)*num(o.h)*Math.max(1, Math.round(num(o.n)||1)), 0);
-    ploschad += Math.max(0, s - proyomy);
+    // Вычитаем не больше, чем есть: проём крупнее самой поверхности
+    // иначе показал бы «вычтено 12 м²» там, где вычлось 5.
+    const snyato = Math.min(s, proyomy);
+    ploschad += s - snyato;
     perimetr += wallBase(pv);
-    dyr += proyomy;
+    dyr += snyato;
     n++;
   });
   if(!n) return null;
@@ -24144,6 +24208,18 @@ function skPloschadiHtml(){
   </div>`;
 }
 
+// ПОЛЕ «ШТ.» ЕСТЬ ТОЛЬКО ТАМ, ГДЕ ПОЛОЖЕНИЕ НЕ СПРАШИВАЕТСЯ.
+//
+// У кладки и у площадей проём — это просто вычитаемая площадь, и «шт.»
+// там честное: две одинаковые двери вычтут вдвое больше, где бы они
+// ни стояли.
+//
+// У листового положение задано, из него строится раскладка. «Шт.»
+// ставило одинаковые проёмы ПОДРЯД от указанной точки, а человек,
+// написавший «2», думал про две двери в разных концах стены — и не имел
+// способа об этом узнать. Поле убрано 9 сентября 2026: каждый проём
+// добавляется своей строкой «+ Проём» и стоит на своём месте.
+// Так же сделано в раскладке плитки, где «шт.» не заводили вовсе.
 function skProyomyHtml(razdel, sPolozheniem, iSteny){
   const vStene = (iSteny !== undefined && iSteny !== null);
   const spisok = vStene ? (SK[razdel].steny[iSteny].proyomy || []) : (SK[razdel].proyomy || []);
@@ -24161,8 +24237,9 @@ function skProyomyHtml(razdel, sPolozheniem, iSteny){
              value="${escapeAttr(o.x||'')}" data-sk-pr="${adr}|${i}|x">
       <input type="text" inputmode="decimal" class="ownw-inp" placeholder="от пола, м"
              value="${escapeAttr(o.y||'')}" data-sk-pr="${adr}|${i}|y">` : ''}
+      ${sPolozheniem ? '' : `
       <input type="text" inputmode="numeric" class="ownw-inp sk-uzko" placeholder="шт."
-             value="${escapeAttr(o.n||'')}" data-sk-pr="${adr}|${i}|n">
+             value="${escapeAttr(o.n||'')}" data-sk-pr="${adr}|${i}|n">`}
       <button type="button" class="btn-icon" data-sk-pr-del="${adr}|${i}" title="Убрать">✕</button>
     </div>`).join('');
   return `<div class="sk-proyomy">
