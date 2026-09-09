@@ -4091,7 +4091,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-09-254';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-09-255';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -23342,7 +23342,19 @@ function tcVse(){
 }
 
 // рисуем схему (SVG). Плитки клипуются по контуру поверхности → у краёв видна подрезка.
+//
+// ИМЯ ОБРЕЗАЮЩЕЙ РАМКИ — СВОЁ У КАЖДОЙ КАРТИНКИ. Поверхностей на экране
+// несколько, tcSVG зовётся для каждой, а ссылка url(#имя) ведёт на ПЕРВОЕ
+// совпадение в документе. С общим именем все схемы обрезались рамкой первой,
+// самой узкой, и у широких справа оставалась полоса без плитки: замер
+// 9 сентября 2026 — у 4×3 м голыми были 97 точек из 502, у 6×3 м 100 из 520,
+// у первой 3×3 м — ни одной. Числа при этом верны: их считает tcCompute,
+// а не картинка.
+let tcClipNomer = 0;                                   // сквозной счётчик имён рамок
 function tcSVG(r){
+  // счётчик, а не номер поверхности: имя остаётся своим при любом порядке
+  // вызовов и при повторной перерисовке
+  const clipId = 'tcClip' + (++tcClipNomer);
   const pad=14, maxW=520, maxH=420;
   const sc = Math.min(maxW/r.W, maxH/r.H);
   const w=r.W*sc, h=r.H*sc, vbW=w+pad*2, vbH=h+pad*2;
@@ -23366,8 +23378,8 @@ function tcSVG(r){
   }
   const outline = `<rect x="${X(0).toFixed(1)}" y="${Y(r.H).toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" fill="none" stroke="var(--ink)" stroke-width="1.5"/>`;
   return `<svg viewBox="0 0 ${vbW.toFixed(1)} ${vbH.toFixed(1)}" width="${vbW.toFixed(0)}" height="${vbH.toFixed(0)}" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
-    <defs><clipPath id="tcClip">${surf}</clipPath></defs>
-    <g clip-path="url(#tcClip)">${rects}</g>${holeSvg}${outline}
+    <defs><clipPath id="${clipId}">${surf}</clipPath></defs>
+    <g clip-path="url(#${clipId})">${rects}</g>${holeSvg}${outline}
   </svg>`;
 }
 const eps0 = 1e-6;
