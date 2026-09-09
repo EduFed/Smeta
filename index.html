@@ -2051,13 +2051,32 @@
   .preview-ios-text{font-size:13px;line-height:1.5;color:var(--ink-soft);margin-bottom:4px;}
 
   .auth-overlay{
-    position:fixed;inset:0;z-index:1000;background:var(--ink);
+    position:fixed;left:0;right:0;z-index:1000;background:var(--ink);
+    /* ВЕРХ И ВЫСОТА — ОТ ВИДИМОЙ ЧАСТИ ЭКРАНА, ТЕМИ ЖЕ ПЕРЕМЕННЫМИ,
+       ЧТО И У ОКОН (сборка 2026-09-08-250). Экран входа остаётся
+       отдельным по виду — своя подложка, своё выравнивание карточки,
+       свой слой, — но меряется он теперь так же, а не по-своему.
+       Раньше стояло inset:0, то есть высота во всю СТРАНИЦУ. На iPhone
+       клавиатура страницу не сжимает, поэтому экран входа оставался
+       высотой 844 при видимых 508, и прокручивать ему было нечего.
+       Замер 9 сентября 2026, ширина 390, видимая часть 508 из 844:
+       кнопка «Войти» стояла на 533..568 — под клавиатурой, галочка
+       согласия на 465..517 — наполовину под ней, а запас прокрутки
+       у экрана был ровно ноль: доскроллить до кнопки было нечем.
+       Значения пишет oknaVymerit(); запасные 0/100% работают, пока
+       замер не сделан и там, где visualViewport нет. */
+    top:var(--okno-verh, 0px);
+    height:100%;
+    height:var(--okno-vysota, 100%);
     display:flex;justify-content:center;
     /* align-items:center обрезал карточку сверху, если она выше экрана,
        и прокрутка не работала. flex-start + margin:auto на карточке даёт
        то же центрирование, но при нехватке места содержимое прокручивается. */
     align-items:flex-start;
     overflow-y:auto;-webkit-overflow-scrolling:touch;
+    /* Прокрутка остаётся внутри экрана входа и не уходит на страницу
+       под ним — то же правило, что у окон. */
+    overscroll-behavior:contain;
     padding:20px;
     padding-top:calc(20px + env(safe-area-inset-top, 0px));
     padding-bottom:calc(20px + env(safe-area-inset-bottom, 0px));
@@ -2655,7 +2674,10 @@
      от 120 до 2900.
      Держится это одним правилом; своего вида окну заводить не нужно.
      Отдельно живут ЭКРАНЫ, а не окна: вход (.auth-overlay), просмотр
-     снимка и предпросмотр документа — у них своя задача и свой вид. */
+     снимка и предпросмотр документа — у них своя задача и свой вид.
+     Но ЗАМЕР видимой части общий: 9 сентября 2026 экран входа взял
+     те же --okno-verh и --okno-vysota. Отдельный вид — не повод
+     мерить экран по-своему. */
   .refcfg-overlay, .plan-overlay, .conflict-overlay,
   .support-overlay, .pd-overlay{
     display:none; position:fixed; left:0; right:0;
@@ -4091,7 +4113,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-09-255';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-09-256';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
