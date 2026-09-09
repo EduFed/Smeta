@@ -4091,7 +4091,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-09-252';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-09-253';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -7263,6 +7263,23 @@ function podelitNarisovat(){
   const ov = document.getElementById('podelitOverlay');
   if(!ov || !uiPodelit) return;
   const u = uiPodelit;
+  // ЧЕМ ЧИСЛА ЗАКАЗЧИКА ЗАКОННО ОТЛИЧАЮТСЯ ОТ ВАШИХ (9 сентября 2026).
+  //
+  // В ссылку идут ТОЛЬКО подписанные доп. работы — черновик заказчик
+  // не подписывал (решение владельца 1 сентября 2026, buildEstimateData,
+  // ветка dlyaZakazchika). А «Итого по проекту» у прораба черновик
+  // включает. Значит числа на двух экранах расходятся ровно на сумму
+  // неподписанного — и это не ошибка счёта.
+  //
+  // Прежде об этом не было сказано нигде, и владелец 9 сентября 2026
+  // прочитал расхождение как поломку: «в ссылке заказчику сумма
+  // отличается». Пишем прямо и здесь же, где ссылку выдают.
+  //
+  // Сумму берём готовым счётом dopRaboty(proj, '') — пустой номер
+  // означает «ещё не подписанные». Своей формулой не считаем: два
+  // счёта расходятся молча (грабли 42 и 43).
+  const pDlyaSsylki = (state.projects||[]).find(x=> x.id === u.projectId);
+  const nePodpisano = pDlyaSsylki ? dopRaboty(pDlyaSsylki, '').total : 0;
   const seg = (key, opts, cur)=> `<div class="calc-mode">` + opts.map(([v,l])=>
       `<button type="button" class="calc-mode-btn uzkiy${v===cur?' active':''}" data-pod-set="${key}|${v}">${l}</button>`
     ).join('') + `</div>`;
@@ -7318,6 +7335,12 @@ function podelitNarisovat(){
           нажмите ⟳ у выданной ссылки, и заказчик увидит новые числа по прежнему адресу.
           Оплаты и снимки заказчик видит свежими.
         </div>
+        ${(u.oblast !== 'photos' && nePodpisano) ? `<div class="ownw-note" style="margin-top:10px;">
+          Доп. работы без подписанного соглашения — ${fmtMoney(nePodpisano)} — в ссылку
+          не войдут: заказчик их не подписывал. В вашем «Итого по проекту» они есть,
+          поэтому у заказчика число будет меньше ровно на эту сумму. Подпишите
+          соглашение — и они появятся у него.
+        </div>` : ''}
         <div class="plan-lead-msg" id="podelitMsg"></div>
         <div class="tc-label" style="margin-top:18px;">Выданные ссылки</div>
         ${spisok}
@@ -7476,23 +7499,29 @@ function snimokSmety(proj, sHodom){
   // но хранить такое нельзя: однажды два таких числа сравнят и не поймут,
   // почему они не равны.
   const kop = v => Math.round((Number(v)||0) * 100) / 100;
-  const gruppy = d.groups.map(g=>({
-    nazvanie: g.room,
-    stroki: g.items.map(i=>{
-      const st = {
-        nazvanie: i.name, edinica: i.unit,
-        kolvo: i.qty, cena: i.price, summa: kop(i.sum)
-      };
-      // Готовность идёт НА СТРОКЕ сметы, а не вторым списком тех же
-      // работ: заказчик не должен читать одно и то же дважды.
-      if(sHodom && i.gotov !== null && i.gotov !== undefined) st.gotov = i.gotov;
-      // Номер соглашения, которым позиция снята. Про мастеров здесь
-      // по-прежнему ничего: номер бумаги — это документ заказчика,
-      // он её и подписывал.
-      if(i.isk) st.isk = i.isk;
-      return st;
-    })
-  }));
+  const gruppy = d.groups.map(g=>{
+    const gr = {
+      nazvanie: g.room,
+      stroki: g.items.map(i=>{
+        const st = {
+          nazvanie: i.name, edinica: i.unit,
+          kolvo: i.qty, cena: i.price, summa: kop(i.sum)
+        };
+        // Готовность идёт НА СТРОКЕ сметы, а не вторым списком тех же
+        // работ: заказчик не должен читать одно и то же дважды.
+        if(sHodom && i.gotov !== null && i.gotov !== undefined) st.gotov = i.gotov;
+        // Номер соглашения, которым позиция снята. Про мастеров здесь
+        // по-прежнему ничего: номер бумаги — это документ заказчика,
+        // он её и подписывал.
+        if(i.isk) st.isk = i.isk;
+        return st;
+      })
+    };
+    // Пометка группы доп. соглашения едет в снимок: из неё страница
+    // заказчика считает строку «Доп. работы».
+    if(g.vid) gr.vid = g.vid;
+    return gr;
+  });
   // ИСКЛЮЧЁННОЕ — ОТДЕЛЬНОЙ СТРОКОЙ ИТОГОВ, ПО КАЖДОМУ СОГЛАШЕНИЮ СВОЕЙ.
   // Строки исключённых позиций остаются в смете заказчика (он её
   // подписывал), значит суммы по помещениям их включают. Без вычета
@@ -7508,12 +7537,25 @@ function snimokSmety(proj, sHodom){
   // Итог складываем из ОКРУГЛЁННЫХ строк, а не округляем сумму сырых:
   // иначе на экране строки не сойдутся с итогом. То же правило,
   // что у condSum в приложении.
-  const itog = kop(gruppy.reduce((a,g)=> a + g.stroki.reduce((b,i)=> b + i.summa, 0), 0)
-                   - isklyucheno.reduce((a,x)=> a + x.summa, 0));
+  //
+  // РАЗБИВКА И ИТОГ — ОДНО ВЫРАЖЕНИЕ. Заказчик читает на странице
+  // «Смета − Исключено + Доп. работы = Стоимость работ», и считать их
+  // порознь нельзя: два счёта расходятся молча (грабля 75: место, куда
+  // рисуем, и место, которое занимаем, — одним выражением).
+  const summaGrupp = spisok => kop(spisok.reduce(
+    (a,g)=> a + g.stroki.reduce((b,i)=> b + i.summa, 0), 0));
+  const dopSumma   = summaGrupp(gruppy.filter(g=> g.vid === 'dop'));
+  const smetaSumma = summaGrupp(gruppy.filter(g=> g.vid !== 'dop'));
+  const isklSumma  = kop(isklyucheno.reduce((a,x)=> a + x.summa, 0));
+  const itog = kop(smetaSumma + dopSumma - isklSumma);
   const sn = {
     v: 1,                                  // версия снимка, на вырост
     sozdan: new Date().toISOString(),
     itog: itog,
+    // ИЗ ЧЕГО СЛОЖИЛСЯ ИТОГ. У старых снимков этого поля нет,
+    // и страница заказчика рисует итоги как прежде — одной строкой
+    // стоимости. Выданные ссылки от этого не ломаются.
+    razbivka: { smeta: smetaSumma, dop: dopSumma },
     gruppy: gruppy,
     // Материалы - отдельным списком и БЕЗ цен: это закупка заказчика,
     // цены в магазинах свои, и обещать их нельзя.
@@ -15684,7 +15726,12 @@ function buildEstimateData(proj, opts){
         });
       if(!svoi.length) return;
       const d = dopDataSoglasheniya(proj, nom);
-      groups.push({ room:'Доп. соглашение № ' + nom + (d ? ' от ' + fmtDate(d) : ''), items:svoi });
+      // ПОМЕТКА `vid` — ЧТОБЫ ИТОГ В ССЫЛКЕ РАЗБИРАЛСЯ НЕ ПО НАЗВАНИЮ.
+      // Из этих групп считается строка «Доп. работы» в итогах страницы
+      // заказчика. Искать их по тексту заголовка нельзя: заголовок —
+      // это показ, и он однажды поменяется (грабля 43).
+      groups.push({ room:'Доп. соглашение № ' + nom + (d ? ' от ' + fmtDate(d) : ''),
+                    vid:'dop', items:svoi });
     });
   }
   else if(extra.length && !bezDop) groups.push({ room:'Дополнительные работы', items:extra });

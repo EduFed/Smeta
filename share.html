@@ -287,6 +287,21 @@ function narisovat(d){
     // как три разные вещи.
     if(sn.gotovnost !== null && sn.gotovnost !== undefined)
       ch.push('<div class="itog"><span>Готовность</span><b>' + ekran(sn.gotovnost) + ' %</b></div>');
+    // ИЗ ЧЕГО СЛОЖИЛАСЬ СТОИМОСТЬ РАБОТ — ТЕМИ ЖЕ СТРОКАМИ, ЧТО
+    // В ПРИЛОЖЕНИИ, и в том же порядке: смета − исключено + доп. работы
+    // = итог. Прежде заказчик видел только вычет: ни самой сметы,
+    // из которой вычитали, ни прибавки по доп. соглашению — и сложить
+    // «Стоимость работ» сам он не мог. Жалоба владельца 9 сентября 2026.
+    //
+    // Разбивка появляется только там, где есть что разбивать, — то же
+    // правило, что у итога в приложении (renderSmetaBlock).
+    // У СТАРЫХ СНИМКОВ ПОЛЯ `razbivka` НЕТ вовсе — выданные ссылки
+    // рисуются ровно как раньше и не ломаются.
+    const rz = sn.razbivka;
+    const estIsk = !!(sn.isklyucheno && sn.isklyucheno.length);
+    const razbit = !!rz && (estIsk || !!rz.dop);
+    if(razbit)
+      ch.push('<div class="itog"><span>Смета</span><b>' + dengi(rz.smeta) + '</b></div>');
     // ВЫЧЕТ ПО ДОП. СОГЛАШЕНИЮ — отдельной строкой, до стоимости работ.
     // Суммы по помещениям включают исключённые позиции (смета такая,
     // какой её подписали), и без этой строки «Стоимость работ» не сошлась
@@ -294,6 +309,12 @@ function narisovat(d){
     (sn.isklyucheno || []).forEach(x=>
       ch.push('<div class="itog"><span>Исключено соглашением № ' + ekran(x.nomer) +
         '</span><b>− ' + dengi(x.summa) + '</b></div>'));
+    // Знак от величины, а не жёстким плюсом: цена бывает отрицательной
+    // (скидка строкой), и «+ −5 000» читалось бы неверно. То же, что
+    // у строки «Доп. работы» в приложении.
+    if(razbit && rz.dop)
+      ch.push('<div class="itog"><span>Доп. работы</span><b>' +
+        (rz.dop < 0 ? '− ' : '+ ') + dengi(Math.abs(rz.dop)) + '</b></div>');
     ch.push('<div class="itog"><span>Стоимость работ</span><b>' + dengi(itog) + '</b></div>');
     if(opl.length) ch.push('<div class="itog"><span>Получено</span><b>' + dengi(poluch) + '</b></div>');
     ch.push('<div class="itog itog-glavnyy"><span>' + (ost < 0 ? 'Переплата' : 'Остаток к оплате') +
