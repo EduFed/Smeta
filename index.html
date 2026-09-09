@@ -4091,7 +4091,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-09-253';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-09-254';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -9709,6 +9709,10 @@ async function loadFromCloud(){
     state.currentProjectId = firstOpenableProjectId();
   }
   loadMyInvites();      // не ждём: плашка появится, когда сервер ответит
+  // Снимки, не уехавшие в прошлый раз, досылаем при первом же выходе
+  // на связь. Событий 'online' и 'visibilitychange' для этого мало:
+  // при запуске приложения не случается ни одного из них.
+  ocheredOtpravit();
 }
 
 // ============================================================
@@ -10324,6 +10328,23 @@ function ocheredDobavit(delo){
   ocheredPisat(proch);
 }
 
+// Убрать из очереди ИМЕННО ЭТО дело, перечитав список заново.
+// Пока дело летело, человек мог повернуть тот же снимок ещё раз —
+// в очереди тогда лежит уже ДРУГОЕ дело, со своим временем, и стирать
+// его нельзя: на сервере остался бы первый поворот из двух.
+function ocheredUbrat(d){
+  ocheredPisat(ocheredVzyat().filter(x =>
+    !(x.id === d.id && x.delo === d.delo && x.kogda === d.kogda)));
+}
+// Отметить неудачную попытку, не задев того, что добавилось следом.
+function ocheredPopytka(d){
+  const a = ocheredVzyat();
+  const x = a.find(y => y.id === d.id && y.delo === d.delo && y.kogda === d.kogda);
+  if(!x) return;                       // дело успели заменить новым
+  x.popytok = (x.popytok || 0) + 1;
+  ocheredPisat(a);
+}
+
 // Отправить накопленное. Идём ПО ПОРЯДКУ и останавливаемся на первом
 // же обрыве связи: дела зависимы (снял → повернул → удалил), и пропуск
 // одного сделал бы следующее бессмысленным.
@@ -10335,8 +10356,15 @@ async function ocheredOtpravit(){
   if(!navigator.onLine) return;
   ocheredIdyot = true;
   try{
-    let a = ocheredVzyat();
-    while(a.length){
+    while(true){
+      // ОЧЕРЕДЬ ПЕРЕЧИТЫВАЕМ ПЕРЕД КАЖДЫМ ДЕЛОМ, а не держим список
+      // в памяти на всё время отправки. Пока летит один снимок, человек
+      // работает дальше: повернул тот же снимок ещё раз — в очереди уже
+      // новое дело. Список, взятый до отправки, записался бы поверх
+      // и стёр бы его молча. Та же семья, что грабля 56: сделанным
+      // помечают то, чего не сравнивали.
+      const a = ocheredVzyat();
+      if(!a.length) break;
       const d = a[0];
       try{
         if(d.delo === 'zalit')        await ocheredZalit(d);
@@ -10349,23 +10377,21 @@ async function ocheredOtpravit(){
         // ОТКАЗ СЕРВЕРА — НЕ ОБРЫВ. Лимит тарифа, отозванные права,
         // удалённый проект: повторять такое вечно нельзя, иначе очередь
         // не разберётся никогда и утащит за собой всё, что за ней стоит.
-        d.popytok = (d.popytok || 0) + 1;
-        if(d.popytok < 3){
-          ocheredPisat(a);
+        if((d.popytok || 0) + 1 < 3){
+          ocheredPopytka(d);
           break;
         }
         console.error('Снимок не уехал, бросаем', d, e);
         toast('Снимок не удалось отправить: ' + (msg || 'сервер отказал'));
-        a.shift();
-        ocheredPisat(a);
+        ocheredUbrat(d);
         continue;
       }
-      a.shift();
-      ocheredPisat(a);
+      ocheredUbrat(d);
     }
   }finally{
     ocheredIdyot = false;
     render();
+    pvPodpisObnovit();   // и в открытом просмотре пометка «ждёт отправки» снимается
   }
 }
 
@@ -10379,8 +10405,12 @@ async function ocheredZalit(d){
 
 async function ocheredObnovit(d){
   await ocheredFayly(d.id);
+  // Размеры меняются местами, а вес после пересжатия — свой. Не поправить
+  // размеры, и раскладка страницы будет держать место под прежнюю форму.
   if(d.w && d.h){
-    try{ await sb.from('attachments').update({ width: d.w, height: d.h }).eq('id', d.id); }catch(_){}
+    const pole = { width: d.w, height: d.h };
+    if(d.b) pole.size_bytes = d.b;
+    try{ await sb.from('attachments').update(pole).eq('id', d.id); }catch(_){}
   }
 }
 
@@ -10390,10 +10420,15 @@ async function ocheredUdalit(d){
 }
 
 // Отправить файл и его уменьшенную копию из склада.
-async function ocheredFayly(id){
-  const adres = await fotoSkladVzyat(id);
-  if(!adres) throw new Error('Снимка нет на устройстве — отправлять нечего');
-  const blob = await (await fetch(adres)).blob();
+// Байты можно передать готовыми: так зовёт поворот в редком случае,
+// когда склад на устройстве не принял их и отправлять надо прямо сейчас.
+async function ocheredFayly(id, gotovyy, gotovayaMini){
+  let blob = gotovyy;
+  if(!blob){
+    const adres = await fotoSkladVzyat(id);
+    if(!adres) throw new Error('Снимка нет на устройстве — отправлять нечего');
+    blob = await (await fetch(adres)).blob();
+  }
   const znak = await photoAsk({ action:'upload', attachment_id: id });
   const kuda = znak && znak.links && znak.links[id];
   if(!kuda) throw new Error('Обработчик не выдал адрес для загрузки');
@@ -10402,8 +10437,11 @@ async function ocheredFayly(id){
   if(!put.ok) throw new Error('Хранилище отказало: ' + put.status);
   // Копия — молча: не вышла, плитка возьмёт полный файл.
   try{
-    const miniAdres = await fotoSkladVzyat(fotoMiniKluch(id));
-    const mini = miniAdres ? await (await fetch(miniAdres)).blob() : await fotoMini(blob);
+    let mini = gotovayaMini;
+    if(!mini){
+      const miniAdres = await fotoSkladVzyat(fotoMiniKluch(id));
+      mini = miniAdres ? await (await fetch(miniAdres)).blob() : await fotoMini(blob);
+    }
     if(mini && mini.size){
       const zm = await photoAsk({ action:'upload', attachment_id: id, size:'m' });
       const kudaM = zm && zm.links && zm.links[id];
@@ -10929,97 +10967,101 @@ async function fotoPovernut(a){
       cv.toBlob(res, 'image/jpeg', PHOTO_POVOROT_QUALITY));
     if(!povernutyy || !povernutyy.size) throw new Error('поворот не удался');
 
-    // 3. Кладём на место старого файла. Путь тот же, значит и все
-    //    прежние ссылки останутся верными.
+    // 3. ПОВЁРНУТЫЕ БАЙТЫ — НА СКЛАД, И ЭТО ГЛАВНЫЙ ШАГ.
     //
-    // БЕЗ СВЯЗИ — поворачиваем у себя и ставим дело в очередь.
-    // Раньше здесь был честный отказ; теперь честнее сделать и отложить:
-    // байты уже повёрнуты, терять их незачем.
-    if(!navigator.onLine){
-      try{ await fotoSkladPolozhitBlob(a.id, povernutyy); }catch(_){}
+    // Владелец 8 сентября 2026: «при повороте фотографии очень долго
+    // стала поворачиваться». Замер нашёл шесть сетевых шагов подряд —
+    // скачать, подписать, залить, подписать, залить, обновить размеры, —
+    // и все шесть человек ждал у экрана, около десяти секунд.
+    //
+    // Решение «поворачиваем сам файл, а не показ» остаётся: иначе
+    // заказчик увидит снимок набок, когда у прораба он ровный. Меняем
+    // не решение, а МИНУТУ, КОГДА ЧЕЛОВЕК ОБ ЭТОМ УЗНАЁТ: байты ложатся
+    // на склад, экран поворачивается сразу, а заливку берёт на себя
+    // та же очередь дел, которой поворот уже пользуется без связи.
+    // Второй очереди не заводим — эта работает и умеет схлопывать
+    // повторы: десять поворотов подряд дают одно дело.
+    await fotoSkladPolozhitBlob(a.id, povernutyy);
+    let malaya = null;
+    try{
+      malaya = await fotoMini(povernutyy);
+      if(malaya && malaya.size) await fotoSkladPolozhitBlob(fotoMiniKluch(a.id), malaya);
+    }catch(e){ console.error('Уменьшенная копия после поворота не вышла', e); }
+
+    // ЗАПИСАННОЕ ЧИТАЕМ ОБРАТНО (грабля 66). Склад молчит об отказах —
+    // кончилось место, запрещено хранилище, — и мы бы отдали очереди
+    // дело, для которого нет байтов. Легло — отдаём очереди; не легло —
+    // отправляем сами и ждём, как было до этой правки.
+    const svezhiy = await fotoSkladVzyat(a.id);
+    if(!svezhiy && !navigator.onLine)
+      throw new Error('снимок не удалось сохранить на устройстве');
+
+    if(svezhiy){
+      // «Обновить» значит «сделай на сервере так, как у меня сейчас»,
+      // и байты очередь возьмёт со склада в момент отправки. Поэтому
+      // два поворота подряд дают один снимок — тот, который видит
+      // человек, а не первый из двух.
+      ocheredDobavit({ delo:'obnovit', id: a.id,
+                       w: cv.width, h: cv.height, b: povernutyy.size });
+    } else {
+      await ocheredFayly(a.id, povernutyy, malaya);
       try{
-        const mini = await fotoMini(povernutyy);
-        if(mini && mini.size) await fotoSkladPolozhitBlob(fotoMiniKluch(a.id), mini);
-      }catch(_){}
-      a.w = cv.width; a.h = cv.height; a.size = povernutyy.size;
-      // Уже стоит «залить» — значит снимок ещё не уезжал, и очередь
-      // сама отправит текущие байты. Иначе нужно «обновить».
-      ocheredDobavit({ delo:'obnovit', id: a.id, w: cv.width, h: cv.height });
-      pvUrls.set(a.id, URL.createObjectURL(povernutyy));
-      photoUrlCache.delete(a.id);
-      photoUrlCache.delete(fotoMiniKluch(a.id));
-      pvRasstavit();
-      toast('Нет связи — поворот сохранён и уйдёт, когда появится интернет');
-      return;
+        await sb.from('attachments')
+          .update({ width: cv.width, height: cv.height, size_bytes: povernutyy.size })
+          .eq('id', a.id);
+      }catch(e){ console.error('Размеры снимка в базе не обновились', e); }
     }
-    const znak = await photoAsk({ action:'upload', attachment_id: a.id });
-    const kuda = znak && znak.links && znak.links[a.id];
-    if(!kuda) throw new Error('обработчик не выдал адрес для загрузки');
-    const put = await fetch(kuda, { method:'PUT',
-      headers:{ 'Content-Type':'image/jpeg' }, body: povernutyy });
-    if(!put.ok) throw new Error('хранилище отказало: ' + put.status);
 
-    // 4. Уменьшенную копию перекладываем следом — иначе плитка
-    //    останется лежать набок, а снимок будет ровный.
-    //    Молча: если копия не выйдет, плитка возьмёт полный файл.
-    try{
-      const mini = await fotoMini(povernutyy);
-      if(mini && mini.size){
-        const zm = await photoAsk({ action:'upload', attachment_id: a.id, size:'m' });
-        const kudaM = zm && zm.links && zm.links[a.id];
-        if(kudaM){
-          const r = await fetch(kudaM, { method:'PUT',
-            headers:{ 'Content-Type':'image/jpeg' }, body: mini });
-          if(r.ok) try{ await fotoSkladPolozhitBlob(fotoMiniKluch(a.id), mini); }catch(_){}
-        }
-      }
-    }catch(e){ console.error('Копия после поворота не легла', e); }
-
-    // 5. Размеры в базе меняются местами. Не поправить — раскладка
-    //    страницы будет резервировать место под прежнюю форму.
-    try{
-      await sb.from('attachments')
-        .update({ width: cv.width, height: cv.height, size_bytes: povernutyy.size })
-        .eq('id', a.id);
-    }catch(e){ console.error('Размеры снимка в базе не обновились', e); }
+    // 4. НА ЭКРАН — СРАЗУ, не дожидаясь сети. Прежние адреса забываем:
+    //    подписанный адрес ведёт на тот же путь, и по нему браузер
+    //    вернул бы старые байты из своего кэша.
     a.w = cv.width; a.h = cv.height; a.size = povernutyy.size;
-
-    // 6. Своя копия на устройстве — теперь повёрнутая. И показать её
-    //    сразу: подписанный адрес ведёт на тот же путь, а по нему
-    //    браузер вернул бы старые байты из своего кэша.
-    try{ await fotoSkladPolozhitBlob(a.id, povernutyy); }catch(_){}
-    const svezhiy = URL.createObjectURL(povernutyy);
-    pvUrls.set(a.id, svezhiy);
+    const pokaz = svezhiy || URL.createObjectURL(povernutyy);
+    pvUrls.set(a.id, pokaz);
     photoUrlCache.delete(a.id);
     photoUrlCache.delete(fotoMiniKluch(a.id));
     pvRasstavit();
+    pvPodpisObnovit();
 
-    // 7. Плитка позади просмотрщика держит СВОЙ адрес в картинке —
+    // 5. Плитка позади просмотрщика держит СВОЙ адрес в картинке —
     //    забыть его в памяти мало, надо подставить новый. Иначе
     //    человек закроет снимок и увидит прежнюю, неповёрнутую плитку:
     //    решит, что не сработало, и повернёт ещё раз.
+    //    Заодно ставим на неё пометку «ждёт отправки»: молчаливая
+    //    очередь хуже ожидания — человек закроет приложение, считая,
+    //    что всё сохранено.
     try{
       const mini = await fotoSkladVzyat(fotoMiniKluch(a.id));
       const plitka = document.querySelector(`[data-ph-thumb="${a.id}"] img`);
-      if(plitka) plitka.src = mini || svezhiy;
+      if(plitka) plitka.src = mini || pokaz;
+      const ramka = document.querySelector(`[data-ph-id="${a.id}"]`);
+      if(ramka) ramka.classList.toggle('foto-zhdyot', ocheredZhdyot(a.id));
     }catch(_){}
+
+    // 6. Отправку запускаем и НЕ ЖДЁМ её: человек уже видит повёрнутый
+    //    снимок и волен закрыть просмотр. Пометка снимется сама, когда
+    //    дело уедет; не уедет вовсе — очередь скажет об этом вслух.
+    if(!svezhiy) return;                  // отправлено выше, своими руками
+    if(!navigator.onLine){
+      toast('Нет связи — поворот сохранён и уйдёт, когда появится интернет');
+      return;
+    }
+    ocheredOtpravit();
   }catch(e){
     console.error('Поворот не вышел', e);
     // БЕЗ СВЯЗИ ГОВОРИМ ПРО СВЯЗЬ, А НЕ ПРО ОШИБКУ БРАУЗЕРА.
-    // Проверено 3 сентября 2026: без сети поворот проваливается начисто —
-    // ни склад, ни данные, ни база не тронуты, половинчатого состояния
-    // не возникает. Плохо было только одно: человек видел «Failed to
-    // fetch». Мастеру на объекте это не говорит ничего, и он будет жать
-    // кнопку снова.
+    // Мастеру на объекте «Failed to fetch» не говорит ничего,
+    // и он будет жать кнопку снова.
     //
-    // Почему поворот вообще требует связи: повёрнутый снимок надо
-    // положить в хранилище на место старого. Отложить это на потом
-    // нельзя — очереди отправки снимков в приложении нет вовсе,
-    // и заводить её ради поворота значит завести вторую, свою
-    // (снимки и так не участвуют в общем сохранении).
+    // ЗДЕСЬ СТОЯЛО, ЧТО ОЧЕРЕДИ ОТПРАВКИ СНИМКОВ В ПРИЛОЖЕНИИ НЕТ ВОВСЕ
+    // и заводить её ради поворота значит завести вторую. Это неправда:
+    // очередь есть (ocheredDobavit), ею пользуются заливка, удаление
+    // и сам поворот. Пояснение писалось до того, как очередь завели,
+    // и осталось жить дальше, сбивая следующего читателя.
+    // Убрано 9 сентября 2026 вместе с ожиданием у экрана.
     const setiNet = !navigator.onLine || /failed to fetch|networkerror|load failed/i.test((e && e.message) || '');
     toast(setiNet
-      ? 'Нет связи — повернуть можно только с интернетом. Снимок не изменился.'
+      ? 'Нет связи — повернуть не удалось. Снимок не изменился.'
       : 'Повернуть не удалось: ' + ((e && e.message) || 'неизвестно почему'));
   }finally{
     if(knopka) knopka.disabled = false;
@@ -11207,13 +11249,24 @@ async function pvZapolnit(){
   pvRasstavit();
 }
 
+// ПОДПИСЬ ПОД СНИМКОМ В ПРОСМОТРЕ: дата, а рядом — «ждёт отправки»,
+// пока дело не уехало. Поворот человек делает именно здесь, и здесь же
+// должен видеть, доехало или нет: пометка на плитке остаётся позади
+// открытого снимка. Та же пометка и то же слово, что на плитке
+// (.foto-zhdyot) — одинаковое по смыслу пишем одинаково.
+function pvPodpisObnovit(){
+  const a = pvList[pvIdx];
+  const when = document.getElementById('pvWhen');
+  if(!a || !when) return;
+  when.textContent = photoTitle(a) + (ocheredZhdyot(a.id) ? ' · ждёт отправки' : '');
+}
+
 async function photoViewerShow(){
   const a = pvList[pvIdx];
   if(!a) return;
   const cnt = document.getElementById('pvCount');
-  const when = document.getElementById('pvWhen');
   if(cnt)  cnt.textContent  = (pvIdx + 1) + ' из ' + pvList.length;
-  if(when) when.textContent = photoTitle(a);
+  pvPodpisObnovit();
   // Поле ввода очищаем СРАЗУ, до картинки: иначе на медленной связи
   // недописанный чужому снимку текст уехал бы не туда.
   const vvod = document.getElementById('pvKommVvod');
