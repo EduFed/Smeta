@@ -3434,6 +3434,11 @@
     border:1px solid var(--paper-line);border-radius:8px;padding:6px 10px;
     font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--ink-soft);}
   .sk-kusok b{color:var(--ink);font-weight:600;}
+  /* ПАМЯТКА МАСТЕРУ. Своего вида не заводим: подзаголовок тот же
+     `.sk-podzag`, текст тот же `.mat-note`. Класс нужен только ради
+     отступов между строчками — без них список слипается в кашу. */
+  .sk-pamyatka{margin:14px 0;}
+  .sk-pamyatka .mat-note{margin-bottom:5px;}
   .sel-work.pozicia-isklyuchena .sel-work-name{text-decoration:line-through;opacity:.55;}
   .sel-work.pozicia-isklyuchena .wsum{text-decoration:line-through;opacity:.55;}
   .isk-detali{margin:12px 0;border:1px solid var(--paper-line);border-radius:10px;padding:10px 12px;}
@@ -4173,7 +4178,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-10-266';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-10-267';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -24452,6 +24457,80 @@ function skSmesRaschet(d){
   };
 }
 
+// ---------- ТЁПЛЫЙ ПОЛ, ЭЛЕКТРИЧЕСКИЙ ----------
+//
+// ЧЕГО НЕ ЗНАЕТ ТОТ, КТО НЕ КЛАЛ (знание владельца, 10 сентября 2026):
+// · кабель НЕЛЬЗЯ РЕЗАТЬ — он идёт готовым комплектом: столько-то
+//   метров, столько-то ватт. Ответ «нужно 42 метра» — ответ, по
+//   которому нечего купить. Поэтому длину считаем ПРИМЕРНУЮ, а дальше
+//   мастер вписывает комплект, который нашёл, и мы говорим, годится ли;
+// · мат РЕЖЕТСЯ по сетке и берётся квадратными метрами;
+// · греется не вся комната: под ванной, машинкой и мебелью не кладут;
+// · главное число на объекте — ШАГ УКЛАДКИ, а не длина;
+// · от стен отступают на тот же шаг, что между витками, — отдельного
+//   поля для отступа не заводим, он уже сидит в шаге.
+//
+// СПРАВОЧНИКА КОМПЛЕКТОВ У НАС НЕТ И НЕ БУДЕТ: у каждого производителя
+// свой ряд длин и мощностей, наш список устареет и начнёт врать.
+//
+// РУГАЕМСЯ НА МОЩНОСТЬ, А НЕ НА ШАГ. Шаг выходит сам из мощности кабеля
+// на метр: тонкий кабель 10 Вт/м при 150 Вт/м² даёт около 7 см, кабель
+// 17 Вт/м при той же мощности — около 11. Оба уложены верно, и жёсткая
+// рамка «7–8 см» забраковала бы правильную укладку более мощным
+// кабелем. А вот фактическая мощность на квадрат, разошедшаяся
+// с заданной, — беда настоящая: пол будет холодным или перегреется.
+const SK_POL_SHAG = 7.5;      // см. Стандарт владельца, 10 сентября 2026: «шаг 7-8 см»
+const SK_POL_RAZBEG = 15;     // %, насколько мощности позволено разойтись до окрика
+// Обычные значения мощности. Подписаны СЛОВАМИ: число без пояснения
+// мастеру ничего не говорит, а выбирают его по месту, а не по таблице.
+const SK_POL_MOSCHNOSTI = [
+  [100, 'комната, комфорт'],
+  [150, 'санузел, кухня'],
+  [180, 'балкон, первый этаж'],
+  [200, 'основное отопление']
+];
+
+function skPolRaschet(d){
+  const dlina = num(d.dlina), shirina = num(d.shirina);
+  const brutto = (dlina > 0 && shirina > 0) ? dlina * shirina : 0;
+  if(!(brutto > 0)) return null;
+  // Вычитаем не больше, чем есть, — как в площадях: кусок крупнее
+  // комнаты иначе показал бы «вычтено 9 м²» там, где вычлось 6.
+  const zayavleno = (d.proyomy || []).reduce((a,o)=>
+    a + num(o.w) * num(o.h) * Math.max(1, Math.round(num(o.n) || 1)), 0);
+  const snyato = Math.min(brutto, zayavleno);
+  const ploschad = brutto - snyato;
+  const mat = d.sposob === 'mat';
+  if(!(ploschad > 0)) return { vsyoVychli:true, brutto:brutto, snyato:snyato, mat:mat };
+
+  const vt = num(d.vtNaM2);
+  const trebuetsya = vt > 0 ? ploschad * vt : 0;
+  // ШАГ НЕ ЗАДАЛИ — БЕРЁМ СТАНДАРТНЫЙ. Это единственное подставленное
+  // значение во всём калькуляторе, и стоит оно по прямому решению
+  // владельца 10 сентября 2026, а не ради удобства. Откуда взялось
+  // число, итог говорит словами: подставленное, о котором не сказали,
+  // принимают за своё.
+  const shagZadan = num(d.shag);
+  const shag = shagZadan > 0 ? shagZadan : SK_POL_SHAG;
+  const dlinaPrim = ploschad / (shag / 100);
+
+  const komplD  = num(d.komplD);                        // длина комплекта кабеля, м
+  const komplVt = mat ? num(d.matVt) : num(d.komplVt);  // мощность комплекта, Вт
+  const matS    = num(d.matS);                          // площадь мата в комплекте, м²
+
+  const faktShag = komplD > 0 ? (ploschad / komplD) * 100 : 0;   // см
+  const faktVt   = komplVt > 0 ? komplVt / ploschad : 0;         // Вт/м²
+  const otklonenie = (vt > 0 && faktVt > 0) ? ((faktVt - vt) / vt) * 100 : null;
+
+  return {
+    mat:mat, brutto:brutto, snyato:snyato, ploschad:ploschad,
+    vt:vt, trebuetsya:trebuetsya,
+    shag:shag, shagZadan:(shagZadan > 0), dlinaPrim:dlinaPrim,
+    komplD:komplD, komplVt:komplVt, matS:matS,
+    faktShag:faktShag, faktVt:faktVt, otklonenie:otklonenie
+  };
+}
+
 // Что набрано в калькуляторе. Живёт, пока открыта вкладка: это прикидка,
 // а не документ, и хранить её в проекте незачем (решение владельца —
 // «отдельно от проектов»).
@@ -24478,7 +24557,17 @@ let SK = {
   // Здесь ему место: калькулятор и есть ручная прикидка, он ничего
   // не хранит по решению владельца, и никто этого от него не ждёт.
   // Перенесено 4 сентября 2026.
-  ploschadi: { imya:'', steny: [ { imya:'', shape:'rect', proyomy:[] } ] }
+  ploschadi: { imya:'', steny: [ { imya:'', shape:'rect', proyomy:[] } ] },
+  // ТЁПЛЫЙ ПОЛ, электрический. Кабель и мат — один раздел, а не два:
+  // вводные у них общие (обогреваемая площадь и мощность на квадрат),
+  // расходятся только комплект и вид ответа.
+  //
+  // Вычитаемые куски лежат в `proyomy` — тем же списком, каким сделаны
+  // проёмы. Название другое, устройство то же: ширина, длина, сколько
+  // штук. Второго такого списка не заводим (CLAUDE.md).
+  pol: { imya:'', sposob:'kabel', dlina:'', shirina:'',
+         vtNaM2:'', shag:'', komplD:'', komplVt:'', matS:'', matVt:'',
+         proyomy: [] }
 };
 
 // Поле с подсказкой последнего введённого. Подсказка — В ПУСТОМ ПОЛЕ,
@@ -24583,7 +24672,12 @@ function skPloschadiHtml(){
 // способа об этом узнать. Поле убрано 9 сентября 2026: каждый проём
 // добавляется своей строкой «+ Проём» и стоит на своём месте.
 // Так же сделано в раскладке плитки, где «шт.» не заводили вовсе.
-function skProyomyHtml(razdel, sPolozheniem, iSteny){
+function skProyomyHtml(razdel, sPolozheniem, iSteny, opts){
+  // ПОДПИСИ МЕНЯЮТСЯ, УСТРОЙСТВО НЕТ. У тёплого пола вычитают не окна,
+  // а пятно под ванной, и подпись «высота, м» там врала бы. Всё
+  // остальное — то же поле, та же кнопка, тот же обработчик: второго
+  // такого списка не заводим (CLAUDE.md).
+  const p = opts || {};
   const vStene = (iSteny !== undefined && iSteny !== null);
   const spisok = vStene ? (SK[razdel].steny[iSteny].proyomy || []) : (SK[razdel].proyomy || []);
   // Адрес проёма несёт и раздел: стены теперь есть и у листового,
@@ -24591,9 +24685,9 @@ function skProyomyHtml(razdel, sPolozheniem, iSteny){
   const adr = vStene ? ('st:' + razdel + ':' + iSteny) : razdel;
   const stroki = spisok.map((o,i)=>`
     <div class="sk-proyom">
-      <input type="text" inputmode="decimal" class="ownw-inp" placeholder="ширина, м"
+      <input type="text" inputmode="decimal" class="ownw-inp" placeholder="${escapeAttr(p.wPodskazka || 'ширина, м')}"
              value="${escapeAttr(o.w||'')}" data-sk-pr="${adr}|${i}|w">
-      <input type="text" inputmode="decimal" class="ownw-inp" placeholder="высота, м"
+      <input type="text" inputmode="decimal" class="ownw-inp" placeholder="${escapeAttr(p.hPodskazka || 'высота, м')}"
              value="${escapeAttr(o.h||'')}" data-sk-pr="${adr}|${i}|h">
       ${sPolozheniem ? `
       <div class="calc-mode sk-pr-seg">
@@ -24610,9 +24704,9 @@ function skProyomyHtml(razdel, sPolozheniem, iSteny){
       <button type="button" class="btn-icon" data-sk-pr-del="${adr}|${i}" title="Убрать">✕</button>
     </div>`).join('');
   return `<div class="sk-proyomy">
-    <div class="sk-podzag">Проёмы</div>
-    ${stroki || '<div class="mat-note">Окон и дверей нет.</div>'}
-    <button type="button" class="add-link" data-sk-pr-add="${adr}">+ Проём</button>
+    <div class="sk-podzag">${escapeHtml(p.zagolovok || 'Проёмы')}</div>
+    ${stroki || `<div class="mat-note">${escapeHtml(p.pusto || 'Окон и дверей нет.')}</div>`}
+    <button type="button" class="add-link" data-sk-pr-add="${adr}">${escapeHtml(p.dobavit || '+ Проём')}</button>
   </div>`;
 }
 
@@ -24757,6 +24851,76 @@ function skItogSmes(){
     </div>`;
 }
 
+// ПРЕДУПРЕЖДАЕМ, А НЕ ЗАПРЕЩАЕМ (решение владельца 10 сентября 2026).
+// Вышло за рамки — говорим словами, что не так, и ВСЁ РАВНО показываем
+// числа. Мастер на объекте видит то, чего не видит приложение; запрет
+// заставит его считать на бумаге, и приложение окажется ни при чём.
+function skItogPol(){
+  const d = SK.pol;
+  const r = skPolRaschet(d);
+  if(!r) return `<div class="mat-note">Задайте длину и ширину пола — посчитаем.</div>`;
+  if(r.vsyoVychli) return `<div class="mat-note">Из ${fmt(r.brutto)} м² пола вычтено ${fmt(r.snyato)} м² — греть нечего.</div>`;
+  const imya = (d.imya||'').trim();
+  const shagTekst = fmt(Math.round(r.faktShag*10)/10);
+
+  const chisla = [
+    `<div><span>обогреваемая площадь</span><b>${fmt(r.ploschad)} м²</b></div>`,
+    r.trebuetsya > 0
+      ? `<div><span>требуемая мощность</span><b>${Math.round(r.trebuetsya)} Вт</b></div>` : '',
+    r.mat
+      ? `<div><span>мата брать</span><b>${fmt(r.ploschad)} м²</b></div>`
+      : `<div><span>примерная длина</span><b>${Math.round(r.dlinaPrim)} м</b></div>`
+  ].join('');
+
+  const proVychet = r.snyato > 0
+    ? `Из ${fmt(r.brutto)} м² пола вычтено ${fmt(r.snyato)} м².`
+    : `Греем весь пол — ${fmt(r.brutto)} м², ничего не вычтено.`;
+  const proShag = r.mat ? '' : (r.shagZadan
+    ? ` Шаг ${fmt(r.shag)} см — ваш.`
+    : ` Шаг не задан: считаем по стандартному ${fmt(SK_POL_SHAG)} см (обычно кладут 7–8).`);
+
+  const pred = [];
+  if(r.otklonenie !== null && Math.abs(r.otklonenie) > SK_POL_RAZBEG){
+    const naSkolko = Math.round(Math.abs(r.otklonenie));
+    pred.push(r.otklonenie > 0
+      ? `Фактическая мощность ${Math.round(r.faktVt)} Вт/м² — на ${naSkolko} % выше заданных ${fmt(r.vt)} Вт/м². Пол выйдет горячее задуманного.`
+      : `Фактическая мощность ${Math.round(r.faktVt)} Вт/м² — на ${naSkolko} % ниже заданных ${fmt(r.vt)} Вт/м². Пол выйдет прохладнее задуманного.`);
+  }
+  if(!r.mat && r.faktShag > 0){
+    if(r.faktShag > 15) pred.push(`Шаг вышел редкий — ${shagTekst} см. Дальше 15 см полосы тепла под плиткой начинают чувствоваться ногой. Это не запрет: сошлась мощность — решать вам.`);
+    else if(r.faktShag < 5) pred.push(`Шаг вышел густой — ${shagTekst} см. Посмотрите в паспорте кабеля, разрешён ли такой шаг: мощные кабели так близко не кладут.`);
+  }
+  if(r.mat && r.matS > 0){
+    if(r.matS > r.ploschad + 0.05) pred.push(`В комплекте ${fmt(r.matS)} м² мата, а греем ${fmt(r.ploschad)} м². Сетку мат режет, а кабель в нём — нет: лишние витки лягут в ту же площадь, и мощность на квадрат вырастет.`);
+    else if(r.matS < r.ploschad - 0.05) pred.push(`В комплекте ${fmt(r.matS)} м² мата — на ${fmt(r.ploschad - r.matS)} м² меньше, чем греем. Добирайте вторым куском или уменьшайте обогреваемую площадь.`);
+  }
+
+  // Числа по факту показываем ВСЕГДА, когда есть из чего их считать, —
+  // и рядом с окриком тоже. Запрет заставил бы считать на бумаге.
+  const faktChisla = (r.faktShag > 0 || r.faktVt > 0)
+    ? `<div class="sk-chisla">
+        ${(!r.mat && r.faktShag > 0) ? `<div><span>фактический шаг</span><b>${shagTekst} см</b></div>` : ''}
+        ${r.faktVt > 0 ? `<div><span>фактически на квадрат</span><b>${Math.round(r.faktVt)} Вт/м²</b></div>` : ''}
+      </div>` : '';
+
+  const verdikt = (r.otklonenie !== null && !pred.length)
+    ? `<div class="mat-note"><b>Комплект подходит.</b> Фактическая мощность сошлась с заданной${r.mat ? '' : `, шаг ${shagTekst} см`}.</div>`
+    : '';
+
+  return `<div class="sk-itog">
+      ${imya ? `<div class="sk-itog-imya">${escapeHtml(imya)}</div>` : ''}
+      <div class="sk-chisla">${chisla}</div>
+      <div class="mat-note">${proVychet}${proShag}${
+        r.vt > 0 ? '' : ' Мощность на квадрат не задана — требуемую не считаем.'}</div>
+      ${r.mat
+        ? '<div class="mat-note">Мат берут ровно на обогреваемую площадь: он режется по сетке, а шаг внутри задан на заводе и подбору не поддаётся.</div>'
+        : '<div class="mat-note">Кабель не режут — его берут готовым комплектом. Впишите длину и мощность того, который нашли, и посмотрите, что выйдет по факту.</div>'}
+      ${faktChisla}
+      ${pred.map(t=> `<div class="room-warn zn-abzac">${ZN_VNIMANIE}<span>${escapeHtml(t)}</span></div>`).join('')}
+      ${verdikt}
+    </div>`;
+}
+
 function renderSkalkView(){
   const r = SK.razdel;
   const vkladka = (k, n)=>
@@ -24805,6 +24969,53 @@ function renderSkalkView(){
       </div>
       ${skPloschadiHtml()}
       <div id="skItog">${skItogPloschadi()}</div>`;
+  } else if(r === 'pol'){
+    const mat = SK.pol.sposob === 'mat';
+    const knSposob = (v, n)=>
+      `<button type="button" class="calc-mode-btn uzkiy${(mat?'mat':'kabel')===v?' active':''}" data-sk-pol-sposob="${v}">${n}</button>`;
+    const knVt = (p)=>
+      `<button type="button" class="calc-mode-btn uzkiy${num(SK.pol.vtNaM2)===p[0]?' active':''}" data-sk-pol-vt="${p[0]}">${p[0]} Вт/м² · ${p[1]}</button>`;
+    telo = `
+      <div class="cust-grid">
+        ${skPole('pol','imya','Что считаем', {text:true, placeholder:'напр. санузел'})}
+        <div></div>
+      </div>
+      <div class="calc-mode">
+        ${knSposob('kabel','Греющий кабель')}
+        ${knSposob('mat','Нагревательный мат')}
+      </div>
+      <div class="cust-grid">
+        ${skPole('pol','dlina','Пол: длина, м')}
+        ${skPole('pol','shirina','Пол: ширина, м')}
+      </div>
+      ${skProyomyHtml('pol', false, null, {
+        zagolovok:'Что вычитаем',
+        wPodskazka:'ширина, м', hPodskazka:'длина, м',
+        pusto:'Ничего не вычитаем — греем весь пол.',
+        dobavit:'+ Кусок'})}
+      <div class="sk-pamyatka">
+        <div class="sk-podzag">О чём не забыть</div>
+        <div class="mat-note">Греется не вся комната. Это напоминание, а не правило: что греть на этом объекте, знаете вы, а не приложение.</div>
+        <div class="mat-note">· Ванна, стиральная машина, встроенная мебель — под ними не греют.</div>
+        <div class="mat-note">· Напольный унитаз — не греют вовсе. Подвесной на инсталляции — греют примерно половину пятна: чаша висит, ноги под ней нет.</div>
+        <div class="mat-note">· Подвесная раковина — греют, пол под ней свободен. А тумба или пьедестал, стоящие на полу, — вычитаются, как любая мебель в пол.</div>
+        <div class="mat-note">· Душевая — как решите. Готовый поддон, акриловый или стальной, не греют; выложенную плиткой с трапом греют, и всё чаще.</div>
+        <div class="mat-note">· От стен отступают на тот же шаг, что между витками. Отдельно вычитать этот отступ не надо — он уже сидит в шаге.</div>
+      </div>
+      <div class="sk-podzag">Мощность на квадратный метр</div>
+      <div class="calc-mode">${SK_POL_MOSCHNOSTI.map(knVt).join('')}</div>
+      <div class="cust-grid">
+        ${skPole('pol','vtNaM2','Вт на м²', {placeholder:'выберите выше или впишите своё'})}
+        ${mat ? '<div></div>' : skPole('pol','shag','Примерный шаг, см', {placeholder:'пусто — ' + fmt(SK_POL_SHAG) + ' (обычно 7–8)'})}
+      </div>
+      <div class="sk-podzag">Комплект, который берёте</div>
+      <div class="cust-grid">
+        ${mat
+          ? skPole('pol','matS','Мат: площадь, м²') + skPole('pol','matVt','Мат: мощность, Вт')
+          : skPole('pol','komplD','Кабель: длина, м') + skPole('pol','komplVt','Кабель: мощность, Вт')}
+      </div>
+      <div class="mat-note">Своего списка комплектов у нас нет нарочно: у каждого производителя свой ряд длин и мощностей, и наш список быстро начал бы врать. Впишите то, что держите в руках.</div>
+      <div id="skItog">${skItogPol()}</div>`;
   } else {
     telo = `
       <div class="cust-grid">
@@ -24834,6 +25045,7 @@ function renderSkalkView(){
         ${vkladka('bloki','Кирпич и блоки')}
         ${vkladka('ploschadi','Площади')}
         ${vkladka('smes','Смеси')}
+        ${vkladka('pol','Тёплый пол')}
       </div>
       <div class="section">${telo}</div>
     </div>`;
@@ -24858,6 +25070,7 @@ function skItogObnovit(){
   box.innerHTML = SK.razdel === 'listy' ? skItogListy()
                 : SK.razdel === 'bloki' ? skItogBloki()
                 : SK.razdel === 'ploschadi' ? skItogPloschadi()
+                : SK.razdel === 'pol' ? skItogPol()
                 : skItogSmes();
 }
 
@@ -24875,6 +25088,20 @@ function skAttach(){
     };
     el.addEventListener('input', prinyat);
     el.addEventListener('change', prinyat);
+  });
+  // Тёплый пол: кнопки мощности и способа. Это выбор, а не ввод, —
+  // перерисовываем целиком: у мощности меняется и подсветка кнопки,
+  // и значение в поле, а у способа ещё и состав полей комплекта.
+  // Фокус при нажатии кнопки ни у кого не отнимаем.
+  main.querySelectorAll('[data-sk-pol-vt]').forEach(el=>{
+    el.onclick = ()=>{
+      SK.pol.vtNaM2 = el.getAttribute('data-sk-pol-vt');
+      skZapomnit('pol.vtNaM2', SK.pol.vtNaM2);
+      render();
+    };
+  });
+  main.querySelectorAll('[data-sk-pol-sposob]').forEach(el=>{
+    el.onclick = ()=>{ SK.pol.sposob = el.getAttribute('data-sk-pol-sposob'); render(); };
   });
   // Куда писать проём: в стену листового или в общий список раздела.
   const proyomySpiska = (adr)=>{
