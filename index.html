@@ -4173,7 +4173,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-10-265';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-10-266';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -15619,9 +15619,10 @@ function condK(proj){
 // Итог считается по тем же строкам, что печатаются в смете, а не отдельной
 // формулой. Иначе два разных способа счёта рано или поздно разойдутся.
 // СУММА ПО СМЕТЕ К ОПЛАТЕ — без дополнительных работ и за вычетом
-// позиций, снятых доп. соглашением. Ею живёт расписка (в ней деньги,
-// которые человек получает на руки) и строка «Доп. работы» в раскладке
-// акта приёма-сдачи.
+// позиций, снятых доп. соглашением. Ею живёт строка «Смета»
+// на экране и строка «Доп. работы» в раскладке акта приёма-сдачи.
+// РАСПИСКА ЭТИМ ЧИСЛОМ БОЛЬШЕ НЕ ЖИВЁТ: с 10 сентября 2026 сумма
+// в ней только ручная — см. raspiskaBlocks.
 // В ДОГОВОР ЭТО ЧИСЛО БОЛЬШЕ НЕ ИДЁТ: с 8 сентября 2026 договор
 // считается по подписанной смете — см. smetaPodpisana ниже.
 function smetaTotal(proj){
@@ -15639,7 +15640,7 @@ function smetaTotal(proj){
 // одно и то же — доп. соглашение. Смета — Приложение № 1 к договору,
 // и два документа на одном столе обязаны говорить одно число.
 // smetaTotal отвечает на другой вопрос — сколько причитается по смете
-// сейчас, с учётом подписанных исключений; им живут расписка и строка
+// сейчас, с учётом подписанных исключений; им живёт экран и строка
 // «Доп. работы» в раскладке акта.
 function smetaPodpisana(proj){
   return buildEstimateData(proj, { bezDop:true }).total;
@@ -16463,11 +16464,21 @@ function dogovorBlocks(proj){
 
 function raspiskaBlocks(proj){
   const c = proj.customer||{};
-  const total = smetaTotal(proj);   // расписка по договору — значит по смете
   const date = _or(formatDate(c.date), '«___» __________ 20___ г.');
   const cn = contractNumber(proj);
   const compDate = _or(formatDate(uiContractDate), '«___» __________ 20___ г.');
-  const amt = uiSettlementAmount ? amountInline(num(uiSettlementAmount)) : amountInline(total);
+  // СУММА В РАСПИСКЕ ТОЛЬКО РУЧНАЯ (решение владельца 10 сентября
+  // 2026: «сумму каждый раз пользователь будет вписывать»).
+  // Счёта здесь нет вовсе: расписка про деньги, полученные на руки
+  // здесь и сейчас, а не про долю от сметы. Пока сумма бралась
+  // из сметы, расписка расходилась с договором — тот со сборки
+  // 2026-09-09-260 считается по подписанной смете, а два числа
+  // в приложениях одного договора расходиться не должны.
+  // Поле пустое — печатается линия под руку, тем же помощником
+  // `_or` и той же линией, что в акте этапа: ноль в расписке хуже
+  // пустого места. Задача 2026-09-10-07.
+  const amt = _or(uiSettlementAmount && amountInline(num(uiSettlementAmount)),
+                  '______________ (______________________) рублей ___ копеек');
   const B = [];
   const P=(t,o)=>B.push(Object.assign({text:t,style:'normal'},o||{}));
   P(`Приложение № 2 к Договору № ${cn} от ${date}`, {style:'small', align:'right', gap:10});
@@ -20343,7 +20354,9 @@ function renderDogovorDocPanel(proj){
   if(t === 'dopsrok') fields.push(`<div class="cust-field"><label>Количество рабочих дней</label><input type="text" inputmode="numeric" placeholder="если пусто — прочерк" value="${escapeAttr(uiContractDays)}" data-contract-days></div>`);
   if(t === 'raspiska' || t === 'akt_etapa' || t === 'rastorzhenie'){
     const lbl = t === 'akt_etapa' ? 'Сумма этапа, ₽' : t === 'raspiska' ? 'Полученная сумма, ₽' : 'Сумма взаиморасчёта, ₽';
-    const ph = t === 'raspiska' ? 'если пусто — сумма из сметы' : 'если пусто — прочерк';
+    // Во всех трёх документах подсказка одна: пустое поле даёт линию.
+    // Расписка больше не берёт сумму из сметы (задача 2026-09-10-07).
+    const ph = 'если пусто — прочерк';
     fields.push(`<div class="cust-field"><label>${lbl}</label><input type="text" inputmode="decimal" placeholder="${ph}" value="${escapeAttr(uiSettlementAmount)}" data-settlement></div>`);
   }
   const extra = fields.length ? `<div class="cust-grid" style="margin-top:12px;">${fields.join('')}${fields.length%2?'<div></div>':''}</div>` : '';
