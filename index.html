@@ -4173,7 +4173,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-10-264';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-10-265';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -23339,13 +23339,42 @@ const TC_SURFACES = {
                                         corner:true, proyomy:true },
 };
 
-// Одна поверхность: тип и её размеры. Плитка, шов, рисунок и способ
-// укладки сюда не входят — они общие на весь расчёт: человек кладёт
-// одну и ту же плитку на пол и на стены санузла, а не разную.
+// УКЛАДКА — СВОЯ У КАЖДОЙ ПОВЕРХНОСТИ (владелец 10 сентября 2026:
+// «раскладка плитки: просмотр левый край или правый и так далее,
+// к каждой стене должно применяться отдельно», и следом: «рисунок
+// также отдельно, могут быть две разные плитки, ориентация тоже»).
+//
+// У каждой стены свой угол, откуда кладут, и свой рисунок. А размер
+// плитки и шов остаются ОБЩИМИ: «могут быть две разные плитки
+// одинакового размера» — значит разный материал не повод делить
+// поверхности по размеру.
+//
+// Умолчания собраны одним списком: их берёт новая поверхность, их же
+// подставляет `tcNast` тому, у кого поля нет вовсе. Два списка
+// умолчаний разошлись бы молча.
+const TC_UKLADKA_PO_UMOLCHANIYU = {
+  orient:'h',                                        // как введено / повёрнута на 90°
+  pattern:'straight', offset:'half', offsetCustom:'',
+  startX:'edgeL', startY:'edgeB',
+  // Свой размер плитки у края — под дизайн-проект, где он задан
+  // числом. В сантиметрах, как и размеры плитки.
+  startXCustom:'', startYCustom:''
+};
+
+// Настройка укладки ЭТОЙ поверхности. Поля нет — берём умолчание:
+// поверхность могла быть заведена до 10 сентября 2026, когда укладка
+// была общей, и посчитаться нулём она не должна.
+function tcNast(pv, k){
+  const v = pv ? pv[k] : undefined;
+  return (v === undefined || v === null) ? TC_UKLADKA_PO_UMOLCHANIYU[k] : v;
+}
+
+// Одна поверхность: тип, её размеры и своя укладка. Плитка и шов сюда
+// не входят — они общие на весь расчёт.
 function tcPustaya(){
-  return { surface:'floor', W:'', H:'',
+  return Object.assign({ surface:'floor', W:'', H:'',
            proyomy:[],
-           boxW:'', boxD:'', boxCorner:'BL' };
+           boxW:'', boxD:'', boxCorner:'BL' }, TC_UKLADKA_PO_UMOLCHANIYU);
 }
 
 // Пустой проём. Дверь стоит на полу, поэтому «от пола» у неё нет вовсе;
@@ -23362,13 +23391,11 @@ const tc = {
   // заходами, складывая на бумаге, значит делать руками ровно то,
   // ради чего брали приложение (владелец 4 сентября 2026).
   poverhnosti: [ tcPustaya() ],
+  // ОБЩЕЕ НА ВЕСЬ РАСЧЁТ: размер плитки, шов и есть ли на ней рисунок.
+  // Всё, что относится к укладке, живёт в самой поверхности —
+  // см. TC_UKLADKA_PO_UMOLCHANIYU.
   tileW:'', tileH:'', seam:'2',
   directional:'plain',
-  orient:'h', pattern:'straight', offset:'half', offsetCustom:'',
-  startX:'edgeL', startY:'edgeB',
-  // Свой размер плитки у края — под дизайн-проект, где он задан
-  // числом. В сантиметрах, как и размеры плитки.
-  startXCustom:'', startYCustom:'',
   tab:'data',
   inited:false,
 };
@@ -23546,8 +23573,9 @@ function tcPackPairs(listA, listB, cap){
 function tcCompute(pv){
   const W=num(pv.W), H=num(pv.H);
   // ориентация: 'h' — как введено, 'v' — плитка повёрнута на 90°
-  const cw = (tc.orient==='h' ? num(tc.tileW) : num(tc.tileH))/100; // ширина ячейки, м
-  const ch = (tc.orient==='h' ? num(tc.tileH) : num(tc.tileW))/100; // высота ячейки, м
+  const orient = tcNast(pv,'orient');                               // своя у поверхности
+  const cw = (orient==='h' ? num(tc.tileW) : num(tc.tileH))/100;    // ширина ячейки, м
+  const ch = (orient==='h' ? num(tc.tileH) : num(tc.tileW))/100;    // высота ячейки, м
   const seam = num(tc.seam)/1000;                                   // шов, м
   if(!(W>0 && H>0 && cw>0 && ch>0)) return {ok:false};
   const px = cw+seam, py = ch+seam;                                 // шаг сетки (плитка + шов)
@@ -23587,15 +23615,16 @@ function tcCompute(pv){
     }
     return 0;                                          // целая плитка от ближнего края (левый/нижний)
   };
-  const x0ref = refEdge(tc.startX, W, cw, tc.startXCustom);
-  const y0ref = refEdge(tc.startY, H, ch, tc.startYCustom);
+  const x0ref = refEdge(tcNast(pv,'startX'), W, cw, tcNast(pv,'startXCustom'));
+  const y0ref = refEdge(tcNast(pv,'startY'), H, ch, tcNast(pv,'startYCustom'));
 
   // смещение рядов для «вразбежку»
   let rowShift = 0;
-  if(tc.pattern==='offset'){
-    rowShift = (tc.offset==='custom')
-      ? num(tc.offsetCustom)/100
-      : ({half:0.5, third:1/3, quarter:0.25, fifth:0.2, sixth:1/6}[tc.offset] || 0.5) * cw;
+  if(tcNast(pv,'pattern')==='offset'){
+    const dolya = tcNast(pv,'offset');
+    rowShift = (dolya==='custom')
+      ? num(tcNast(pv,'offsetCustom'))/100
+      : ({half:0.5, third:1/3, quarter:0.25, fifth:0.2, sixth:1/6}[dolya] || 0.5) * cw;
   }
 
   const tiles=[]; let whole=0, cut=0;
@@ -23680,7 +23709,7 @@ function tcCompute(pv){
   // Полосы отдаём наружу: обрезки одной поверхности годятся другой —
   // плитка и рисунок общие. Складывать их надо один раз на весь расчёт,
   // а не по поверхности, иначе экономия теряется ровно там, где она есть.
-  return {ok:true, W,H, tiles, whole, cut, total, totalReuse, saved, surfArea, waste, holes, cutList, shapedCount,
+  return {ok:true, W,H, cw, ch, tiles, whole, cut, total, totalReuse, saved, surfArea, waste, holes, cutList, shapedCount,
           polosy:{widL, widR, hgtB, hgtT, cornerCut}};
 }
 
@@ -23695,28 +23724,42 @@ function tcVse(){
   if(!godnye.length){
     return { ok:false, tooMany: vse.some(r=> r.tooMany), kazhdaya: vse };
   }
-  const cw = (tc.orient==='h' ? num(tc.tileW) : num(tc.tileH))/100;
-  const ch = (tc.orient==='h' ? num(tc.tileH) : num(tc.tileW))/100;
+  // Площадь ячейки от ориентации не зависит: повёрнутая плитка — та же
+  // самая плитка. Поэтому купленную площадь считаем по самой плитке,
+  // а не по ячейке какой-то одной поверхности.
+  const ploschadYacheyki = num(tc.tileW)*num(tc.tileH)/10000;
 
   let whole=0, cut=0, surfArea=0, shapedCount=0, cornerCut=0;
-  const widL=[], widR=[], hgtB=[], hgtT=[];
   const cutList = [];
+  // ЗАПАС ОБРЕЗКОВ ДЕЛИТСЯ ПО РАЗМЕРУ ЯЧЕЙКИ. Ориентация с 10 сентября
+  // 2026 своя у каждой поверхности, и у повёрнутой ячейка другая:
+  // полосу шириной под 60 см в ячейку 30 см не уложишь, и свалив их
+  // в один список мы занизили бы закупку.
+  // Внутри одного размера ячейки запас по-прежнему ОДИН на все
+  // поверхности — обрезок от пола идёт в подрезку стены.
+  const zapas = new Map();
   godnye.forEach(r=>{
     whole += r.whole; cut += r.cut; surfArea += r.surfArea; shapedCount += r.shapedCount;
     cornerCut += r.polosy.cornerCut;
-    widL.push(...r.polosy.widL); widR.push(...r.polosy.widR);
-    hgtB.push(...r.polosy.hgtB); hgtT.push(...r.polosy.hgtT);
+    const klyuch = Math.round(r.cw*10000) + 'x' + Math.round(r.ch*10000);
+    let z = zapas.get(klyuch);
+    if(!z){ z = {cw:r.cw, ch:r.ch, widL:[], widR:[], hgtB:[], hgtT:[]}; zapas.set(klyuch, z); }
+    z.widL.push(...r.polosy.widL); z.widR.push(...r.polosy.widR);
+    z.hgtB.push(...r.polosy.hgtB); z.hgtT.push(...r.polosy.hgtT);
     r.cutList.forEach(c=>{
       const est = cutList.find(x=> Math.abs(x.w-c.w)<0.05 && Math.abs(x.h-c.h)<0.05);
       if(est) est.n += c.n; else cutList.push({ w:c.w, h:c.h, n:c.n });
     });
   });
-  const tilesW = (tc.directional==='dir') ? tcPackPairs(widL, widR, cw) : tcPackFFD(widL.concat(widR), cw);
-  const tilesH = (tc.directional==='dir') ? tcPackPairs(hgtB, hgtT, ch) : tcPackFFD(hgtB.concat(hgtT), ch);
+  let tilesW = 0, tilesH = 0;
+  zapas.forEach(z=>{
+    tilesW += (tc.directional==='dir') ? tcPackPairs(z.widL, z.widR, z.cw) : tcPackFFD(z.widL.concat(z.widR), z.cw);
+    tilesH += (tc.directional==='dir') ? tcPackPairs(z.hgtB, z.hgtT, z.ch) : tcPackFFD(z.hgtB.concat(z.hgtT), z.ch);
+  });
 
   const total = whole + cut;
   const totalReuse = whole + tilesW + tilesH + cornerCut + shapedCount;
-  const bought = total*cw*ch;
+  const bought = total*ploschadYacheyki;
   const waste = bought>0 ? Math.max(0, Math.round((bought - surfArea)/bought*100)) : 0;
   cutList.sort((a,b)=> (b.w*b.h) - (a.w*a.h));
   return { ok:true, kazhdaya: vse, whole, cut, total, totalReuse,
@@ -23770,12 +23813,51 @@ function tcSVG(r){
 }
 const eps0 = 1e-6;
 
-// перерисовать картинку, цифры и список подрезок
+// СКЕЛЕТ ВКЛАДКИ «ПРОСМОТР»: у каждой поверхности свой блок настроек
+// укладки и своё место под схему.
+//
+// Скелет строится при открытии вкладки и при изменении СОСТАВА
+// поверхностей — и НЕ перестраивается на каждый введённый знак.
+// Внутри него стоят поля («своё смещение», «свой размер у края»),
+// а перерисовка поля отнимает у него фокус: на телефоне это выглядит
+// как «клавиатура закрылась сама».
+function tcVidHTML(){
+  return (tc.poverhnosti || []).map((pv,i)=>{
+    const imya = TC_SURFACES[pv.surface] ? TC_SURFACES[pv.surface].label : 'Поверхность';
+    return `<div class="sk-stena-itog">
+      <div class="sk-podzag" id="tcPodzag${i}">${escapeHtml(imya)} ${i+1}</div>
+      <div class="tc-view-wrap">
+        <div class="tc-view-controls" id="tcLay${i}">${tcUkladkaHTML(pv, i)}</div>
+        <div class="tc-view-main"><div class="tc-canvas" id="tcShema${i}"></div></div>
+      </div>
+    </div>`;
+  }).join('') + `<div id="tcItogi"></div>`;
+}
+
+// перерисовать схемы, цифры и список подрезок. Блоки настроек не трогаем —
+// почему, написано у tcVidHTML.
 function tcRenderPreview(){
-  const box = document.getElementById('tcPreview'); if(!box) return;
+  const itogi = document.getElementById('tcItogi'); if(!itogi) return;
+  tcSelRect = null;                           // выделенная плитка ушла вместе со старой схемой
   const r = tcVse();
+  // Схема у каждой поверхности своя: сложить их в одну картинку нельзя,
+  // они лежат в разных плоскостях. А числа ниже — общие.
+  (tc.poverhnosti || []).forEach((pv,i)=>{
+    const pod   = document.getElementById('tcPodzag' + i);
+    const shema = document.getElementById('tcShema' + i);
+    const odna  = (r.kazhdaya || [])[i];
+    const imya  = TC_SURFACES[pv.surface] ? TC_SURFACES[pv.surface].label : 'Поверхность';
+    if(pod) pod.textContent = (odna && odna.ok)
+      ? (imya + ' ' + (i+1) + ' · ' + fmt(odna.W) + ' × ' + fmt(odna.H) + ' м · ' + odna.total + ' шт.')
+      : (imya + ' ' + (i+1));
+    if(shema) shema.innerHTML = (odna && odna.ok)
+      ? tcSVG(odna)
+      : `<div class="tc-empty">${(odna && odna.tooMany)
+          ? 'Слишком много плиток — проверьте единицы.'
+          : 'Размеры не заполнены.'}</div>`;
+  });
   if(!r.ok){
-    box.innerHTML = `<div class="tc-empty">${
+    itogi.innerHTML = `<div class="tc-empty">${
       r.tooMany
         ? 'Слишком много плиток — проверьте единицы: поверхность в метрах, плитка в сантиметрах.'
         : 'Заполните размеры поверхностей и плитки на вкладке «Данные».'
@@ -23792,25 +23874,7 @@ function tcRenderPreview(){
       r.poverhnostey > 1 ? ', обрезки ходят между поверхностями' : ''}</span><b>−${r.saved} шт</b></div>`;
     cutHtml += `</div>`;
   }
-  // Схема у каждой поверхности своя: сложить их в одну картинку нельзя,
-  // они лежат в разных плоскостях. А числа ниже — общие.
-  const shemy = r.kazhdaya.map((odna,i)=>{
-    const pv = tc.poverhnosti[i];
-    const imya = TC_SURFACES[pv.surface] ? TC_SURFACES[pv.surface].label : 'Поверхность';
-    if(!odna.ok){
-      return `<div class="sk-stena-itog"><div class="sk-podzag">${escapeHtml(imya)} ${i+1}</div>
-        <div class="tc-empty">${odna.tooMany
-          ? 'Слишком много плиток — проверьте единицы.'
-          : 'Размеры не заполнены.'}</div></div>`;
-    }
-    return `<div class="sk-stena-itog">
-      <div class="sk-podzag">${escapeHtml(imya)} ${i+1} · ${fmt(odna.W)} × ${fmt(odna.H)} м · ${odna.total} шт.</div>
-      <div class="tc-canvas">${tcSVG(odna)}</div>
-    </div>`;
-  }).join('');
-
-  box.innerHTML =
-    shemy +
+  itogi.innerHTML =
     `<div class="tc-legend"><span><i class="lg-full"></i>целая</span><span><i class="lg-cut"></i>в подрез</span></div>` +
     `<div class="tc-tile-info" id="tcTileInfo">Нажмите на любую плитку — покажу её размер.</div>` +
     `<div class="tc-nums">
@@ -23826,9 +23890,12 @@ function tcRenderPreview(){
 }
 
 // --- сборка полей управления (перестраивается при смене типа/рисунка) ---
-function tcSeg(key, opts, cur){
+// Набор кнопок пишет либо в общее состояние, либо в одну поверхность —
+// адрес тот же, что у полей ввода: p:<номер>:<поле>.
+function tcSeg(key, opts, cur, i){
+  const adres = (i === undefined || i === null) ? key : ('p:' + i + ':' + key);
   return `<div class="calc-mode">` + opts.map(([v,l])=>
-    `<button type="button" class="calc-mode-btn uzkiy${v===cur?' active':''}" data-tc-set="${key}|${v}">${l}</button>`
+    `<button type="button" class="calc-mode-btn uzkiy${v===cur?' active':''}" data-tc-set="${adres}|${v}">${l}</button>`
   ).join('') + `</div>`;
 }
 // Поле пишет либо в общее состояние, либо в одну поверхность —
@@ -23930,44 +23997,46 @@ function tcControlsDataHTML(){
   h += `<div class="tc-sec-title">Плитка</div>`;
   h += `<div class="tc-fields">` + tcFieldInput('tileW','Ширина плитки, см') + tcFieldInput('tileH','Высота плитки, см') + `</div>`;
   h += `<div class="tc-fields">` + tcFieldInput('seam','Шов, мм') + `<div></div></div>`;
-  h += `<div class="tc-label">Ориентация плитки</div>`;
-  h += tcSeg('orient', [['h','Горизонтально'],['v','Вертикально']], tc.orient);
   h += `<div class="tc-label">Рисунок плитки</div>`;
   h += tcSeg('directional', [['plain','Однотонная'],['dir','С рисунком']], tc.directional);
   h += `<div class="tc-hint">«Однотонную» можно разворачивать — обрезки идут в дело активнее. У плитки «с рисунком» разворот нельзя, поэтому остатков в дело идёт меньше.</div>`;
-  h += `<div class="tc-hint">Заполнив данные, откройте «Просмотр» — там раскладка и выбор способа укладки.</div>`;
+  h += `<div class="tc-hint">Размер плитки и шов — общие на весь расчёт: разная плитка одного размера ложится одинаково. А ориентация, рисунок укладки и старт задаются у каждой поверхности СВОИ — на вкладке «Просмотр», рядом с её схемой.</div>`;
   return h;
 }
-// поля вкладки «Просмотр» (слева от картинки): Укладка
-function tcControlsLayoutHTML(){
+// УКЛАДКА ОДНОЙ ПОВЕРХНОСТИ («Просмотр», рядом с её схемой).
+// Всё, что здесь есть, пишется в саму поверхность: у каждой стены свой
+// угол, откуда кладут, и свой рисунок (владелец 10 сентября 2026).
+// Размер плитки и шов сюда не входят — они общие и живут на «Данных».
+function tcUkladkaHTML(pv, i){
+  const startX = tcNast(pv,'startX'), startY = tcNast(pv,'startY');
   let h='';
   h += `<div class="tc-sec-title">Укладка</div>`;
+  h += `<div class="tc-label">Ориентация плитки</div>`;
+  h += tcSeg('orient', [['h','Горизонтально'],['v','Вертикально']], tcNast(pv,'orient'), i);
   h += `<div class="tc-label">Рисунок</div>`;
-  h += tcSeg('pattern', [['straight','Шов-в-шов'],['offset','Вразбежку']], tc.pattern);
-  if(tc.pattern==='offset'){
+  h += tcSeg('pattern', [['straight','Шов-в-шов'],['offset','Вразбежку']], tcNast(pv,'pattern'), i);
+  if(tcNast(pv,'pattern')==='offset'){
     h += `<div class="tc-label">Смещение рядов</div>`;
-    h += `<div class="calc-mode">` + [['half','1/2'],['third','1/3'],['quarter','1/4'],['fifth','1/5'],['sixth','1/6'],['custom','Своё']].map(([v,l])=>
-          `<button type="button" class="calc-mode-btn uzkiy${tc.offset===v?' active':''}" data-tc-set="offset|${v}">${l}</button>`
-        ).join('') + `</div>`;
-    if(tc.offset==='custom'){
-      h += `<div class="tc-fields">` + tcFieldInput('offsetCustom','Смещение, см') + `<div></div></div>`;
+    h += tcSeg('offset', [['half','1/2'],['third','1/3'],['quarter','1/4'],['fifth','1/5'],['sixth','1/6'],['custom','Своё']], tcNast(pv,'offset'), i);
+    if(tcNast(pv,'offset')==='custom'){
+      h += `<div class="tc-fields">` + tcFieldInput('offsetCustom','Смещение, см', i) + `<div></div></div>`;
     }
   }
   h += `<div class="tc-label">Старт по горизонтали</div>`;
-  h += tcSeg('startX', [['edgeL','Левый край'],['edgeR','Правый край'],['centerSeam','Центр (шов)'],['centerTile','Центр (плитка)'],['customL','Свой слева'],['customR','Свой справа']], tc.startX);
+  h += tcSeg('startX', [['edgeL','Левый край'],['edgeR','Правый край'],['centerSeam','Центр (шов)'],['centerTile','Центр (плитка)'],['customL','Свой слева'],['customR','Свой справа']], startX, i);
   // Поле показываем только когда выбран свой размер — иначе оно стоит
   // пустым и человек гадает, к чему оно. Подпись называет тот край,
   // который закрепляем: «слева» и «справа» — это разные раскладки.
-  if(tc.startX === 'customL' || tc.startX === 'customR'){
+  if(startX === 'customL' || startX === 'customR'){
     h += `<div class="tc-fields">` +
-         tcFieldInput('startXCustom', tc.startX === 'customR' ? 'Плитка у правого края, см' : 'Плитка у левого края, см') +
+         tcFieldInput('startXCustom', startX === 'customR' ? 'Плитка у правого края, см' : 'Плитка у левого края, см', i) +
          `<div></div></div>`;
   }
   h += `<div class="tc-label">Старт по вертикали</div>`;
-  h += tcSeg('startY', [['edgeB','Нижний край'],['edgeT','Верхний край'],['centerSeam','Центр (шов)'],['centerTile','Центр (плитка)'],['customB','Свой снизу'],['customT','Свой сверху']], tc.startY);
-  if(tc.startY === 'customB' || tc.startY === 'customT'){
+  h += tcSeg('startY', [['edgeB','Нижний край'],['edgeT','Верхний край'],['centerSeam','Центр (шов)'],['centerTile','Центр (плитка)'],['customB','Свой снизу'],['customT','Свой сверху']], startY, i);
+  if(startY === 'customB' || startY === 'customT'){
     h += `<div class="tc-fields">` +
-         tcFieldInput('startYCustom', tc.startY === 'customT' ? 'Плитка у верхнего края, см' : 'Плитка у нижнего края, см') +
+         tcFieldInput('startYCustom', startY === 'customT' ? 'Плитка у верхнего края, см' : 'Плитка у нижнего края, см', i) +
          `<div></div></div>`;
   }
   return h;
@@ -24901,11 +24970,7 @@ function tcRenderBody(){
   if(onData){
     bd.innerHTML = `<div class="tc-controls" id="tcControls">${tcControlsDataHTML()}</div>`;
   } else {
-    bd.innerHTML =
-      `<div class="tc-view-wrap">
-         <div class="tc-view-controls" id="tcLayoutControls">${tcControlsLayoutHTML()}</div>
-         <div class="tc-view-main"><div class="tc-preview" id="tcPreview"></div></div>
-       </div>`;
+    bd.innerHTML = `<div class="tc-preview" id="tcPreview">${tcVidHTML()}</div>`;
     tcRenderPreview();
   }
 }
@@ -24979,9 +25044,14 @@ function tcAttach(){
       const kuda = tcKuda(adres);
       if(kuda.o) kuda.o[kuda.k] = v;
       if(tc.tab==='view'){
-        const lc = document.getElementById('tcLayoutControls');
-        if(lc) lc.innerHTML = tcControlsLayoutHTML();       // обновить активные кнопки / поле «своё»
-        tcRenderPreview();                                  // и сразу перерисовать картинку
+        // Перерисовываем ТОЛЬКО тот блок настроек, в котором нажали:
+        // у соседних поверхностей свои поля, и отнимать у них введённое
+        // (а на телефоне — фокус и клавиатуру) незачем.
+        const chasti = adres.split(':');
+        const nom = (chasti[0] === 'p') ? parseInt(chasti[1]) : -1;
+        const lc = (nom >= 0) ? document.getElementById('tcLay' + nom) : null;
+        if(lc) lc.innerHTML = tcUkladkaHTML(tc.poverhnosti[nom], nom);
+        tcRenderPreview();                                  // и сразу перерисовать схемы
       } else {
         const dc = document.getElementById('tcControls');
         if(dc) dc.innerHTML = tcControlsDataHTML();          // набор полей мог смениться
