@@ -2646,13 +2646,14 @@
      вида того же самого не заводим (CLAUDE.md). */
   .calc-mode-btn.uzkiy{font-size:12px;padding:8px 12px;min-width:0;flex:1 1 auto;white-space:nowrap;}
   /* Строка проёма в раскладке — та же `.sk-proyom`, что в строительном
-     калькуляторе. Здесь только две поправки размещения: переключатель
-     «дверь/окно» не растягивается на всю строку, и числа моноширинно,
-     как в остальных полях раскладки. */
+     калькуляторе. Здесь только размещение: поля с подписями (`.tc-field`,
+     а не голый `.ownw-inp` с подсказкой внутри) и черта между проёмами,
+     чтобы двухэтажные строки не слипались. Сам вид полей — общий,
+     из `.tc-field input` выше по файлу.
+     Переключатели внутри строки («дверь/окно», «слева/справа») живут
+     общим `.sk-pr-seg` рядом с самой `.sk-proyom` — он нужен обоим
+     местам, и второго такого же правила не заводим (CLAUDE.md). */
   .tc-proyomy{margin-top:12px;}
-  /* Переключатель «дверь/окно» занимает свою строку: у полей ниже
-     подпись сверху, и в одну линию с кнопками они не встали бы ровно. */
-  .tc-pr-vid{margin:0 0 4px;flex:1 1 100%;gap:6px;}
   .tc-proyomy .sk-proyom{align-items:flex-end;padding-bottom:8px;
     border-bottom:1px solid var(--paper-line);margin-bottom:10px;}
   .tc-proyomy .sk-proyom:last-of-type{border-bottom:none;}
@@ -3392,6 +3393,13 @@
   .sk-vkladki{margin:16px 0 4px;}
 
   .sk-proyom{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:6px;}
+  /* Переключатель внутри строки проёма занимает свою строку: у полей ниже
+     подпись сверху, и в одну линию с кнопками они не встали бы ровно.
+     Класс один на оба переключателя и на оба места — «дверь/окно»
+     в раскладке плитки и «слева/справа» и там, и здесь. Прежде это
+     звалось `.tc-pr-vid` и жило только в раскладке; второго такого же
+     правила не заводим (CLAUDE.md). */
+  .sk-pr-seg{margin:0 0 4px;flex:1 1 100%;gap:6px;}
   .sk-proyom .ownw-inp{flex:1 1 110px;min-width:0;}
   .sk-proyom .sk-uzko{flex:0 0 70px;}
   .sk-itog{margin-top:18px;padding-top:14px;border-top:1px solid var(--paper-line);}
@@ -4165,7 +4173,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-10-263';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-10-264';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -23344,7 +23352,7 @@ function tcPustaya(){
 // у окна оно есть и спрашивается отдельным полем — разница между дверью
 // и окном ровно в этом, и она сохранена.
 function tcPustoyProyom(){
-  return { vid:'dver', w:'', h:'', x:'', y:'' };
+  return { vid:'dver', w:'', h:'', x:'', y:'', kray:'L' };
 }
 
 // состояние (только в памяти, сбрасывается при закрытии)
@@ -23365,6 +23373,25 @@ const tc = {
   inited:false,
 };
 
+// ОТ КАКОГО КРАЯ МЕРЯТЬ ОТСТУП. Мастер меряет от того угла, который
+// ближе: на длинной стене проём у правого края иначе приходится вымерять
+// через всю стену (владелец 10 сентября 2026).
+//
+// Слева отступ идёт до ЛЕВОЙ кромки проёма, справа — до ПРАВОЙ: в обоих
+// случаях до ближней. Поэтому при счёте справа левая кромка равна
+// «длина поверхности минус отступ минус ширина проёма».
+//
+// Правило живёт ОДНИМ выражением на всё приложение: и раскладка плитки
+// (`tcHoles`), и строительный калькулятор (`skListyRaschet`) зовут его же.
+// Два похожих счёта одного и того же расходятся молча (CLAUDE.md).
+//
+// Единицы не важны: всё приходит в одних и тех же. Пустой или
+// неизвестный край считается левым — так было до 10 сентября 2026,
+// и у тех, кто уже привык, ничего не меняется.
+function proyomLevo(kray, otstup, wProyoma, wPoverhnosti){
+  return (kray === 'R') ? (wPoverhnosti - otstup - wProyoma) : otstup;
+}
+
 // ВЫРЕЗЫ ПОВЕРХНОСТИ СПИСКОМ — прямоугольники в её координатах.
 // Пустой список означает «вырезов нет»; проёмы, целиком уехавшие
 // за край, отбрасываются здесь же, чтобы дальше их никто не считал.
@@ -23384,8 +23411,9 @@ function tcHoles(pv){
   // не увидев на экране ни одного проёма. Сами введённые проёмы
   // при этом никуда не деваются — вернул «Стену», и они на месте.
   ((vid && vid.proyomy) ? (pv.proyomy || []) : []).forEach(o=>{
-    const w=num(o.w), h=num(o.h), x=num(o.x);
+    const w=num(o.w), h=num(o.h);
     if(!(w>0 && h>0)) return;
+    const x = proyomLevo(o.kray, num(o.x), w, W);  // отступ мерят от ближнего края
     const y = (o.vid === 'okno') ? num(o.y) : 0;   // дверь стоит на полу, окно висит
     dobavit({x0:x, y0:y, x1:x+w, y1:y+h});
   });
@@ -23838,6 +23866,7 @@ function tcProyomyHTML(pv, i){
   const spisok = pv.proyomy || [];
   const stroki = spisok.map((o,j)=>{
     const okno = (o.vid === 'okno');
+    const sprava = (o.kray === 'R');
     // Поля с подписями, а не с подсказками внутри: заполненное поле
     // подсказку теряет, и на телефоне «2,1» уже не отличить от «0,5».
     // Подпись — та же `.tc-field`, что у размеров поверхности на этом
@@ -23846,13 +23875,17 @@ function tcProyomyHTML(pv, i){
       `<input type="text" inputmode="decimal" data-tc="pr:${i}:${j}:${k}" `+
       `value="${escapeAttr(o[k]||'')}" placeholder="0"></div>`;
     return `<div class="sk-proyom">
-      <div class="calc-mode tc-pr-vid">
+      <div class="calc-mode sk-pr-seg">
         <button type="button" class="calc-mode-btn uzkiy${okno?'':' active'}" data-tc-set="pr:${i}:${j}:vid|dver">Дверь</button>
         <button type="button" class="calc-mode-btn uzkiy${okno?' active':''}" data-tc-set="pr:${i}:${j}:vid|okno">Окно</button>
       </div>
       ${pole('w', okno ? 'Ширина окна, м' : 'Ширина двери, м')}
       ${pole('h', okno ? 'Высота окна, м' : 'Высота двери, м')}
-      ${pole('x','Отступ слева, м')}
+      <div class="calc-mode sk-pr-seg">
+        <button type="button" class="calc-mode-btn uzkiy${sprava?'':' active'}" data-tc-set="pr:${i}:${j}:kray|L" title="Отступ от левого края поверхности">Слева</button>
+        <button type="button" class="calc-mode-btn uzkiy${sprava?' active':''}" data-tc-set="pr:${i}:${j}:kray|R" title="Отступ от правого края поверхности">Справа</button>
+      </div>
+      ${pole('x', sprava ? 'Отступ справа, м' : 'Отступ слева, м')}
       ${okno ? pole('y','От пола до низа окна, м') : ''}
       <button type="button" class="btn-icon tc-pr-ubrat" data-tc-pr-del="${i}:${j}" title="Убрать проём">✕</button>
     </div>`;
@@ -24026,8 +24059,12 @@ function skListyRaschet(d){
   if(!(dlina > 0 && vysota > 0)) return;
 
   const proyomy = (st.proyomy || [])
-    .map(o=>({ x: Math.round(num(o.x)*1000), y: Math.round(num(o.y)*1000),
-               w: Math.round(num(o.w)*1000), h: Math.round(num(o.h)*1000) }))
+    .map(o=>{
+      const w = Math.round(num(o.w)*1000), h = Math.round(num(o.h)*1000);
+      // Отступ мерят от ближнего края — тем же выражением, что в раскладке.
+      return { x: proyomLevo(o.kray, Math.round(num(o.x)*1000), w, dlina),
+               y: Math.round(num(o.y)*1000), w: w, h: h };
+    })
     .filter(o=> o.w > 0 && o.h > 0);
   // Проём обрезаем по стене: уехавший за край не должен ни вычитаться
   // из площади, ни рисоваться мимо стены. Раньше проём шириной 6 м
@@ -24477,7 +24514,11 @@ function skProyomyHtml(razdel, sPolozheniem, iSteny){
       <input type="text" inputmode="decimal" class="ownw-inp" placeholder="высота, м"
              value="${escapeAttr(o.h||'')}" data-sk-pr="${adr}|${i}|h">
       ${sPolozheniem ? `
-      <input type="text" inputmode="decimal" class="ownw-inp" placeholder="от левого края, м"
+      <div class="calc-mode sk-pr-seg">
+        <button type="button" class="calc-mode-btn uzkiy${o.kray==='R'?'':' active'}" data-sk-pr-kray="${adr}|${i}|L" title="Отступ от левого края стены">Слева</button>
+        <button type="button" class="calc-mode-btn uzkiy${o.kray==='R'?' active':''}" data-sk-pr-kray="${adr}|${i}|R" title="Отступ от правого края стены">Справа</button>
+      </div>
+      <input type="text" inputmode="decimal" class="ownw-inp" placeholder="${o.kray==='R'?'от правого края, м':'от левого края, м'}"
              value="${escapeAttr(o.x||'')}" data-sk-pr="${adr}|${i}|x">
       <input type="text" inputmode="decimal" class="ownw-inp" placeholder="от пола, м"
              value="${escapeAttr(o.y||'')}" data-sk-pr="${adr}|${i}|y">` : ''}
@@ -24808,9 +24849,19 @@ function skAttach(){
     el.addEventListener('input', prinyat);
     el.addEventListener('change', prinyat);
   });
+  // Край, от которого мерят отступ. Перерисовываем целиком: меняются
+  // и подсветка кнопки, и подсказка в поле отступа. Фокус при этом
+  // ни у кого не отнимаем — это нажатие кнопки, а не уход из поля.
+  main.querySelectorAll('[data-sk-pr-kray]').forEach(el=>{
+    el.onclick = ()=>{
+      const [adr, i, v] = el.getAttribute('data-sk-pr-kray').split('|');
+      const o = proyomySpiska(adr)[parseInt(i)];
+      if(o){ o.kray = v; render(); }
+    };
+  });
   main.querySelectorAll('[data-sk-pr-add]').forEach(el=>{
     el.onclick = ()=>{
-      proyomySpiska(el.getAttribute('data-sk-pr-add')).push({ w:'', h:'', x:'', y:'', n:'' });
+      proyomySpiska(el.getAttribute('data-sk-pr-add')).push({ w:'', h:'', x:'', y:'', n:'', kray:'L' });
       render();
     };
   });
