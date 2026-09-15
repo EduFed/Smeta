@@ -4183,7 +4183,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-15-272';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-16-273';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -15083,6 +15083,28 @@ function polyDrawSave(){
   render();
 }
 
+// ВЕРШИНЫ ПОЛА ПОМЕЩЕНИЯ — те же точки, по которым `shapeArea` считает
+// его площадь: у готовых форм обход стен по направлениям, у контура его
+// собственные вершины. Нужны там, где одной площади мало: тёплый пол
+// кладёт змейку по форме, а 6 м2 — это и 3 x 2, и 6 x 1.
+//
+// Начало отсчёта и поворот те же, что на плане помещения (`roomPlanSVG`
+// берёт `dir0` оттуда же): силуэт обязан совпасть с чертежом, иначе
+// человек решит, что ему показали чужую комнату.
+function shapeTochki(shape, d){
+  const def = ROOM_SHAPES[shape] || ROOM_SHAPES.rect;
+  if(def.poly) return polyPoints(polySegs(d), polyDir0(d));
+  if(def.simple){
+    const a = num(d.a), b = num(d.b);
+    return [[0,0],[a,0],[a,b],[0,b]];
+  }
+  let x = 0, y = 0;
+  const pts = [[0,0]];
+  def.walls.forEach(([key,dir])=>{ const v = DIRV[dir]; const L = num(d[key]); x += v[0]*L; y += v[1]*L; pts.push([x,y]); });
+  pts.pop();   // замыкающая точка совпадает с началом
+  return pts;
+}
+
 function shapeArea(shape, d){
   const def = ROOM_SHAPES[shape] || ROOM_SHAPES.rect;
   if(def.poly) return polyAreaOf(polySegs(d));
@@ -24507,22 +24529,33 @@ function skSmesRaschet(d){
 //   поля для отступа не заводим, он уже сидит в шаге.
 const SK_POL_SHAG = 7.5;      // см. Стандарт владельца, 10 сентября 2026: «шаг 7-8 см»
 
+// ФОРМА ПОЛА ИЗВЕСТНА? Один ответ на всех, кто его спрашивает: и поля
+// вычитаемых кусков, и схема, и счёт по змейке стоят на нём. Формы пола
+// два источника — пара размеров, набранная руками, и очертание, взятое
+// из помещения. Площадь, вписанная числом, форму ОТМЕНЯЕТ: 6 м2 — это
+// и 3 x 2, и 6 x 1, и куску в таких осях встать некуда. Картинка,
+// не отвечающая числу, хуже отсутствующей.
+function skPolFormaEst(d){
+  if(num(d.ploschad) > 0) return false;
+  if(Array.isArray(d.kontur) && d.kontur.length >= 3) return true;
+  return num(d.dlina) > 0 && num(d.shirina) > 0;
+}
+
 function skPolRaschet(d){
-  // ОТКУДА ПРИШЛА ПЛОЩАДЬ, СЧИТАЮЩЕЙ ЧАСТИ ВСЁ РАВНО. Она либо задана
-  // прямо одним числом (пришла из помещения), либо выводится из двух
-  // размеров (прораб считает в магазине). Заданная прямо главнее:
-  // у помещения со сложным контуром длины с шириной нет вовсе,
-  // а площадь есть.
+  // ОТКУДА ПРИШЛА ФОРМА, СЧИТАЮЩЕЙ ЧАСТИ ВСЁ РАВНО. Прямоугольный пол
+  // задан парой размеров, непрямоугольный — очертанием; дальше и куски,
+  // и змейка, и картинка считаются одним и тем же кодом. Очертание
+  // приходит приведённым к левому нижнему углу габарита, поэтому габарит
+  // читается прямо с него.
   const gotovaya = num(d.ploschad);
-  const dlina = num(d.dlina), shirina = num(d.shirina);
-  // ФОРМА ПОЛА ИЗВЕСТНА, только когда заданы обе стороны. По ней
-  // рисуется схема и по ней же куски кладутся на свои места. Готовая
-  // площадь формы не даёт: 6 м² — это и 3×2, и 6×1.
-  // Заданная прямо площадь не только главнее — она ОТМЕНЯЕТ форму:
-  // 10 м², вписанные при поле 3x2, рисовались бы шестью метрами,
-  // и картинка разошлась бы с числом на глазах.
-  const poRazmeram = !(gotovaya > 0) && (dlina > 0 && shirina > 0);
-  const brutto = gotovaya > 0 ? gotovaya : (poRazmeram ? dlina * shirina : 0);
+  const poRazmeram = skPolFormaEst(d);
+  const kontur = (poRazmeram && Array.isArray(d.kontur) && d.kontur.length >= 3) ? d.kontur : null;
+  const dlina = kontur ? Math.max.apply(null, kontur.map(p=>p[0])) : num(d.dlina);
+  const shirina = kontur ? Math.max.apply(null, kontur.map(p=>p[1])) : num(d.shirina);
+  // Площадь пола берём у самой формы, а не у габарита: у Г-образной
+  // комнаты габарит больше пола на целый угол.
+  const brutto = gotovaya > 0 ? gotovaya
+               : (kontur ? mnPloschad(kontur) : (poRazmeram ? dlina * shirina : 0));
   if(!(brutto > 0)) return null;
 
   // ЧТО ВЫЧИТАЕМ.
@@ -24545,13 +24578,23 @@ function skPolRaschet(d){
       const x = proyomLevo(o.kray, num(o.x), w, dlina), y = num(o.y);
       const px1 = Math.max(0, x), px2 = Math.min(dlina, x + w);
       const py1 = Math.max(0, y), py2 = Math.min(shirina, y + h);
-      if(px2 > px1 && py2 > py1){
+      // СКОЛЬКО ОТ КУСКА ЛЕЖИТ НА ПОЛУ. У прямоугольного пола это просто
+      // обрезанный габаритом прямоугольник, у пола с очертанием — его
+      // часть внутри контура. Вычесть можно только то, что на полу:
+      // ванна, выступающая за стену, греющегося пола не отнимает.
+      const naPolu = (px2 > px1 && py2 > py1)
+        ? (kontur ? mnPloschad(mnObrez(kontur, px1, py1, px2, py2)) : (px2 - px1) * (py2 - py1))
+        : 0;
+      if(naPolu > 1e-9){
         kuski.push({ x0:px1, y0:py1, x1:px2, y1:py2 });
-        poodinochke += (px2 - px1) * (py2 - py1);
+        poodinochke += naPolu;
       }
-      if((Math.max(0, px2 - px1)) * (Math.max(0, py2 - py1)) < w * h - 1e-9) zaKraem = true;
+      if(naPolu < w * h - 1e-9) zaKraem = true;
     });
-    obyedinenie = tcUnionArea(kuski);
+    // Налезающие друг на друга куски вычитаются один раз — и на полу
+    // с очертанием тоже: та же сетка, только каждая клетка обрезается
+    // контуром.
+    obyedinenie = kontur ? mnKuskiVnutri(kuski, kontur) : tcUnionArea(kuski);
   } else {
     zayavleno = (d.proyomy || []).reduce((a,o)=>
       a + num(o.w) * num(o.h) * Math.max(1, Math.round(num(o.n) || 1)), 0);
@@ -24563,6 +24606,7 @@ function skPolRaschet(d){
   const snyato = Math.min(brutto, obyedinenie);
   const naloz = (poodinochke - obyedinenie) > 1e-6;
   const forma = { poRazmeram:poRazmeram, dlina:dlina, shirina:shirina, kuski:kuski,
+                  kontur:kontur,
                   zayavleno:zayavleno, poodinochke:poodinochke,
                   naloz:naloz, zaKraem:zaKraem };
   const ploschad = brutto - snyato;
@@ -24590,7 +24634,7 @@ function skPolRaschet(d){
   // без кабеля: отсюда разница в 6–15 %. Мастеру нужно число, от которого
   // он пляшет, — сколько кабеля ВЛЕЗЕТ при таком шаге. Купив 80 м туда,
   // где ложится 73, он будет класть теснее и узнает об этом уже на полу.
-  const otrezki = poRazmeram ? skZmeykaOtrezki(dlina, shirina, shag / 100, kuski) : [];
+  const otrezki = poRazmeram ? skZmeykaOtrezki(dlina, shirina, shag / 100, kuski, kontur) : [];
   const poZmeyke = otrezki.reduce((a, g)=> a + Math.hypot(g.x2 - g.x1, g.y2 - g.y1), 0);
   // ФОРМЫ НЕТ — ЗМЕЙКИ НЕТ. Площадь, заданная одним числом, формы не даёт
   // (6 м² — это и 3×2, и 6×1), построить по ней змейку не из чего. То же
@@ -24647,7 +24691,7 @@ let SK = {
   // поправил его мастер или нет). Пусто — считаем размерами, как
   // в магазине: калькулятор работает без проекта и останется таким
   // (решение владельца 3 сентября 2026).
-  pol: { imya:'', dlina:'', shirina:'', shag:'', ploschad:'', iz:null, proyomy: [] }
+  pol: { imya:'', dlina:'', shirina:'', shag:'', ploschad:'', kontur:null, iz:null, proyomy: [] }
 };
 
 // Поле с подсказкой последнего введённого. Подсказка — В ПУСТОМ ПОЛЕ,
@@ -24661,7 +24705,7 @@ function skPole(razdel, klyuch, podpis, opts){
   return `<div class="cust-field">
     <label>${escapeHtml(podpis)}</label>
     <input type="text" ${o.text ? '' : 'inputmode="decimal"'} class="ownw-inp"
-           placeholder="${escapeAttr(podskazka)}"
+           placeholder="${escapeAttr(podskazka)}" ${o.dop || ''}
            value="${escapeAttr(zn)}" data-sk="${razdel}|${klyuch}">
   </div>`;
 }
@@ -24790,6 +24834,11 @@ function skProyomyHtml(razdel, sPolozheniem, iSteny, opts){
   </div>`;
 }
 
+// Свой номер каждой картинке: по нему строится имя обрезки в разметке.
+// Общее имя на все картинки страницы обрезало бы одну фигуру по чужому
+// контуру — а таких картинок на экране бывает несколько (грабля 49).
+let skKartinkaNomer = 0;
+
 // КАРТИНКА РАСКЛАДКИ. Рисуем то же, что посчитали: те же клетки, тот же
 // порядок. Расходиться картинке и числу нельзя — человек поверит глазам.
 function skKartinka(st, o){
@@ -24819,11 +24868,27 @@ function skKartinka(st, o){
               font-family="monospace">${t}</text>`
     : '';
 
+  // ОЧЕРТАНИЕ ВМЕСТО РАМКИ. Пол бывает не прямоугольным: тогда границей
+  // служит контур помещения, а не габарит. Всё остальное картинка рисует
+  // тем же кодом — второго вида схемы не заводим (CLAUDE.md). Точки
+  // приходят в тех же осях, что куски и линия, и переворачиваются тем же
+  // `naTochku`: своей геометрии у картинки нет.
+  const kontur = (o.kontur && o.kontur.length >= 3) ? o.kontur : null;
+  const konturPut = kontur
+    ? kontur.map((p, i)=>{
+        const g = naTochku(p[0], p[1]);
+        return (i ? 'L' : 'M') + g.x.toFixed(1) + ' ' + g.y.toFixed(1);
+      }).join('') + 'Z'
+    : '';
+  const konturImya = 'skObrez' + (++skKartinkaNomer);
+
   // Подложка нужна там, где клеток нет: у пола под серыми кусками должно
   // быть видно сам пол, а не страницу.
   const fon = o.fon
-    ? `<rect x="${ots}" y="${ots}" width="${(st.dlina*k).toFixed(1)}" height="${(st.vysota*k).toFixed(1)}"
-      fill="var(--white)" stroke="none"/>`
+    ? (kontur
+        ? `<path d="${konturPut}" fill="var(--white)" stroke="none"/>`
+        : `<rect x="${ots}" y="${ots}" width="${(st.dlina*k).toFixed(1)}" height="${(st.vysota*k).toFixed(1)}"
+      fill="var(--white)" stroke="none"/>`)
     : '';
 
   const kletki = (st.setka || []).map(c=>{
@@ -24869,18 +24934,193 @@ function skKartinka(st, o){
       stroke-width="${o.liniyaTolsch || 1.5}" stroke-linecap="round"/>`
     : '';
 
+  // Серый кусок, вылезший за контур, обрезается ровно так же, как он
+  // обрезан в счёте: вычитается только то, что на полу (грабля 75 —
+  // место, куда рисуем, и место, которое считаем, должны совпадать).
   return `<svg viewBox="0 0 ${Wsvg} ${H}" width="100%" style="max-width:${Wsvg}px;display:block;margin-top:10px;">
+    ${kontur ? `<defs><clipPath id="${konturImya}"><path d="${konturPut}"/></clipPath></defs>` : ''}
     ${fon}${kletki}
-    ${proyomy}
+    ${kontur ? `<g clip-path="url(#${konturImya})">${proyomy}</g>` : proyomy}
     ${liniya}
-    <rect x="${ots}" y="${ots}" width="${(st.dlina*k).toFixed(1)}" height="${(st.vysota*k).toFixed(1)}"
-          fill="none" stroke="var(--ink)" stroke-width="2"/>
+    ${kontur
+      ? `<path d="${konturPut}" fill="none" stroke="var(--ink)" stroke-width="2"/>`
+      : `<rect x="${ots}" y="${ots}" width="${(st.dlina*k).toFixed(1)}" height="${(st.vysota*k).toFixed(1)}"
+          fill="none" stroke="var(--ink)" stroke-width="2"/>`}
   </svg>`;
 }
 
 function skListyKartinka(r, st){
   if(!r || !st) return '';
   return skKartinka(st, { kletkaW: r.w, kletkaH: r.h });
+}
+
+// ---------- ФОРМА ПОЛА МНОГОУГОЛЬНИКОМ ----------
+//
+// Помещение бывает не только прямоугольным, и парой «длина × ширина» его
+// форма не описывается. Поэтому из помещения приходит либо пара размеров,
+// либо сам контур — список вершин в метрах, приведённый к левому нижнему
+// углу габарита. Всё, что ниже, работает с этим списком: площадь,
+// обрезка вычитаемого куска и полоса, по которой идёт виток.
+//
+// Своей геометрии эти функции не заводят и никому её не дублируют:
+// и метраж, и картинка берут у них ОДНИ И ТЕ ЖЕ числа (грабля 75 —
+// место, куда рисуем, и место, которое считаем, считаются одним
+// выражением, а не двумя похожими).
+
+// Площадь по вершинам. Та же формула, что у `polyAreaOf` в помещении, —
+// значит силуэт и смета показывают одно число.
+function mnPloschad(t){
+  if(!t || t.length < 3) return 0;
+  let s = 0;
+  for(let i = 0; i < t.length; i++){
+    const j = (i + 1) % t.length;
+    s += t[i][0]*t[j][1] - t[j][0]*t[i][1];
+  }
+  return Math.abs(s) / 2;
+}
+
+// Обрезка многоугольника прямоугольником (Сазерленд—Ходжман). Нужна там,
+// где вычитаемый кусок вылез за очертание: вычесть можно только то, что
+// лежит на полу.
+function mnObrez(t, x0, y0, x1, y1){
+  let p = (t || []).slice();
+  const vnutri = [ q=> q[0] >= x0, q=> q[0] <= x1, q=> q[1] >= y0, q=> q[1] <= y1 ];
+  const na = [
+    (a,b)=> [x0, a[1] + (b[1]-a[1])*(x0-a[0])/(b[0]-a[0])],
+    (a,b)=> [x1, a[1] + (b[1]-a[1])*(x1-a[0])/(b[0]-a[0])],
+    (a,b)=> [a[0] + (b[0]-a[0])*(y0-a[1])/(b[1]-a[1]), y0],
+    (a,b)=> [a[0] + (b[0]-a[0])*(y1-a[1])/(b[1]-a[1]), y1]
+  ];
+  for(let g = 0; g < 4 && p.length; g++){
+    const out = [];
+    for(let i = 0; i < p.length; i++){
+      const a = p[(i + p.length - 1) % p.length], b = p[i];
+      const va = vnutri[g](a), vb = vnutri[g](b);
+      if(vb){ if(!va) out.push(na[g](a, b)); out.push(b); }
+      else if(va) out.push(na[g](a, b));
+    }
+    p = out;
+  }
+  return p;
+}
+
+// Сколько вычитаемые куски занимают НА ПОЛУ, с учётом их наложения друг
+// на друга и очертания. Сетка та же, что в `tcUnionArea`: иначе два счёта
+// одного и того же разойдутся молча.
+function mnKuskiVnutri(kuski, t){
+  if(!kuski || !kuski.length) return 0;
+  const xs = [], ys = [];
+  kuski.forEach(r=>{ xs.push(r.x0, r.x1); ys.push(r.y0, r.y1); });
+  xs.sort((a,b)=>a-b); ys.sort((a,b)=>a-b);
+  let s = 0;
+  for(let i = 0; i < xs.length-1; i++){
+    const dx = xs[i+1]-xs[i]; if(dx <= 0) continue;
+    const cx = (xs[i]+xs[i+1])/2;
+    for(let j = 0; j < ys.length-1; j++){
+      const dy = ys[j+1]-ys[j]; if(dy <= 0) continue;
+      const cy = (ys[j]+ys[j+1])/2;
+      if(kuski.some(r=> cx > r.x0 && cx < r.x1 && cy > r.y0 && cy < r.y1))
+        s += mnPloschad(mnObrez(t, xs[i], ys[j], xs[i+1], ys[j+1]));
+    }
+  }
+  return s;
+}
+
+// Где прямая пересекает пол: пересечения с контуром, сложенные парами.
+// `vdol` — по какой оси идёт виток, `uroven` — поперечная координата.
+function mnPolosa(t, uroven, vdol){
+  const pr = [];
+  for(let i = 0, j = t.length - 1; i < t.length; j = i++){
+    const av = vdol ? t[j][1] : t[j][0], bv = vdol ? t[i][1] : t[i][0];
+    const au = vdol ? t[j][0] : t[j][1], bu = vdol ? t[i][0] : t[i][1];
+    if((av <= uroven && bv > uroven) || (bv <= uroven && av > uroven))
+      pr.push(au + (bu - au) * (uroven - av) / (bv - av));
+  }
+  pr.sort((a,b)=>a-b);
+  const out = [];
+  for(let i = 0; i + 1 < pr.length; i += 2) out.push([pr[i], pr[i+1]]);
+  return out;
+}
+
+// Выкусить кусок [a,b] из набора отрезков.
+function mnVychest(chasti, a, b){
+  const eps = 1e-9, out = [];
+  chasti.forEach(ch=>{
+    const c0 = Math.max(ch[0], a), c1 = Math.min(ch[1], b);
+    if(c1 <= c0 + eps){ out.push(ch); return; }
+    if(c0 - ch[0] > eps) out.push([ch[0], c0]);
+    if(ch[1] - c1 > eps) out.push([c1, ch[1]]);
+  });
+  return out;
+}
+
+// Какой кусок прямой лежит к стене ближе шага. Точки ближе шага к отрезку
+// AB — это «колбаса» вокруг него: полоса вдоль стены плюс два круга
+// на её концах. Фигура выпуклая, значит прямая режет её одним куском,
+// и его концы считаются напрямую, без перебора точек.
+function mnStenaBlizko(A, B, uroven, vdol, r){
+  const eps = 1e-9;
+  const Ox = vdol ? 0 : uroven, Oy = vdol ? uroven : 0;
+  const Dx = vdol ? 1 : 0,      Dy = vdol ? 0 : 1;
+  let lo = Infinity, hi = -Infinity;
+  const krug = (C)=>{
+    const wx = Ox - C[0], wy = Oy - C[1];
+    const b = wx*Dx + wy*Dy;
+    const c = wx*wx + wy*wy - r*r;
+    const ds = b*b - c;
+    if(ds < 0) return;
+    const k = Math.sqrt(ds);
+    if(-b - k < lo) lo = -b - k;
+    if(-b + k > hi) hi = -b + k;
+  };
+  krug(A); krug(B);
+  const ABx = B[0]-A[0], ABy = B[1]-A[1];
+  const dl = Math.hypot(ABx, ABy);
+  if(dl > eps){
+    const mx = ABx/dl, my = ABy/dl, nx = -my, ny = mx;
+    const wx = Ox - A[0], wy = Oy - A[1];
+    const f0 = wx*nx + wy*ny, f1 = Dx*nx + Dy*ny;   // поперёк стены
+    const g0 = wx*mx + wy*my, g1 = Dx*mx + Dy*my;   // вдоль стены
+    let a0 = -Infinity, a1 = Infinity, pusto = false;
+    // Отсечение неравенством c0 + u*c1 <= 0. Ровно на границе считаем,
+    // что не выполнено: отступ «не ближе шага» — это шаг, а не меньше,
+    // иначе виток, стоящий ровно в шаге от стены, снимался бы целиком.
+    const rezat = (c0, c1)=>{
+      if(pusto) return;
+      if(Math.abs(c1) < eps){ if(c0 > -eps) pusto = true; return; }
+      const u = -c0/c1;
+      if(c1 > 0){ if(u < a1) a1 = u; } else if(u > a0) a0 = u;
+    };
+    rezat(f0 - r, f1);
+    rezat(-f0 - r, -f1);
+    rezat(-g0, -g1);
+    rezat(g0 - dl, g1);
+    if(!pusto && a1 - a0 > eps){
+      if(a0 < lo) lo = a0;
+      if(a1 > hi) hi = a1;
+    }
+  }
+  return (hi - lo > eps) ? [lo, hi] : null;
+}
+
+// Полоса витка на полу, заданном контуром: что внутри очертания и при этом
+// не ближе шага ни к одной стене. Для прямоугольника это то же самое,
+// что `[шаг, длина - шаг]`, — правило одно, стен просто больше.
+function mnVitokChasti(t, uroven, vdol, r){
+  let chasti = mnPolosa(t, uroven, vdol);
+  // ОТСТУП ОТ СТЕНЫ — «БЛИЖЕ ШАГА», А НЕ «В ШАГЕ ИЛИ БЛИЖЕ». Разница
+  // не умозрительная: у пола 3 x 2 с шагом 10 см крайние витки стоят
+  // ровно в 10 см от стены, и строгое сравнение срезало их целиком —
+  // 52,1 м вместо 55 м на том же прямоугольнике, посчитанном рамкой
+  // (замер 16 сентября 2026). Нанометр запаса снимает заодно и дрожь
+  // последних знаков: 1,9000000000000001 вместо 1,9 иначе тоже стоило
+  // бы витка, причём молча.
+  const rr = r - 1e-9;
+  for(let i = 0, j = t.length - 1; i < t.length && chasti.length; j = i++){
+    const g = mnStenaBlizko(t[j], t[i], uroven, vdol, rr);
+    if(g) chasti = mnVychest(chasti, g[0], g[1]);
+  }
+  return chasti;
 }
 
 // ЗМЕЙКА КАБЕЛЯ — И СХЕМА, И МЕТРАЖ. Это одно и то же: `skPolRaschet`
@@ -24901,7 +25141,13 @@ function skListyKartinka(r, st){
 //   а не проходит насквозь.
 //
 // Витки кладём вдоль длинной стороны: так меньше поворотов.
-function skZmeykaOtrezki(dlina, shirina, shagM, kuski){
+//
+// `kontur` — очертание пола, если пол не прямоугольный (пришёл из
+// помещения со сложной формой). Тогда `dlina` и `shirina` — это габарит
+// очертания, витки по-прежнему идут через шаг по всему габариту, а вот
+// полосу, на которой виток лежит, считает контур: отрезок, вышедший
+// за очертание, не рисуется и в длину не идёт.
+function skZmeykaOtrezki(dlina, shirina, shagM, kuski, kontur){
   const eps = 1e-9;
   if(!(dlina > 0) || !(shirina > 0) || !(shagM > 0)) return [];
   const vdol = dlina >= shirina;          // виток идёт по оси X
@@ -24935,7 +25181,12 @@ function skZmeykaOtrezki(dlina, shirina, shagM, kuski){
   let pred = null, predT = 0;
   for(let i = 0; i < n; i++){
     const t = kray + shagM * i;
-    let chasti = [[shagM, L - shagM]];
+    // ГРАНИЦА — ОЧЕРТАНИЕ, А НЕ РАМКА. У прямоугольника полоса витка
+    // известна сразу: от стены до стены минус отступ. У пола, пришедшего
+    // контуром, её считает `mnVitokChasti` — тем же правилом «не ближе
+    // шага к стене», только стен там сколько угодно, и полос на одном
+    // уровне может оказаться несколько.
+    let chasti = kontur ? mnVitokChasti(kontur, t, vdol, shagM) : [[shagM, L - shagM]];
     dyry.forEach(d=>{
       // Виток, идущий ровно по краю куска, кусок не задевает.
       if(t <= d.t0 + eps || t >= d.t1 - eps) return;
@@ -24999,7 +25250,7 @@ function skPolKartinka(r){
     dlina: r.dlina, vysota: r.shirina, setka: [],
     dyry: (r.kuski || []).map(c=>({ x:c.x0, y:c.y0, w:c.x1-c.x0, h:c.y1-c.y0 }))
   }, {
-    fon: true, maxV: 440,
+    fon: true, maxV: 440, kontur: r.kontur,
     dyraZalivka: 'var(--paper-line)', dyraObvod: 'var(--ink-soft)',
     dyraProzr: '1', dyraPunktir: '',
     liniya: skPolZmeyka(r), liniyaTolsch: 1.4,
@@ -25103,10 +25354,14 @@ function skItogSmes(){
 function skPolOtkuda(d){
   if(!d.iz) return '';
   const imya = (d.iz.imya || '').trim();
-  const pravil = (String(d.ploschad || '').trim() !== String(d.iz.ploschad || '').trim());
-  return `<div class="mat-note">Площадь взята из помещения <b>${escapeHtml(imya || 'без названия')}</b>${
-    d.iz.proekt ? ' · ' + escapeHtml(d.iz.proekt) : ''}.${
-    pravil ? ' Число вы поправили — в смете осталось прежнее.' : ''}</div>`;
+  const otkuda = '<b>' + escapeHtml(imya || 'без названия') + '</b>'
+    + (d.iz.proekt ? ' · ' + escapeHtml(d.iz.proekt) : '');
+  // ПЛОЩАДЬ ПОПРАВИЛИ РУКАМИ — СХЕМА УШЛА, И ОБ ЭТОМ СКАЗАНО СЛОВАМИ.
+  // Иначе форма и число разошлись бы на глазах: силуэт остался бы
+  // от помещения, а метры стали бы чужими.
+  if(!d.iz.forma) return `<div class="mat-note">Открыто из помещения ${otkuda}. Формы у него нет — контур не сошёлся или сам себя пересекает, — поэтому площадь здесь ваша, а схемы нет: рисовать нечего.</div>`;
+  if(num(d.ploschad) > 0) return `<div class="mat-note">Открыто из помещения ${otkuda}, но площадь вы вписали свою — ${fmt(num(d.ploschad))} м² вместо ${escapeHtml(String(d.iz.ploschad))} м². Схему убрали: какой формы эти метры, приложение не знает, а картинка, не отвечающая числу, хуже отсутствующей. Метраж считаем по площади и шагу.</div>`;
+  return `<div class="mat-note">Форма и площадь взяты из помещения ${otkuda}. Обратно отсюда ничего не уходит: что посчитали здесь, в смету само не попадёт.</div>`;
 }
 
 function skItogPol(){
@@ -25140,7 +25395,7 @@ function skItogPol(){
     ? ' Метраж — длина уложенной змейки: столько кабеля влезет при таком шаге.'
     : (r.poRazmeram
         ? ' Метраж посчитан по площади и шагу: при таком шаге виткам на этом полу не встать, змейки нет.'
-        : ' Метраж посчитан по площади и шагу: без длины и ширины пола змейку не построить. Такой счёт даёт чуть больше — он ведёт витки от стены до стены.');
+        : ' Метраж посчитан по площади и шагу: формы пола приложение не знает, а по одной площади змейку не построить. Такой счёт даёт чуть больше — он ведёт витки от стены до стены.');
   // ОГОВОРКИ СТОЯТ ТАМ, ГДЕ ЧИСЛО, а не в прокручиваемом теле окна
   // (грабля 76). Обе про одно: почему вычлось меньше заявленного.
   const proNaloz = r.naloz
@@ -25192,6 +25447,43 @@ function skItogPol(){
 // ВЫЧИТАЕМОЕ НЕ ПОДСТАВЛЯЕМ. Что стоит под ванной и машинкой, знает
 // мастер; подставить площадь целиком и промолчать значило бы соврать
 // в сторону большего метража.
+// ФОРМА ПОЛА ИЗ ПОМЕЩЕНИЯ, УПРОЩЁННО. Прямоугольному хватает пары
+// размеров — дальше всё считается ровно тем же кодом, что при ручном
+// вводе, и число обязано совпасть до сотой. Остальным нужен сам контур:
+// у Г-образной комнаты длины с шириной нет вовсе.
+//
+// «Упрощённо» значит ОЧЕРТАНИЕ И ТОЛЬКО. Ни размерных линий, ни подписей
+// стен, ни проёмов, ни толщины стен: их рисует чертёж помещения, и второй
+// такой чертёж здесь не нужен — нужен силуэт, на который ляжет змейка.
+//
+// Вершины приводим к левому нижнему углу габарита: в этих осях считаются
+// и куски, и витки, и картинка.
+function skPolFormaPomescheniya(room){
+  const shape = room.shape || 'rect';
+  const d = room.dims || {};
+  const def = ROOM_SHAPES[shape] || ROOM_SHAPES.rect;
+  if(def.simple){
+    const a = num(d.a), b = num(d.b);
+    return (a > 0 && b > 0) ? { dlina:a, shirina:b } : null;
+  }
+  // Контур не сошёлся — формы нет, как нет и площади в смете. Показать
+  // правдоподобный силуэт хуже, чем не показать никакого: приложение
+  // соврало бы о форме комнаты.
+  if(def.poly && !polyClosed(polySegs(d))) return null;
+  const pts = shapeTochki(shape, d);
+  if(!pts || pts.length < 3) return null;
+  // Контур, пересекающий сам себя, даёт неверную площадь — помещение
+  // говорит об этом прямо. Змейка по нему получилась бы бодрой и
+  // правдоподобной: 0,0004 м² пола и 30 метров кабеля. Формы нет.
+  if(polySelfIntersects(pts)) return null;
+  const xs = pts.map(p=>p[0]), ys = pts.map(p=>p[1]);
+  const x0 = Math.min.apply(null, xs), y0 = Math.min.apply(null, ys);
+  const kontur = pts.map(p=>[p[0] - x0, p[1] - y0]);
+  const gW = Math.max.apply(null, xs) - x0, gH = Math.max.apply(null, ys) - y0;
+  if(!(gW > 0) || !(gH > 0) || !(mnPloschad(kontur) > 0)) return null;
+  return { kontur: kontur };
+}
+
 function skOtkrytTyoplyyPol(room, proj){
   const g = calcRoomGeometry(room);
   // До сотых — ровно то число, которое человек видит в смете. Точка
@@ -25203,10 +25495,19 @@ function skOtkrytTyoplyyPol(room, proj){
   // ошибка, ради которой видно, откуда площадь.
   if(!SK.pol.iz || SK.pol.iz.id !== room.id) SK.pol.proyomy = [];
   SK.razdel = 'pol';
-  SK.pol.dlina = ''; SK.pol.shirina = '';
-  SK.pol.ploschad = ploschad;
+  // ФОРМУ БЕРЁМ, ПЛОЩАДЬ СТАВИМ ПОДСКАЗКОЙ. Готовое число в поле
+  // отменило бы форму, а с ней и схему (см. `skPolFormaEst`), поэтому
+  // оно стоит подсказкой в пустом поле: подставленное принимают
+  // не глядя, подсказку читают и повторяют осознанно (решение владельца
+  // 4 сентября 2026).
+  const f = skPolFormaPomescheniya(room);
+  const paroy = (f && f.dlina > 0) ? f : null;
+  SK.pol.dlina = paroy ? String(paroy.dlina).replace('.', ',') : '';
+  SK.pol.shirina = paroy ? String(paroy.shirina).replace('.', ',') : '';
+  SK.pol.kontur = (f && f.kontur) ? f.kontur : null;
+  SK.pol.ploschad = '';
   SK.pol.imya = imya;
-  SK.pol.iz = { id: room.id, imya: imya,
+  SK.pol.iz = { id: room.id, imya: imya, forma: (f ? (f.kontur ? 'kontur' : 'para') : ''),
                 proekt: ((proj && proj.name) || '').trim(), ploschad: ploschad };
   state.view = 'skalk';
   render();
@@ -25269,28 +25570,35 @@ function renderSkalkView(){
       </div>
       ${SK.pol.iz ? `
       <div class="sk-pamyatka">
-        <div class="sk-podzag">Откуда площадь</div>
+        <div class="sk-podzag">Откуда форма</div>
         <div class="mat-note">Помещение <b>${escapeHtml((SK.pol.iz.imya||'').trim() || 'без названия')}</b>${
-          SK.pol.iz.proekt ? ' · ' + escapeHtml(SK.pol.iz.proekt) : ''}. Длину с шириной не спрашиваем: у помещения со сложным контуром их нет вовсе, а площадь есть. Поправите число — в смете останется прежнее, обратно отсюда ничего не уходит.</div>
+          SK.pol.iz.proekt ? ' · ' + escapeHtml(SK.pol.iz.proekt) : ''}. ${
+          SK.pol.iz.forma === 'para'
+          ? `Взяли его длину и ширину — ${escapeHtml(String(SK.pol.dlina))} × ${escapeHtml(String(SK.pol.shirina))} м. Считается ровно так же, как если бы вы набрали их сами.`
+          : SK.pol.iz.forma === 'kontur'
+          ? 'Взяли его очертание — только силуэт пола, без размерных линий, подписей стен и проёмов: по нему и ляжет змейка. Длину с шириной не спрашиваем: у помещения со сложным контуром их нет вовсе.'
+          : 'Формы у него нет: контур не сошёлся или сам себя пересекает. Впишите площадь пола сами — схемы в этом случае не будет.'} Обратно отсюда ничего не уходит: в смете останется прежнее.</div>
         <button type="button" class="add-link" data-sk-pol-svoi="1">Считать своими размерами</button>
       </div>
       <div class="cust-grid">
-        ${skPole('pol','ploschad','Площадь пола, м²', {placeholder:'м²'})}
+        ${skPole('pol','ploschad','Площадь пола, м²', {
+            placeholder: SK.pol.iz.forma ? ('из помещения ' + SK.pol.iz.ploschad) : 'м²',
+            dop: 'data-sk-pol-forma="' + (skPolFormaEst(SK.pol) ? '1' : '0') + '"'})}
         <div></div>
       </div>` : `
       <div class="cust-grid">
         ${skPole('pol','dlina','Пол: длина, м')}
         ${skPole('pol','shirina','Пол: ширина, м')}
       </div>`}
-      ${skProyomyHtml('pol', !SK.pol.iz, null, {
+      ${skProyomyHtml('pol', skPolFormaEst(SK.pol), null, {
         zagolovok:'Что вычитаем',
         wPodskazka:'ширина, м', hPodskazka:'длина, м',
         yPodskazka:'от нижнего края, м', chto:'пола',
         pusto:'Ничего не вычитаем — греем весь пол.',
         dobavit:'+ Кусок'})}
-      ${SK.pol.iz
-        ? `<div class="mat-note">Схему пола рисуем там, где заданы длина и ширина. Здесь пришла готовая площадь — формы пола приложение не знает, и рисовать ему нечего.</div>`
-        : `<div class="mat-note">Куски встают на схему по отступам от края. Оставите отступы пустыми — все лягут в левый нижний угол и налезут друг на друга; тогда итог скажет об этом отдельной строкой.</div>`}
+      ${skPolFormaEst(SK.pol)
+        ? `<div class="mat-note">Куски встают на схему по отступам от края${SK.pol.kontur ? ' — от левого нижнего угла габарита, того самого, в который вписан силуэт' : ''}. Оставите отступы пустыми — все лягут в левый нижний угол и налезут друг на друга; тогда итог скажет об этом отдельной строкой.</div>`
+        : `<div class="mat-note">Схему пола рисуем там, где известна его форма. Здесь площадь задана числом — какой она формы, приложение не знает, и рисовать ему нечего.</div>`}
       <div class="sk-pamyatka">
         <div class="sk-podzag">О чём не забыть</div>
         <div class="mat-note">Греется не вся комната. Это напоминание, а не правило: что греть на этом объекте, знаете вы, а не приложение.</div>
@@ -25371,7 +25679,7 @@ function skAttach(){
   // Отвязаться от помещения и считать своими размерами. Без этой кнопки
   // пришедший из помещения оказался бы заперт в одном поле до перезагрузки.
   main.querySelectorAll('[data-sk-pol-svoi]').forEach(el=>{
-    el.onclick = ()=>{ SK.pol.iz = null; SK.pol.ploschad = ''; render(); };
+    el.onclick = ()=>{ SK.pol.iz = null; SK.pol.kontur = null; SK.pol.ploschad = ''; render(); };
   });
   main.querySelectorAll('[data-sk]').forEach(el=>{
     const [razdel, klyuch] = el.getAttribute('data-sk').split('|');
@@ -25382,6 +25690,14 @@ function skAttach(){
     };
     el.addEventListener('input', prinyat);
     el.addEventListener('change', prinyat);
+  });
+  // ПОЛЯ КУСКОВ ЗАВИСЯТ ОТ ТОГО, ЕСТЬ ЛИ ФОРМА, а живут они выше итога
+  // и сами не перерисовываются. Перерисовываем ровно тогда, когда ответ
+  // «форма есть» переменился, и только по уходу из поля: перерисовка
+  // на каждый знак отнимала бы у поля фокус (правка 4 сентября 2026).
+  main.querySelectorAll('[data-sk-pol-forma]').forEach(el=>{
+    const bylo = el.getAttribute('data-sk-pol-forma') === '1';
+    el.addEventListener('change', ()=>{ if(skPolFormaEst(SK.pol) !== bylo) render(); });
   });
   // Куда писать проём: в стену листового или в общий список раздела.
   const proyomySpiska = (adr)=>{
