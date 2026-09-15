@@ -1479,6 +1479,11 @@
   .badge{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--ink-soft);}
   .badge b{color:var(--ink);font-size:13px;}
   .room-warn{margin-top:10px;padding:8px 12px;background:var(--orange-soft);color:var(--orange);border-radius:var(--radius);font-size:12px;font-weight:600;}
+  /* Кнопка тёплого пола под итогами помещения: действие названо словом
+     (правило 5 сентября 2026), значок при нём тот же, что у калькулятора
+     в панели, — это вход туда же. */
+  .room-tyoplyy{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:12px;}
+  .room-tyoplyy .mat-note{flex:1 1 220px;}
 
   /* РЕЖИМ РАСЧЁТА ПОМЕЩЕНИЯ */
   .geometry-block{margin-bottom:20px;}
@@ -4178,7 +4183,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-15-269';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-15-270';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -20742,6 +20747,10 @@ function renderRoom(room){
           <div class="badge">Площадь пола: <b data-out="floorArea">${fmt(g.floorArea)} м²</b></div>
           <div class="badge">Площадь потолка: <b data-out="ceilingArea">${fmt(g.ceilingArea)} м²</b></div>
         </div>
+        <div class="room-tyoplyy no-print">
+          <button type="button" class="btn btn-outline zn-ryad" data-tp-room="${room.id}">${ZN_SCHYOTY}<span>Тёплый пол</span></button>
+          <span class="mat-note">Прикидка кабеля в калькуляторе: площадь пола подставится сама. В смету и документы оттуда ничего не уходит.</span>
+        </div>
         ${wallAreaHint(room, g) ? `<div class="room-warn zn-abzac" data-wallhint="${room.id}">${ZN_VNIMANIE}<span>${escapeHtml(wallAreaHint(room, g))}</span></div>` : `<div class="room-warn" data-wallhint="${room.id}" style="display:none;"></div>`}
       </div>
     </div>
@@ -21665,6 +21674,13 @@ function attachHandlers(){
       const r = proj.rooms.find(x=>x.id===id);
       if(r){ r.name = el.value; scheduleSave(); }
     });
+  });
+
+  main.querySelectorAll('[data-tp-room]').forEach(el=>{
+    el.onclick = ()=>{
+      const r = proj.rooms.find(x=>x.id === el.getAttribute('data-tp-room'));
+      if(r) skOtkrytTyoplyyPol(r, proj);
+    };
   });
 
   main.querySelectorAll('[data-add-opening]').forEach(el=>{
@@ -24492,16 +24508,65 @@ function skSmesRaschet(d){
 const SK_POL_SHAG = 7.5;      // см. Стандарт владельца, 10 сентября 2026: «шаг 7-8 см»
 
 function skPolRaschet(d){
+  // ОТКУДА ПРИШЛА ПЛОЩАДЬ, СЧИТАЮЩЕЙ ЧАСТИ ВСЁ РАВНО. Она либо задана
+  // прямо одним числом (пришла из помещения), либо выводится из двух
+  // размеров (прораб считает в магазине). Заданная прямо главнее:
+  // у помещения со сложным контуром длины с шириной нет вовсе,
+  // а площадь есть.
+  const gotovaya = num(d.ploschad);
   const dlina = num(d.dlina), shirina = num(d.shirina);
-  const brutto = (dlina > 0 && shirina > 0) ? dlina * shirina : 0;
+  // ФОРМА ПОЛА ИЗВЕСТНА, только когда заданы обе стороны. По ней
+  // рисуется схема и по ней же куски кладутся на свои места. Готовая
+  // площадь формы не даёт: 6 м² — это и 3×2, и 6×1.
+  // Заданная прямо площадь не только главнее — она ОТМЕНЯЕТ форму:
+  // 10 м², вписанные при поле 3x2, рисовались бы шестью метрами,
+  // и картинка разошлась бы с числом на глазах.
+  const poRazmeram = !(gotovaya > 0) && (dlina > 0 && shirina > 0);
+  const brutto = gotovaya > 0 ? gotovaya : (poRazmeram ? dlina * shirina : 0);
   if(!(brutto > 0)) return null;
+
+  // ЧТО ВЫЧИТАЕМ.
+  // Форма известна — считаем ПО МЕСТУ, тем же устройством, каким считается
+  // стена с проёмами у листового: кусок обрезается полом, а площадь берётся
+  // ОБЪЕДИНЕНИЕМ (`tcUnionArea`), чтобы налезающие друг на друга не вычлись
+  // дважды. Тогда картинка и число не могут разойтись — они посчитаны одним
+  // выражением (грабля 75: место, куда рисуем, и место, которое занимаем,
+  // должны считаться одним выражением, а не двумя похожими).
+  // Формы нет — класть кусок некуда: вычитаем суммой, как раньше,
+  // и поле «шт.» там остаётся честным.
+  const kuski = [];
+  let zayavleno = 0, poodinochke = 0, obyedinenie = 0, zaKraem = false;
+  if(poRazmeram){
+    (d.proyomy || []).forEach(o=>{
+      const w = num(o.w), h = num(o.h);
+      if(!(w > 0 && h > 0)) return;
+      zayavleno += w * h;
+      // Отступ мерят от ближнего края — тем же выражением, что в раскладке.
+      const x = proyomLevo(o.kray, num(o.x), w, dlina), y = num(o.y);
+      const px1 = Math.max(0, x), px2 = Math.min(dlina, x + w);
+      const py1 = Math.max(0, y), py2 = Math.min(shirina, y + h);
+      if(px2 > px1 && py2 > py1){
+        kuski.push({ x0:px1, y0:py1, x1:px2, y1:py2 });
+        poodinochke += (px2 - px1) * (py2 - py1);
+      }
+      if((Math.max(0, px2 - px1)) * (Math.max(0, py2 - py1)) < w * h - 1e-9) zaKraem = true;
+    });
+    obyedinenie = tcUnionArea(kuski);
+  } else {
+    zayavleno = (d.proyomy || []).reduce((a,o)=>
+      a + num(o.w) * num(o.h) * Math.max(1, Math.round(num(o.n) || 1)), 0);
+    obyedinenie = zayavleno;
+    poodinochke = zayavleno;
+  }
   // Вычитаем не больше, чем есть, — как в площадях: кусок крупнее
   // комнаты иначе показал бы «вычтено 9 м²» там, где вычлось 6.
-  const zayavleno = (d.proyomy || []).reduce((a,o)=>
-    a + num(o.w) * num(o.h) * Math.max(1, Math.round(num(o.n) || 1)), 0);
-  const snyato = Math.min(brutto, zayavleno);
+  const snyato = Math.min(brutto, obyedinenie);
+  const naloz = (poodinochke - obyedinenie) > 1e-6;
+  const forma = { poRazmeram:poRazmeram, dlina:dlina, shirina:shirina, kuski:kuski,
+                  zayavleno:zayavleno, poodinochke:poodinochke,
+                  naloz:naloz, zaKraem:zaKraem };
   const ploschad = brutto - snyato;
-  if(!(ploschad > 0)) return { vsyoVychli:true, brutto:brutto, snyato:snyato };
+  if(!(ploschad > 0)) return Object.assign({ vsyoVychli:true, brutto:brutto, snyato:snyato }, forma);
 
   // ШАГ НЕ ЗАДАЛИ — БЕРЁМ СТАНДАРТНЫЙ. Это единственное подставленное
   // значение во всём калькуляторе, и стоит оно по прямому решению
@@ -24514,10 +24579,10 @@ function skPolRaschet(d){
   // в сантиметрах, площадь в метрах — отсюда деление на 100.
   const dlinaKabelya = ploschad / (shag / 100);
 
-  return {
+  return Object.assign({
     brutto:brutto, snyato:snyato, ploschad:ploschad,
     shag:shag, shagZadan:(shagZadan > 0), dlinaKabelya:dlinaKabelya
-  };
+  }, forma);
 }
 
 // Что набрано в калькуляторе. Живёт, пока открыта вкладка: это прикидка,
@@ -24555,7 +24620,13 @@ let SK = {
   // Вычитаемые куски лежат в `proyomy` — тем же списком, каким сделаны
   // проёмы. Название другое, устройство то же: ширина, длина, сколько
   // штук. Второго такого списка не заводим (CLAUDE.md).
-  pol: { imya:'', dlina:'', shirina:'', shag:'', proyomy: [] }
+  //
+  // `ploschad` — площадь, заданная одним числом; `iz` — помещение,
+  // из которого она пришла (там же лежит и само число, чтобы видеть,
+  // поправил его мастер или нет). Пусто — считаем размерами, как
+  // в магазине: калькулятор работает без проекта и останется таким
+  // (решение владельца 3 сентября 2026).
+  pol: { imya:'', dlina:'', shirina:'', shag:'', ploschad:'', iz:null, proyomy: [] }
 };
 
 // Поле с подсказкой последнего введённого. Подсказка — В ПУСТОМ ПОЛЕ,
@@ -24679,12 +24750,12 @@ function skProyomyHtml(razdel, sPolozheniem, iSteny, opts){
              value="${escapeAttr(o.h||'')}" data-sk-pr="${adr}|${i}|h">
       ${sPolozheniem ? `
       <div class="calc-mode sk-pr-seg">
-        <button type="button" class="calc-mode-btn uzkiy${o.kray==='R'?'':' active'}" data-sk-pr-kray="${adr}|${i}|L" title="Отступ от левого края стены">Слева</button>
-        <button type="button" class="calc-mode-btn uzkiy${o.kray==='R'?' active':''}" data-sk-pr-kray="${adr}|${i}|R" title="Отступ от правого края стены">Справа</button>
+        <button type="button" class="calc-mode-btn uzkiy${o.kray==='R'?'':' active'}" data-sk-pr-kray="${adr}|${i}|L" title="Отступ от левого края ${escapeAttr(p.chto || 'стены')}">Слева</button>
+        <button type="button" class="calc-mode-btn uzkiy${o.kray==='R'?' active':''}" data-sk-pr-kray="${adr}|${i}|R" title="Отступ от правого края ${escapeAttr(p.chto || 'стены')}">Справа</button>
       </div>
       <input type="text" inputmode="decimal" class="ownw-inp" placeholder="${o.kray==='R'?'от правого края, м':'от левого края, м'}"
              value="${escapeAttr(o.x||'')}" data-sk-pr="${adr}|${i}|x">
-      <input type="text" inputmode="decimal" class="ownw-inp" placeholder="от пола, м"
+      <input type="text" inputmode="decimal" class="ownw-inp" placeholder="${escapeAttr(p.yPodskazka || 'от пола, м')}"
              value="${escapeAttr(o.y||'')}" data-sk-pr="${adr}|${i}|y">` : ''}
       ${sPolozheniem ? '' : `
       <input type="text" inputmode="numeric" class="ownw-inp sk-uzko" placeholder="шт."
@@ -24700,57 +24771,98 @@ function skProyomyHtml(razdel, sPolozheniem, iSteny, opts){
 
 // КАРТИНКА РАСКЛАДКИ. Рисуем то же, что посчитали: те же клетки, тот же
 // порядок. Расходиться картинке и числу нельзя — человек поверит глазам.
-function skListyKartinka(r, st){
-  if(!r || !st) return '';
+function skKartinka(st, o){
+  if(!st || !(st.dlina > 0) || !(st.vysota > 0)) return '';
+  o = o || {};
   const W = 640, ots = 8;
-  const k = (W - ots*2) / st.dlina;
+  // ПОТОЛОК ПО ВЫСОТЕ — ТОЛЬКО ТАМ, ГДЕ ЕГО ПРОСЯТ. Пол 1×4 без него
+  // вышел бы картинкой в три экрана высотой: масштаб берётся по ширине,
+  // и длинная сторона тянет вверх. Стене потолок не нужен и не ставится —
+  // её пропорции задаёт высота помещения, а не замер.
+  const kMax = (o.maxV > 0) ? (o.maxV - ots*2) / st.vysota : Infinity;
+  const k = Math.min((W - ots*2) / st.dlina, kMax);
+  const Wsvg = Math.round(st.dlina * k) + ots*2;
   const H = Math.round(st.vysota * k) + ots*2;
-  // Стена рисуется снизу вверх: y в разметке считается сверху, а высота
-  // проёма задаётся от пола. Перевернуть надо один раз и здесь, иначе
-  // дверь окажется под потолком.
+  // Рисуем снизу вверх: y в разметке считается сверху, а высота проёма
+  // (и отступ куска от нижнего края) задаётся снизу. Перевернуть надо
+  // один раз и здесь, иначе дверь окажется под потолком.
   const naEkran = (x, y, w, h)=> ({
     x: ots + x*k, y: ots + (st.vysota - y - h)*k, w: w*k, h: h*k });
+  // Подпись влезает не всегда: на узком куске она вылезла бы за его края.
+  const nadpis = (g, t, cvet, minW, minH)=> (t && g.w > minW && g.h > minH)
+    ? `<text x="${(g.x + g.w/2).toFixed(1)}" y="${(g.y + g.h/2 + 4).toFixed(1)}"
+              text-anchor="middle" font-size="11" fill="${cvet}"
+              font-family="monospace">${t}</text>`
+    : '';
 
-  const kletki = st.setka.map(c=>{
+  // Подложка нужна там, где клеток нет: у пола под серыми кусками должно
+  // быть видно сам пол, а не страницу.
+  const fon = o.fon
+    ? `<rect x="${ots}" y="${ots}" width="${(st.dlina*k).toFixed(1)}" height="${(st.vysota*k).toFixed(1)}"
+      fill="var(--white)" stroke="none"/>`
+    : '';
+
+  const kletki = (st.setka || []).map(c=>{
     const g = naEkran(c.x, c.y, c.w, c.h);
-    const celyy = (c.w >= r.w && c.h >= r.h);
+    const celyy = (c.w >= o.kletkaW && c.h >= o.kletkaH);
     // РАЗМЕР ПИШЕМ ТОЛЬКО НА ПОДРЕЗАННЫХ. На целых он и так известен
     // из поля ввода, а надписи на каждой клетке превратили бы схему
     // в кашу (владелец 4 сентября: «должна быть возможность увидеть
     // размер подрезков»).
-    const podpis = (!c.pusto && !celyy && g.w > 46 && g.h > 16)
-      ? `<text x="${(g.x + g.w/2).toFixed(1)}" y="${(g.y + g.h/2 + 4).toFixed(1)}"
-              text-anchor="middle" font-size="11" fill="var(--ink-soft)"
-              font-family="monospace">${Math.round(c.w)}×${Math.round(c.h)}</text>`
-      : '';
+    const podpis = (!c.pusto && !celyy)
+      ? nadpis(g, Math.round(c.w) + '×' + Math.round(c.h), 'var(--ink-soft)', 46, 16) : '';
     return `<rect x="${g.x.toFixed(1)}" y="${g.y.toFixed(1)}" width="${g.w.toFixed(1)}" height="${g.h.toFixed(1)}"
       fill="${c.pusto ? 'var(--paper-line)' : 'var(--white)'}"
       stroke="${c.pusto ? 'var(--paper-line)' : 'var(--ink-soft)'}" stroke-width="1"/>${podpis}`;
   }).join('');
 
-  // ПРОЁМЫ РИСУЕМ ОТДЕЛЬНО И ПОВЕРХ КЛЕТОК. Раньше их не было видно
+  // ВЫРЕЗЫ РИСУЕМ ОТДЕЛЬНО И ПОВЕРХ КЛЕТОК. Раньше их не было видно
   // вовсе: серым помечались только клетки, попавшие в проём ЦЕЛИКОМ,
   // а дверь, не накрывшая ни одной клетки полностью, не оставляла
   // на схеме следа. Владелец 4 сентября: «проём не отобразился
   // на картинке».
-  const proyomy = (st.dyry || []).map(o=>{
-    const g = naEkran(o.x, o.y, o.w, o.h);
+  const zalivka = o.dyraZalivka || 'var(--paper)';
+  const obvod   = o.dyraObvod   || 'var(--orange)';
+  const prozr   = (o.dyraProzr === undefined) ? '0.92' : o.dyraProzr;
+  const punktir = (o.dyraPunktir === undefined) ? '6 4' : o.dyraPunktir;
+  const proyomy = (st.dyry || []).map(d=>{
+    const g = naEkran(d.x, d.y, d.w, d.h);
+    const t = o.podpisDyry ? o.podpisDyry(d.w, d.h) : (Math.round(d.w) + '×' + Math.round(d.h));
     return `<rect x="${g.x.toFixed(1)}" y="${g.y.toFixed(1)}" width="${g.w.toFixed(1)}" height="${g.h.toFixed(1)}"
-      fill="var(--paper)" fill-opacity="0.92" stroke="var(--orange)"
-      stroke-width="2" stroke-dasharray="6 4"/>${
-      g.w > 60 && g.h > 20
-        ? `<text x="${(g.x + g.w/2).toFixed(1)}" y="${(g.y + g.h/2 + 4).toFixed(1)}"
-                text-anchor="middle" font-size="11" fill="var(--orange)"
-                font-family="monospace">${Math.round(o.w)}×${Math.round(o.h)}</text>`
-        : ''}`;
+      fill="${zalivka}" fill-opacity="${prozr}" stroke="${obvod}"
+      stroke-width="2"${punktir ? ` stroke-dasharray="${punktir}"` : ''}/>${
+      nadpis(g, t, obvod, 60, 20)}`;
   }).join('');
 
-  return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-width:640px;display:block;margin-top:10px;">
-    ${kletki}
+  return `<svg viewBox="0 0 ${Wsvg} ${H}" width="100%" style="max-width:${Wsvg}px;display:block;margin-top:10px;">
+    ${fon}${kletki}
     ${proyomy}
     <rect x="${ots}" y="${ots}" width="${(st.dlina*k).toFixed(1)}" height="${(st.vysota*k).toFixed(1)}"
           fill="none" stroke="var(--ink)" stroke-width="2"/>
   </svg>`;
+}
+
+function skListyKartinka(r, st){
+  if(!r || !st) return '';
+  return skKartinka(st, { kletkaW: r.w, kletkaH: r.h });
+}
+
+// СХЕМА ПОЛА. Тот же код, что рисует стену с проёмами, — различаются
+// только цвет выреза (у пола серый: там не греют) и то, что клеток
+// раскладки здесь нет. Третьего вида схемы не заводим (CLAUDE.md).
+// Размеры у пола в метрах, у стены в миллиметрах — картинке всё равно,
+// масштаб она берёт от сторон, а подпись ей передают готовой.
+function skPolKartinka(r){
+  if(!r || !r.poRazmeram) return '';
+  return skKartinka({
+    dlina: r.dlina, vysota: r.shirina, setka: [],
+    dyry: (r.kuski || []).map(c=>({ x:c.x0, y:c.y0, w:c.x1-c.x0, h:c.y1-c.y0 }))
+  }, {
+    fon: true, maxV: 440,
+    dyraZalivka: 'var(--paper-line)', dyraObvod: 'var(--ink-soft)',
+    dyraProzr: '1', dyraPunktir: '',
+    podpisDyry: (w, h)=> fmt(w) + '×' + fmt(h)
+  });
 }
 
 // Список кусков одним видом на оба случая: и подрезка, и остатки —
@@ -24842,11 +24954,30 @@ function skItogSmes(){
 // ОКРУГЛЕНИЕ ДЛИНЫ — ДО ДЕСЯТЫХ МЕТРА, и об этом сказано словами.
 // До целого округлять нельзя: молчаливое округление принимают
 // за точный ответ, а десятые сразу видно, что это прикидка.
+// ОТКУДА ПЛОЩАДЬ — ПИШЕМ РЯДОМ С ЧИСЛОМ. Посчитавший для санузла
+// и применивший к кухне не заметит подмены, если помещение названо
+// только в поле ввода, которое уехало вверх (уточнение владельца
+// 15 сентября 2026).
+function skPolOtkuda(d){
+  if(!d.iz) return '';
+  const imya = (d.iz.imya || '').trim();
+  const pravil = (String(d.ploschad || '').trim() !== String(d.iz.ploschad || '').trim());
+  return `<div class="mat-note">Площадь взята из помещения <b>${escapeHtml(imya || 'без названия')}</b>${
+    d.iz.proekt ? ' · ' + escapeHtml(d.iz.proekt) : ''}.${
+    pravil ? ' Число вы поправили — в смете осталось прежнее.' : ''}</div>`;
+}
+
 function skItogPol(){
   const d = SK.pol;
   const r = skPolRaschet(d);
-  if(!r) return `<div class="mat-note">Задайте длину и ширину пола — посчитаем.</div>`;
-  if(r.vsyoVychli) return `<div class="mat-note">Из ${fmt(r.brutto)} м² пола вычтено ${fmt(r.snyato)} м² — греть нечего.</div>`;
+  if(!r) return `<div class="mat-note">${d.iz
+    ? 'Задайте площадь пола — посчитаем.'
+    : 'Задайте длину и ширину пола — посчитаем.'}</div>`;
+  if(r.vsyoVychli) return `<div class="sk-itog">
+      <div class="mat-note">Из ${fmt(r.brutto)} м² пола вычтено ${fmt(r.snyato)} м² — греть нечего.</div>
+      ${skPolOtkuda(d)}
+      ${skPolKartinka(r)}
+    </div>`;
   const imya = (d.imya||'').trim();
   const dlinaTekst = fmt(Math.round(r.dlinaKabelya * 10) / 10);
 
@@ -24856,6 +24987,14 @@ function skItogPol(){
   const proShag = r.shagZadan
     ? ` Шаг ${fmt(r.shag)} см — ваш.`
     : ` Шаг не задан: считаем по стандартному ${fmt(SK_POL_SHAG)} см (обычно кладут 7–8).`;
+  // ОГОВОРКИ СТОЯТ ТАМ, ГДЕ ЧИСЛО, а не в прокручиваемом теле окна
+  // (грабля 76). Обе про одно: почему вычлось меньше заявленного.
+  const proNaloz = r.naloz
+    ? `<div class="mat-note">Куски налезают друг на друга: вычли ${fmt(r.snyato)} м² по месту, а не ${fmt(r.poodinochke)} м² суммой. Если они стоят в разных местах — раздвиньте их отступами.</div>`
+    : '';
+  const proKray = r.zaKraem
+    ? `<div class="mat-note">Кусок вышел за край пола: вычли только то, что на полу.</div>`
+    : '';
 
   return `<div class="sk-itog">
       ${imya ? `<div class="sk-itog-imya">${escapeHtml(imya)}</div>` : ''}
@@ -24865,8 +25004,45 @@ function skItogPol(){
         <div><span>мата нужно</span><b>${fmt(r.ploschad)} м²</b></div>
       </div>
       <div class="mat-note">${proVychet}${proShag} Длину округлили до десятых метра.</div>
+      ${proNaloz}${proKray}
+      ${skPolOtkuda(d)}
+      ${skPolKartinka(r)}
+      ${r.poRazmeram ? `<div class="mat-note">Серым — то, что не греем. Схема рисует ровно те куски, которые вычтены: разойтись им нельзя.</div>` : ''}
       <div class="mat-note">Мата берут ровно на обогреваемую площадь: он режется по сетке, а шаг внутри него задан на заводе и от нашего шага не зависит.</div>
     </div>`;
+}
+
+// ТЁПЛЫЙ ПОЛ ИЗ ПОМЕЩЕНИЯ — ВТОРОЙ ВХОД В ТОТ ЖЕ РАСЧЁТ, а не переезд
+// расчёта в помещение. Калькулятор как открывался без проекта, так
+// и открывается: прораб стоит в магазине и считает (решение владельца
+// 3 сентября 2026). Отсюда мы приносим ему только готовое число.
+//
+// Площадь берём той же `calcRoomGeometry`, что кормит смету и документы.
+// Свой счёт площади пола здесь разошёлся бы со сметой молча — и увидел
+// бы это не тот, кто писал, а тот, кто работает (CLAUDE.md, грабли 42 и 43).
+//
+// ВЫЧИТАЕМОЕ НЕ ПОДСТАВЛЯЕМ. Что стоит под ванной и машинкой, знает
+// мастер; подставить площадь целиком и промолчать значило бы соврать
+// в сторону большего метража.
+function skOtkrytTyoplyyPol(room, proj){
+  const g = calcRoomGeometry(room);
+  // До сотых — ровно то число, которое человек видит в смете. Точка
+  // на запятую: поле читают глазами, а `num` понимает оба знака.
+  const ploschad = String(Math.round(g.floorArea * 100) / 100).replace('.', ',');
+  const imya = (room.name || '').trim();
+  // Помещение сменилось — вычитаемое от прошлого не переносим: куски
+  // из санузла, тихо оставшиеся в расчёте кухни, и есть та самая
+  // ошибка, ради которой видно, откуда площадь.
+  if(!SK.pol.iz || SK.pol.iz.id !== room.id) SK.pol.proyomy = [];
+  SK.razdel = 'pol';
+  SK.pol.dlina = ''; SK.pol.shirina = '';
+  SK.pol.ploschad = ploschad;
+  SK.pol.imya = imya;
+  SK.pol.iz = { id: room.id, imya: imya,
+                proekt: ((proj && proj.name) || '').trim(), ploschad: ploschad };
+  state.view = 'skalk';
+  render();
+  if(window.innerWidth < 1024) setNav(false);
 }
 
 function renderSkalkView(){
@@ -24923,15 +25099,30 @@ function renderSkalkView(){
         ${skPole('pol','imya','Что считаем', {text:true, placeholder:'напр. санузел'})}
         <div></div>
       </div>
+      ${SK.pol.iz ? `
+      <div class="sk-pamyatka">
+        <div class="sk-podzag">Откуда площадь</div>
+        <div class="mat-note">Помещение <b>${escapeHtml((SK.pol.iz.imya||'').trim() || 'без названия')}</b>${
+          SK.pol.iz.proekt ? ' · ' + escapeHtml(SK.pol.iz.proekt) : ''}. Длину с шириной не спрашиваем: у помещения со сложным контуром их нет вовсе, а площадь есть. Поправите число — в смете останется прежнее, обратно отсюда ничего не уходит.</div>
+        <button type="button" class="add-link" data-sk-pol-svoi="1">Считать своими размерами</button>
+      </div>
+      <div class="cust-grid">
+        ${skPole('pol','ploschad','Площадь пола, м²', {placeholder:'м²'})}
+        <div></div>
+      </div>` : `
       <div class="cust-grid">
         ${skPole('pol','dlina','Пол: длина, м')}
         ${skPole('pol','shirina','Пол: ширина, м')}
-      </div>
-      ${skProyomyHtml('pol', false, null, {
+      </div>`}
+      ${skProyomyHtml('pol', !SK.pol.iz, null, {
         zagolovok:'Что вычитаем',
         wPodskazka:'ширина, м', hPodskazka:'длина, м',
+        yPodskazka:'от нижнего края, м', chto:'пола',
         pusto:'Ничего не вычитаем — греем весь пол.',
         dobavit:'+ Кусок'})}
+      ${SK.pol.iz
+        ? `<div class="mat-note">Схему пола рисуем там, где заданы длина и ширина. Здесь пришла готовая площадь — формы пола приложение не знает, и рисовать ему нечего.</div>`
+        : `<div class="mat-note">Куски встают на схему по отступам от края. Оставите отступы пустыми — все лягут в левый нижний угол и налезут друг на друга; тогда итог скажет об этом отдельной строкой.</div>`}
       <div class="sk-pamyatka">
         <div class="sk-podzag">О чём не забыть</div>
         <div class="mat-note">Греется не вся комната. Это напоминание, а не правило: что греть на этом объекте, знаете вы, а не приложение.</div>
@@ -25008,6 +25199,11 @@ function skAttach(){
   const main = document.getElementById('main');
   main.querySelectorAll('[data-sk-razdel]').forEach(el=>{
     el.onclick = ()=>{ SK.razdel = el.getAttribute('data-sk-razdel'); render(); };
+  });
+  // Отвязаться от помещения и считать своими размерами. Без этой кнопки
+  // пришедший из помещения оказался бы заперт в одном поле до перезагрузки.
+  main.querySelectorAll('[data-sk-pol-svoi]').forEach(el=>{
+    el.onclick = ()=>{ SK.pol.iz = null; SK.pol.ploschad = ''; render(); };
   });
   main.querySelectorAll('[data-sk]').forEach(el=>{
     const [razdel, klyuch] = el.getAttribute('data-sk').split('|');
