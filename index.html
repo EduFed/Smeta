@@ -4178,7 +4178,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-15-268';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-15-269';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -23372,6 +23372,10 @@ const TC_SURFACES = {
 // умолчаний разошлись бы молча.
 const TC_UKLADKA_PO_UMOLCHANIYU = {
   orient:'h',                                        // как введено / повёрнута на 90°
+  // Рисунок САМОЙ ПЛИТКИ — однотонная или с рисунком (владелец
+  // 15 сентября 2026: «рисунок у каждой стены отдельно»). Он решает,
+  // можно ли разворачивать обрезок, поэтому стоит рядом с ориентацией.
+  directional:'plain',
   pattern:'straight', offset:'half', offsetCustom:'',
   startX:'edgeL', startY:'edgeB',
   // Свой размер плитки у края — под дизайн-проект, где он задан
@@ -23409,11 +23413,10 @@ const tc = {
   // заходами, складывая на бумаге, значит делать руками ровно то,
   // ради чего брали приложение (владелец 4 сентября 2026).
   poverhnosti: [ tcPustaya() ],
-  // ОБЩЕЕ НА ВЕСЬ РАСЧЁТ: размер плитки, шов и есть ли на ней рисунок.
-  // Всё, что относится к укладке, живёт в самой поверхности —
+  // ОБЩЕЕ НА ВЕСЬ РАСЧЁТ: только размер плитки и шов. Всё остальное,
+  // включая рисунок самой плитки, живёт в поверхности —
   // см. TC_UKLADKA_PO_UMOLCHANIYU.
   tileW:'', tileH:'', seam:'2',
-  directional:'plain',
   tab:'data',
   inited:false,
 };
@@ -23586,8 +23589,9 @@ function tcPackPairs(listA, listB, cap){
 }
 
 // основной расчёт: раскладываем плитки по сетке и классифицируем каждую
-// Считает ОДНУ поверхность. Плитку, шов, рисунок и укладку берёт
-// из общего состояния, размеры и вырез — из переданной поверхности.
+// Считает ОДНУ поверхность. Плитку и шов берёт из общего состояния;
+// размеры, вырезы и всю укладку (включая рисунок плитки) — из самой
+// поверхности.
 function tcCompute(pv){
   const W=num(pv.W), H=num(pv.H);
   // ориентация: 'h' — как введено, 'v' — плитка повёрнута на 90°
@@ -23708,7 +23712,8 @@ function tcCompute(pv){
     else { cornerCut++; }                                // на всякий случай
   });
   let tilesW, tilesH;
-  if(tc.directional==='dir'){                            // плитка с рисунком — разворот нельзя
+  const napravlennaya = tcNast(pv,'directional');        // рисунок СВОЙ у поверхности
+  if(napravlennaya==='dir'){                             // плитка с рисунком — разворот нельзя
     tilesW = tcPackPairs(widL, widR, cw);
     tilesH = tcPackPairs(hgtB, hgtT, ch);
   } else {                                               // обычная плитка — разворот можно
@@ -23725,15 +23730,16 @@ function tcCompute(pv){
   const bought = total*cw*ch;                            // купленная площадь плитки (по «с запасом»)
   const waste = bought>0 ? Math.max(0, Math.round((bought - surfArea)/bought*100)) : 0;
   // Полосы отдаём наружу: обрезки одной поверхности годятся другой —
-  // плитка и рисунок общие. Складывать их надо один раз на весь расчёт,
-  // а не по поверхности, иначе экономия теряется ровно там, где она есть.
-  return {ok:true, W,H, cw, ch, tiles, whole, cut, total, totalReuse, saved, surfArea, waste, holes, cutList, shapedCount,
+  // но только той, где ячейка того же размера И тот же рисунок плитки.
+  // Складывать их надо один раз на весь расчёт, а не по поверхности,
+  // иначе экономия теряется ровно там, где она есть.
+  return {ok:true, W,H, cw, ch, napravlennaya, tiles, whole, cut, total, totalReuse, saved, surfArea, waste, holes, cutList, shapedCount,
           polosy:{widL, widR, hgtB, hgtT, cornerCut}};
 }
 
 // ВСЕ ПОВЕРХНОСТИ РАЗОМ.
-// Схема у каждой своя, числа общие, а запас обрезков — один на всех:
-// плитка и рисунок заданы один раз, значит кусок, оставшийся от пола,
+// Схема у каждой своя, числа общие, а запас обрезков общий лишь у тех
+// поверхностей, где обрезок и вправду годится: кусок, оставшийся от пола,
 // ложится в подрезку стены. Ровно так же считаются стены в листовом
 // материале.
 function tcVse(){
@@ -23749,19 +23755,23 @@ function tcVse(){
 
   let whole=0, cut=0, surfArea=0, shapedCount=0, cornerCut=0;
   const cutList = [];
-  // ЗАПАС ОБРЕЗКОВ ДЕЛИТСЯ ПО РАЗМЕРУ ЯЧЕЙКИ. Ориентация с 10 сентября
-  // 2026 своя у каждой поверхности, и у повёрнутой ячейка другая:
-  // полосу шириной под 60 см в ячейку 30 см не уложишь, и свалив их
-  // в один список мы занизили бы закупку.
-  // Внутри одного размера ячейки запас по-прежнему ОДИН на все
-  // поверхности — обрезок от пола идёт в подрезку стены.
+  // ЗАПАС ОБРЕЗКОВ ДЕЛИТСЯ ПО РАЗМЕРУ ЯЧЕЙКИ И ПО РИСУНКУ ПЛИТКИ.
+  // Ориентация с 10 сентября 2026 своя у каждой поверхности, и
+  // у повёрнутой ячейка другая: полосу шириной под 60 см в ячейку 30 см
+  // не уложишь. Рисунок плитки с 15 сентября 2026 тоже свой, а он решает,
+  // можно ли разворачивать кусок: однотонные полосы кладутся в плитку
+  // вместе (tcPackFFD), полосы с рисунком — только парами левая+правая
+  // (tcPackPairs). Свалив их в один список, мы занизили бы закупку —
+  // ошибка тихая и в опасную сторону, человек недокупит плитки.
+  // Внутри одного размера и одного рисунка запас по-прежнему ОДИН
+  // на все поверхности — обрезок от пола идёт в подрезку стены.
   const zapas = new Map();
   godnye.forEach(r=>{
     whole += r.whole; cut += r.cut; surfArea += r.surfArea; shapedCount += r.shapedCount;
     cornerCut += r.polosy.cornerCut;
-    const klyuch = Math.round(r.cw*10000) + 'x' + Math.round(r.ch*10000);
+    const klyuch = Math.round(r.cw*10000) + 'x' + Math.round(r.ch*10000) + '|' + r.napravlennaya;
     let z = zapas.get(klyuch);
-    if(!z){ z = {cw:r.cw, ch:r.ch, widL:[], widR:[], hgtB:[], hgtT:[]}; zapas.set(klyuch, z); }
+    if(!z){ z = {cw:r.cw, ch:r.ch, dir:r.napravlennaya, widL:[], widR:[], hgtB:[], hgtT:[]}; zapas.set(klyuch, z); }
     z.widL.push(...r.polosy.widL); z.widR.push(...r.polosy.widR);
     z.hgtB.push(...r.polosy.hgtB); z.hgtT.push(...r.polosy.hgtT);
     r.cutList.forEach(c=>{
@@ -23771,8 +23781,8 @@ function tcVse(){
   });
   let tilesW = 0, tilesH = 0;
   zapas.forEach(z=>{
-    tilesW += (tc.directional==='dir') ? tcPackPairs(z.widL, z.widR, z.cw) : tcPackFFD(z.widL.concat(z.widR), z.cw);
-    tilesH += (tc.directional==='dir') ? tcPackPairs(z.hgtB, z.hgtT, z.ch) : tcPackFFD(z.hgtB.concat(z.hgtT), z.ch);
+    tilesW += (z.dir==='dir') ? tcPackPairs(z.widL, z.widR, z.cw) : tcPackFFD(z.widL.concat(z.widR), z.cw);
+    tilesH += (z.dir==='dir') ? tcPackPairs(z.hgtB, z.hgtT, z.ch) : tcPackFFD(z.hgtB.concat(z.hgtT), z.ch);
   });
 
   const total = whole + cut;
@@ -24015,10 +24025,7 @@ function tcControlsDataHTML(){
   h += `<div class="tc-sec-title">Плитка</div>`;
   h += `<div class="tc-fields">` + tcFieldInput('tileW','Ширина плитки, см') + tcFieldInput('tileH','Высота плитки, см') + `</div>`;
   h += `<div class="tc-fields">` + tcFieldInput('seam','Шов, мм') + `<div></div></div>`;
-  h += `<div class="tc-label">Рисунок плитки</div>`;
-  h += tcSeg('directional', [['plain','Однотонная'],['dir','С рисунком']], tc.directional);
-  h += `<div class="tc-hint">«Однотонную» можно разворачивать — обрезки идут в дело активнее. У плитки «с рисунком» разворот нельзя, поэтому остатков в дело идёт меньше.</div>`;
-  h += `<div class="tc-hint">Размер плитки и шов — общие на весь расчёт: разная плитка одного размера ложится одинаково. А ориентация, рисунок укладки и старт задаются у каждой поверхности СВОИ — на вкладке «Просмотр», рядом с её схемой.</div>`;
+  h += `<div class="tc-hint">Размер плитки и шов — общие на весь расчёт: разная плитка одного размера ложится одинаково. А рисунок плитки, ориентация, рисунок укладки и старт задаются у каждой поверхности СВОИ — на вкладке «Просмотр», рядом с её схемой.</div>`;
   return h;
 }
 // УКЛАДКА ОДНОЙ ПОВЕРХНОСТИ («Просмотр», рядом с её схемой).
@@ -24031,7 +24038,13 @@ function tcUkladkaHTML(pv, i){
   h += `<div class="tc-sec-title">Укладка</div>`;
   h += `<div class="tc-label">Ориентация плитки</div>`;
   h += tcSeg('orient', [['h','Горизонтально'],['v','Вертикально']], tcNast(pv,'orient'), i);
-  h += `<div class="tc-label">Рисунок</div>`;
+  // Рисунок САМОЙ ПЛИТКИ стоит рядом с ориентацией: оба про плитку,
+  // а не про кладку. Подпись у кладки — «Рисунок укладки», чтобы два
+  // соседних переключателя не звались одним словом.
+  h += `<div class="tc-label">Рисунок плитки</div>`;
+  h += tcSeg('directional', [['plain','Однотонная'],['dir','С рисунком']], tcNast(pv,'directional'), i);
+  h += `<div class="tc-hint">Однотонную можно разворачивать — обрезки идут в дело активнее. У плитки с рисунком разворот нельзя.</div>`;
+  h += `<div class="tc-label">Рисунок укладки</div>`;
   h += tcSeg('pattern', [['straight','Шов-в-шов'],['offset','Вразбежку']], tcNast(pv,'pattern'), i);
   if(tcNast(pv,'pattern')==='offset'){
     h += `<div class="tc-label">Смещение рядов</div>`;
