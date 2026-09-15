@@ -4183,7 +4183,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-15-270';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-15-271';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -24788,6 +24788,9 @@ function skKartinka(st, o){
   // один раз и здесь, иначе дверь окажется под потолком.
   const naEkran = (x, y, w, h)=> ({
     x: ots + x*k, y: ots + (st.vysota - y - h)*k, w: w*k, h: h*k });
+  // Отдельная точка нужна линиям: у отрезка нет ширины с высотой,
+  // а переворот по вертикали тот же самый и должен быть один на всех.
+  const naTochku = (x, y)=> ({ x: ots + x*k, y: ots + (st.vysota - y)*k });
   // Подпись влезает не всегда: на узком куске она вылезла бы за его края.
   const nadpis = (g, t, cvet, minW, minH)=> (t && g.w > minW && g.h > minH)
     ? `<text x="${(g.x + g.w/2).toFixed(1)}" y="${(g.y + g.h/2 + 4).toFixed(1)}"
@@ -24834,9 +24837,21 @@ function skKartinka(st, o){
       nadpis(g, t, obvod, 60, 20)}`;
   }).join('');
 
+  // ЛИНИЯ ПОВЕРХ ВСЕГО — это кабель. Отрезки приходят готовыми, посчитанные
+  // там же, где считается вычет: своей геометрии картинка не заводит.
+  const liniya = (o.liniya && o.liniya.length)
+    ? `<path d="${(o.liniya || []).map(g=>{
+        const a = naTochku(g.x1, g.y1), b = naTochku(g.x2, g.y2);
+        return 'M' + a.x.toFixed(1) + ' ' + a.y.toFixed(1)
+             + 'L' + b.x.toFixed(1) + ' ' + b.y.toFixed(1);
+      }).join('')}" fill="none" stroke="${o.liniyaCvet || 'var(--orange)'}"
+      stroke-width="${o.liniyaTolsch || 1.5}" stroke-linecap="round"/>`
+    : '';
+
   return `<svg viewBox="0 0 ${Wsvg} ${H}" width="100%" style="max-width:${Wsvg}px;display:block;margin-top:10px;">
     ${fon}${kletki}
     ${proyomy}
+    ${liniya}
     <rect x="${ots}" y="${ots}" width="${(st.dlina*k).toFixed(1)}" height="${(st.vysota*k).toFixed(1)}"
           fill="none" stroke="var(--ink)" stroke-width="2"/>
   </svg>`;
@@ -24845,6 +24860,107 @@ function skKartinka(st, o){
 function skListyKartinka(r, st){
   if(!r || !st) return '';
   return skKartinka(st, { kletkaW: r.w, kletkaH: r.h });
+}
+
+// ЗМЕЙКА КАБЕЛЯ — ОТРЕЗКИ ДЛЯ СХЕМЫ, А НЕ СЧЁТ МЕТРАЖА.
+//
+// Длина кабеля считается формулой в `skPolRaschet` (площадь ÷ шаг), и здесь
+// она НЕ пересчитывается. Разойтись этим числам можно и они расходятся:
+// формула не знает ни поворотов на концах витков, ни того, что от стен
+// отступают на шаг. Поэтому под схемой словами написано, что это прикидка
+// расхода, а не раскладка по месту.
+//
+// Правила укладки (владелец, 10 сентября 2026):
+// · витки идут через заданный шаг;
+// · от стен отступ равен шагу — отдельного поля для него нет, он в шаге;
+// · под тем, что не греем, кабеля нет: виток об кусок прерывается,
+//   а не проходит насквозь.
+//
+// Витки кладём вдоль длинной стороны: так меньше поворотов.
+function skZmeykaOtrezki(dlina, shirina, shagM, kuski){
+  const eps = 1e-9;
+  if(!(dlina > 0) || !(shirina > 0) || !(shagM > 0)) return [];
+  const vdol = dlina >= shirina;          // виток идёт по оси X
+  const L = vdol ? dlina : shirina;       // длина витка
+  const S = vdol ? shirina : dlina;       // поперёк — по ней считаем витки
+  if(L - 2*shagM <= eps) return [];       // отступы съели виток целиком
+  const n = Math.floor((S - shagM + eps) / shagM);
+  if(n < 1) return [];
+  // ОТСТУП ОТ СТЕН РАВЕН ШАГУ, но целое число витков в комнату влезает
+  // редко. Остаток делим поровну на обе стены: иначе от одной стены
+  // выходит ровно шаг, а от другой — до полутора шагов, и схема
+  // выглядит перекошенной. Отступ при этом НИКОГДА не меньше шага
+  // и никогда не больше полутора — поэтому под схемой написано
+  // «от стен не ближе шага», а не «ровно шаг».
+  const kray = (S - (n - 1) * shagM) / 2;
+  // Куски переводим в оси витка: u — вдоль витка, t — поперёк.
+  const dyry = (kuski || []).map(c=> vdol
+    ? { u0:c.x0, u1:c.x1, t0:c.y0, t1:c.y1 }
+    : { u0:c.y0, u1:c.y1, t0:c.x0, t1:c.x1 });
+  const tochka = (u, t)=> vdol ? { x:u, y:t } : { x:t, y:u };
+  // Общее у двух соседних витков: где есть и тот, и другой.
+  const obschee = (A, B)=>{
+    const out = [];
+    A.forEach(a=> B.forEach(b=>{
+      const c0 = Math.max(a[0], b[0]), c1 = Math.min(a[1], b[1]);
+      if(c1 - c0 > eps) out.push([c0, c1]);
+    }));
+    return out;
+  };
+  const otrezki = [];
+  let pred = null, predT = 0;
+  for(let i = 0; i < n; i++){
+    const t = kray + shagM * i;
+    let chasti = [[shagM, L - shagM]];
+    dyry.forEach(d=>{
+      // Виток, идущий ровно по краю куска, кусок не задевает.
+      if(t <= d.t0 + eps || t >= d.t1 - eps) return;
+      const novye = [];
+      chasti.forEach(ch=>{
+        const c0 = Math.max(ch[0], d.u0), c1 = Math.min(ch[1], d.u1);
+        if(c1 <= c0 + eps){ novye.push(ch); return; }
+        if(c0 - ch[0] > eps) novye.push([ch[0], c0]);
+        if(ch[1] - c1 > eps) novye.push([c1, ch[1]]);
+      });
+      chasti = novye;
+    });
+    // Обрывки короче сантиметра — числовая пыль, а не кабель.
+    chasti = chasti.filter(ch=> ch[1] - ch[0] > 0.01);
+    // ПОВОРОТ ЖМЁТСЯ К КРАЮ, НО К ДОСТУПНОМУ. У стены он встаёт у стены,
+    // а там, где виток упёрся в ванну, — у ванны: кабель огибает кусок,
+    // а не бросает виток без поворота. Стороны чередуются, как у змейки.
+    if(pred){
+      const oba = obschee(pred, chasti);
+      if(oba.length){
+        const sprava = (((i - 1) % 2) === 0);
+        const u = sprava
+          ? oba.reduce((m, c)=> Math.max(m, c[1]), -Infinity)
+          : oba.reduce((m, c)=> Math.min(m, c[0]), Infinity);
+        // Кусок тоньше шага может стоять ровно между витками — сквозь
+        // него поворот не пускаем.
+        const skvoz = dyry.some(d=> u > d.u0 + eps && u < d.u1 - eps
+          && d.t1 > predT + eps && d.t0 < t - eps);
+        if(!skvoz){
+          const a = tochka(u, predT), b = tochka(u, t);
+          otrezki.push({ x1:a.x, y1:a.y, x2:b.x, y2:b.y });
+        }
+      }
+    }
+    chasti.forEach(ch=>{
+      const a = tochka(ch[0], t), b = tochka(ch[1], t);
+      otrezki.push({ x1:a.x, y1:a.y, x2:b.x, y2:b.y });
+    });
+    pred = chasti; predT = t;
+  }
+  return otrezki;
+}
+
+// Змейка для схемы пола. Одно выражение на оба места — и на картинку,
+// и на подпись под ней: похожие, но свои правила расходятся молча
+// (грабля 75).
+function skPolZmeyka(r){
+  if(!r || !r.poRazmeram || !(r.shag > 0)) return [];
+  return skZmeykaOtrezki(r.dlina, r.shirina, r.shag / 100, r.kuski);
 }
 
 // СХЕМА ПОЛА. Тот же код, что рисует стену с проёмами, — различаются
@@ -24861,6 +24977,7 @@ function skPolKartinka(r){
     fon: true, maxV: 440,
     dyraZalivka: 'var(--paper-line)', dyraObvod: 'var(--ink-soft)',
     dyraProzr: '1', dyraPunktir: '',
+    liniya: skPolZmeyka(r), liniyaTolsch: 1.4,
     podpisDyry: (w, h)=> fmt(w) + '×' + fmt(h)
   });
 }
@@ -24995,6 +25112,18 @@ function skItogPol(){
   const proKray = r.zaKraem
     ? `<div class="mat-note">Кусок вышел за край пола: вычли только то, что на полу.</div>`
     : '';
+  // Та же змейка, что уйдёт на картинку: подпись под схемой считает витки
+  // по ней, а не своим выражением.
+  const zmeyka = skPolZmeyka(r);
+  // Виток, разрезанный куском надвое, остаётся ОДНИМ витком: считаем
+  // не отрезки, а положения, на которых они стоят.
+  const vdolX = r.dlina >= r.shirina;
+  const polozheniya = {};
+  zmeyka.forEach(g=>{
+    const vitok = vdolX ? Math.abs(g.y1 - g.y2) < 1e-9 : Math.abs(g.x1 - g.x2) < 1e-9;
+    if(vitok) polozheniya[(vdolX ? g.y1 : g.x1).toFixed(4)] = 1;
+  });
+  const vitkov = Object.keys(polozheniya).length;
 
   return `<div class="sk-itog">
       ${imya ? `<div class="sk-itog-imya">${escapeHtml(imya)}</div>` : ''}
@@ -25007,7 +25136,9 @@ function skItogPol(){
       ${proNaloz}${proKray}
       ${skPolOtkuda(d)}
       ${skPolKartinka(r)}
-      ${r.poRazmeram ? `<div class="mat-note">Серым — то, что не греем. Схема рисует ровно те куски, которые вычтены: разойтись им нельзя.</div>` : ''}
+      ${r.poRazmeram ? `<div class="mat-note">Серым — то, что не греем. Схема рисует ровно те куски, которые вычтены: разойтись им нельзя.${
+        zmeyka.length ? ` Оранжевым — кабель: ${vitkov} ${plural(vitkov,'виток','витка','витков')} через ${fmt(r.shag)} см, от стен не ближе шага, серые куски виток обходит.` : ` Шаг ${fmt(r.shag)} см для такого пола слишком крупный — виткам негде встать, кабель не рисуем.`}</div>
+      ${zmeyka.length ? `<div class="mat-note">Это схема шага, а не план монтажа. Где стоит термостат и с какой стороны заходит холодный конец, приложение не знает, поэтому начало укладки не показывает. Метраж выше посчитан по площади и шагу, а не по этой линии.</div>` : ''}` : ''}
       <div class="mat-note">Мата берут ровно на обогреваемую площадь: он режется по сетке, а шаг внутри него задан на заводе и от нашего шага не зависит.</div>
     </div>`;
 }
