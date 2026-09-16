@@ -1807,9 +1807,14 @@
      не вмещала имя мастера и наезжала на сумму. */
   .extra-name{ min-width:0; }
   .extra-cena{ width:84px; }
+  /* У подписанной строки своя только ЦЕНА за единицу: количество,
+     единицу и сумму печатает итог (.wsum) - тем же видом, что
+     у работы помещения. Ячейки .extra-froz-qty и .extra-froz-unit
+     убраны 15 сентября 2026: они печатали количество и единицу
+     второй раз, рядом с итогом. Ширина цены та же, что у поля
+     цены в правящейся строке (.extra-cena), - столбец не скачет,
+     когда соглашение подписывают. */
   .extra-froz-cell{ font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--ink-soft); }
-  .extra-froz-qty{ width:90px; text-align:right; }
-  .extra-froz-unit{ width:72px; }
   .extra-froz-price{ width:84px; text-align:right; }
   .extra-row input, .extra-row select{font-family:'Inter',sans-serif;font-size:13px;border:1px solid var(--paper-line);border-radius:var(--radius);padding:6px 8px;background:var(--white);color:var(--ink);min-width:0;}
   .extra-row input:focus, .extra-row select:focus{outline:none;border-color:var(--blue);}
@@ -4183,7 +4188,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-16-275';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-16-276';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -19883,13 +19888,27 @@ function renderExtraWorksBlock(proj){
   // жила в жёсткой колонке и не помещалась.
   // Цена у доп. работы своя, её правят руками: у работ помещения она
   // приходит из прайса, поэтому поле лишнее только здесь.
+  //
+  // ОДНО ЗНАЧЕНИЕ - ОДНО МЕСТО (15 сентября 2026). Владелец со снимком
+  // экрана: «в доп. соглашении какой-то хаос в цифрах, что-то
+  // дублируется». У подписанной строки стояли свои ячейки количества
+  // и единицы, а итог рядом печатал их ещё раз: «1 шт. 3 500 ₽
+  // 1 шт. · 3 500 ₽». Хуже того, ячейка показывала набранное как есть
+  // («3.4»), а итог - по-русски («3,4»): одно число в двух написаниях.
+  // Теперь количество, единицу и сумму печатает ТОЛЬКО итог, как
+  // у работы помещения; своей ячейкой осталась одна цена за единицу -
+  // её итог не показывает, а видеть её надо.
+  //
+  // Чем строки обязаны отличаться: у работы помещения количество
+  // считается из размеров, и поле ввода стоит пустым с подсказкой;
+  // у доп. работы его набирают руками, и поле хранит само значение.
+  // Поэтому в правящейся строке количество видно и в поле, и в итоге -
+  // ровно так же, как в строке помещения с ручным количеством.
   const stroka = (e, i, zamorozhena)=>`
     <div class="sel-work extra-row${zamorozhena?' extra-row-frozen':''}">
       ${zamorozhena
         ? `<span class="sel-work-name">${escapeHtml(e.name||'—')}</span>
-           <span class="extra-froz-cell extra-froz-qty">${escapeHtml(String(e.qty||''))}</span>
-           <span class="extra-froz-cell extra-froz-unit">${UNIT_LABEL[e.unit]||''}</span>
-           <span class="extra-froz-cell extra-froz-price">${fmtMoney(num(e.price))}</span>`
+           <span class="extra-froz-cell extra-froz-price" title="Цена за единицу">${fmtMoney(num(e.price))}</span>`
         : `<input type="text" class="sel-work-name extra-name" placeholder="наименование" value="${escapeAttr(e.name)}" data-extra="${i}|name">
            <input type="text" class="manual-qty" inputmode="decimal" placeholder="кол-во" value="${escapeAttr(e.qty)}" data-extra="${i}|qty">
            <select class="manual-unit" data-extra="${i}|unit">
@@ -19926,16 +19945,18 @@ function renderExtraWorksBlock(proj){
   //
   // Вид берём тот же, что у подписанной доп. работы, плюс зачёркивание
   // (`pozicia-isklyuchena` — тот же класс, что и у строки в помещении).
+  // Итог тоже тот же: «количество единица · сумма», только со знаком
+  // минус у денег — позиция из сметы вычитается. Отдельных ячеек
+  // количества и единицы здесь больше нет: две строки одного
+  // соглашения не должны показывать одно и то же по-разному.
   // Крестика и замка нет: одну исключённую строку вернуть нечем, это
   // делается снятием подписания у всего соглашения — кнопка в шапке
   // группы, и она возвращает обе половины.
   const iskStroka = (x, chernovik)=>`
     <div class="sel-work extra-row${chernovik?'':' extra-row-frozen'} pozicia-isklyuchena">
       <span class="sel-work-name">${escapeHtml(x.name)}<span class="sel-work-sub">${escapeHtml(x.room)} · ${chernovik ? 'отложена к исключению' : 'исключена из сметы'}</span></span>
-      <span class="extra-froz-cell extra-froz-qty">${fmt(x.qty)}</span>
-      <span class="extra-froz-cell extra-froz-unit">${escapeHtml(x.unit||'')}</span>
-      <span class="extra-froz-cell extra-froz-price">${fmtMoney(x.price)}</span>
-      <span class="wsum">− ${fmtMoney(x.sum)}</span>
+      <span class="extra-froz-cell extra-froz-price" title="Цена за единицу">${fmtMoney(x.price)}</span>
+      <span class="wsum">${fmt(x.qty)} ${escapeHtml(x.unit||'')} · − ${fmtMoney(x.sum)}</span>
       ${chernovik ? `<button class="sel-work-isk" data-isk-vernut="${x.roomId}|${x.lid}"
                              title="Вернуть позицию в смету">вернуть</button>` : ''}
     </div>`;
