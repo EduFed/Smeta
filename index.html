@@ -4188,7 +4188,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-16-277';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-16-278';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -24688,11 +24688,16 @@ function skPolRaschet(d){
   // Тогда остаётся прежний счёт по площади и шагу — и итог говорит об этом
   // словами, потому что молча переключать способ счёта нельзя.
   const dlinaKabelya = poZmeyke > 0 ? poZmeyke : (ploschad / (shag / 100));
+  // СКОЛЬКО ОТДЕЛЬНЫХ ЛИНИЙ. Звено, начавшееся не там, где кончилось
+  // предыдущее, начинает новую. Линия одна всегда, кроме пола, который
+  // куски разделили проходом уже двух отступов (см. `skZmeykaOtrezki`).
+  const linii = otrezki.reduce((a, g, k)=> a + ((k === 0
+    || Math.hypot(g.x1 - otrezki[k-1].x2, g.y1 - otrezki[k-1].y2) > 1e-7) ? 1 : 0), 0);
 
   return Object.assign({
     brutto:brutto, snyato:snyato, ploschad:ploschad,
     shag:shag, shagZadan:(shagZadan > 0), dlinaKabelya:dlinaKabelya,
-    otrezki:otrezki, poZmeyke:(poZmeyke > 0)
+    otrezki:otrezki, poZmeyke:(poZmeyke > 0), linii:linii
   }, forma);
 }
 
@@ -24972,9 +24977,14 @@ function skKartinka(st, o){
   // ЛИНИЯ ПОВЕРХ ВСЕГО — это кабель. Отрезки приходят готовыми, посчитанные
   // там же, где считается вычет: своей геометрии картинка не заводит.
   const liniya = (o.liniya && o.liniya.length)
-    ? `<path d="${(o.liniya || []).map(g=>{
+    ? `<path d="${(o.liniya || []).map((g, k, vse)=>{
         const a = naTochku(g.x1, g.y1), b = naTochku(g.x2, g.y2);
-        const nach = 'M' + a.x.toFixed(1) + ' ' + a.y.toFixed(1);
+        // ЛИНИЯ ОДНА — И В РАЗМЕТКЕ ТОЖЕ. Перо поднимается только там, где
+        // звено начинается не в конце предыдущего, поэтому число «M» в пути
+        // и есть число отдельных линий: разрыв видно не глазом, а счётом.
+        const pr = k > 0 ? vse[k-1] : null;
+        const nach = (pr && Math.hypot(g.x1 - pr.x2, g.y1 - pr.y2) < 1e-7)
+          ? '' : 'M' + a.x.toFixed(1) + ' ' + a.y.toFixed(1);
         if(!g.duga) return nach + 'L' + b.x.toFixed(1) + ' ' + b.y.toFixed(1);
         // ПОВОРОТ — ПОЛУКРУГ. Кабель квадратом не загнёшь: у греющего
         // есть наименьший радиус изгиба (владелец 15 сентября 2026).
@@ -25182,6 +25192,28 @@ function mnVitokChasti(t, uroven, vdol, r){
   return chasti;
 }
 
+// ВЫЧИТАЕМЫЙ КУСОК — ТА ЖЕ ГРАНИЦА ТЁПЛОГО ПОЛА, ЧТО СТЕНА. Какой кусок
+// витка лежит к куску ближе `r`. Точки ближе `r` к прямоугольнику — это
+// прямоугольник, раздутый на `r` со скруглёнными углами, поэтому у угла
+// виток подрезается по кругу, а не по квадрату (так же `mnStenaBlizko`
+// обходится с углами контура).
+//
+// Кабель не кладут вплотную к ванне (задача 2026-09-16-02: «не сквозь
+// и не впритык»). Прежде виток доходил до самого края куска, а виток,
+// шедший ровно по краю, считался свободным — то есть лежал на ванне.
+// Отступ от куска взят тем же, что от стены: и то и другое — край
+// обогреваемого пола, а одинаковое по смыслу считается одинаково
+// (CLAUDE.md). Поменяется правило отступа от стен — поменяется и здесь,
+// потому что отступ передаётся одним числом.
+function skKusokBlizko(d, t, r){
+  // Нанометр запаса — как у стен: виток ровно в отступе не снимается.
+  const rr = r - 1e-9;
+  const dt = t < d.t0 ? d.t0 - t : (t > d.t1 ? t - d.t1 : 0);
+  if(dt >= rr) return null;
+  const w = Math.sqrt(rr * rr - dt * dt);
+  return [d.u0 - w, d.u1 + w];
+}
+
 // ЗМЕЙКА КАБЕЛЯ — И СХЕМА, И МЕТРАЖ. Это одно и то же: `skPolRaschet`
 // зовёт отсюда отрезки, складывает их длины и отдаёт как метраж, а схема
 // рисует ровно этот же список. Считать метраж рядом похожей формулой
@@ -25196,8 +25228,50 @@ function mnVitokChasti(t, uroven, vdol, r){
 // Правила укладки (владелец, 10 сентября 2026):
 // · витки идут через заданный шаг;
 // · от стен отступ равен шагу — отдельного поля для него нет, он в шаге;
-// · под тем, что не греем, кабеля нет: виток об кусок прерывается,
-//   а не проходит насквозь.
+// · под тем, что не греем, кабеля нет.
+//
+// ЛИНИЯ ОДНА (владелец, 16 сентября 2026: «линия на схеме тёплого пола
+// не должна прерываться»). Греющий кабель — одно целое, режут его только
+// на заводе. До сборки 278 виток, упёршийся в кусок, обрывался, а за куском
+// начинался новый; перебор 500 обычных комнат 16 сентября 2026 показал
+// рваную линию в 40–97 % случаев, смотря по виду комнаты: кусок у стены
+// не в углу, кусок посередине, выемка в контуре — везде, где кусок делит
+// виток надвое.
+//
+// ПОЧЕМУ НЕ «ОБОЙТИ КУСОК ПО КРАЮ ТЕМ ЖЕ ВИТКОМ». Так можно провести один
+// виток, но кусок режет сразу несколько: ванна глубиной 70 см при шаге
+// 7,5 — это девять витков, а места вдоль её края нет ни для одного —
+// там лежат соседние витки. Девять обходов легли бы друг на друга.
+// Поэтому обходит не виток, а линия целиком:
+//
+// · СТВОЛ — обычная змейка через цепочку частей пола, идущих одна
+//   за другой. Разворачиваться вверх-вниз ствол может только через
+//   одиночный ряд: пройдя его из конца в конец, линия спускается
+//   с другой стороны куска.
+// · ПЕТЛЯ — всё, что осталось сбоку от ствола. Линия сворачивает с ряда
+//   ствола, змейкой уходит в эту часть по одной её половине и по другой
+//   возвращается на тот же ряд. Между половинами остаётся прорезь в два
+//   шага: повороты двух половин смотрят друг на друга, и между их
+//   макушками ровно шаг — как между витками.
+// · В петлю могут вкладываться свои петли — так огибаются части за частями.
+//
+// ЧЁТНОСТЬ. Петля из одних полукруглых поворотов замыкается на тот же
+// ряд только при чётном числе рядов: каждый поворот разворачивает линию,
+// и при нечётном она приходит не с той стороны. Лишний ряд петли не
+// выбрасывается — он остаётся свободным и достаётся соседней части
+// (часто как раз нечётной). То же с хвостом ряда, отрезанным поворотом
+// ствола.
+//
+// ЧАСТИ, МЕЖДУ КОТОРЫМИ НЕ ПРОЙТИ. Если проход между куском и стеной уже
+// двух отступов, витку в него не встать, и пол распадается на части.
+// Одной линией их не соединить, не нарушив отступа, — тогда у каждой
+// части своя линия, метраж — их сумма, а итог говорит об этом словами.
+//
+// ВЫБОР. Стволов перебирается несколько, и берётся тот, при котором
+// кабеля уложено больше всего: больше кабеля — меньше пустого пола.
+// При равенстве берётся первый — у прямоугольника без кусков это прежняя
+// змейка снизу вверх, начатая слева, поэтому число у такого пола прежнее
+// до последнего знака (перебор 300 полов 16 сентября 2026: разница 0).
 //
 // Витки кладём вдоль длинной стороны: так меньше поворотов.
 //
@@ -25222,49 +25296,27 @@ function skZmeykaOtrezki(dlina, shirina, shagM, kuski, kontur){
   // и никогда не больше полутора — поэтому под схемой написано
   // «от стен не ближе шага», а не «ровно шаг».
   const kray = (S - (n - 1) * shagM) / 2;
+  // Отступ от края пола вдоль витка — от стены и от куска одним числом.
+  const otstup = shagM;
   // Куски переводим в оси витка: u — вдоль витка, t — поперёк.
   const dyry = (kuski || []).map(c=> vdol
     ? { u0:c.x0, u1:c.x1, t0:c.y0, t1:c.y1 }
     : { u0:c.y0, u1:c.y1, t0:c.x0, t1:c.x1 });
   const tochka = (u, t)=> vdol ? { x:u, y:t } : { x:t, y:u };
-  // Общее у двух соседних витков: где есть и тот, и другой.
-  const obschee = (A, B)=>{
-    const out = [];
-    A.forEach(a=> B.forEach(b=>{
-      const c0 = Math.max(a[0], b[0]), c1 = Math.min(a[1], b[1]);
-      if(c1 - c0 > eps) out.push([c0, c1]);
-    }));
-    return out;
-  };
-  // ДВА ПРОХОДА ВМЕСТО ОДНОГО. Поворот теперь полукруг, и он выпирает
-  // за торец витка на половину шага — туда, где раньше был прямой угол.
-  // Выпирать есть куда не всегда: за очертанием пола и внутри
-  // вычитаемого куска кабеля быть не должно. Тогда поворот сдвигается
-  // внутрь, а витки под него подрезаются — решение владельца 15 сентября
-  // 2026: «витки укоротить, а не обрезать дугу». Подрезать виток задним
-  // числом можно, только когда посчитаны оба соседних, — отсюда проходы.
-  //
-  // ПЕРВЫЙ ПРОХОД: полосы, по которым идут витки.
+
+  // ПЕРВЫЙ ПРОХОД: полосы, по которым могут идти витки.
   const ryady = [];
   for(let i = 0; i < n; i++){
     const t = kray + shagM * i;
     // ГРАНИЦА — ОЧЕРТАНИЕ, А НЕ РАМКА. У прямоугольника полоса витка
     // известна сразу: от стены до стены минус отступ. У пола, пришедшего
     // контуром, её считает `mnVitokChasti` — тем же правилом «не ближе
-    // шага к стене», только стен там сколько угодно, и полос на одном
+    // отступа к стене», только стен там сколько угодно, и полос на одном
     // уровне может оказаться несколько.
-    let chasti = kontur ? mnVitokChasti(kontur, t, vdol, shagM) : [[shagM, L - shagM]];
+    let chasti = kontur ? mnVitokChasti(kontur, t, vdol, otstup) : [[otstup, L - otstup]];
     dyry.forEach(d=>{
-      // Виток, идущий ровно по краю куска, кусок не задевает.
-      if(t <= d.t0 + eps || t >= d.t1 - eps) return;
-      const novye = [];
-      chasti.forEach(ch=>{
-        const c0 = Math.max(ch[0], d.u0), c1 = Math.min(ch[1], d.u1);
-        if(c1 <= c0 + eps){ novye.push(ch); return; }
-        if(c0 - ch[0] > eps) novye.push([ch[0], c0]);
-        if(ch[1] - c1 > eps) novye.push([c1, ch[1]]);
-      });
-      chasti = novye;
+      const g = skKusokBlizko(d, t, otstup);
+      if(g) chasti = mnVychest(chasti, g[0], g[1]);
     });
     // Обрывки короче сантиметра — числовая пыль, а не кабель.
     chasti = chasti.filter(ch=> ch[1] - ch[0] > 0.01);
@@ -25286,7 +25338,17 @@ function skZmeykaOtrezki(dlina, shirina, shagM, kuski, kontur){
   // запретила бы каждый второй поворот. Дуга выпирает на половину шага,
   // а витки держатся от стен на целый шаг, так что запас у неё есть
   // и без коробки.
-  const mestoEst = (uh, dir, rad, tPred, tTek)=>{
+  //
+  // ОТВЕТЫ ЗАПОМИНАЕМ. Стволов перебирается много, и одни и те же дуги
+  // спрашиваются заново: без памяти сложный пол с тремя кусками считался
+  // 360 мс на каждое нажатие, с памятью — 26 (замер 16 сентября 2026).
+  const polosy = new Map();
+  const polosa = (tt)=>{
+    let p = polosy.get(tt);
+    if(!p){ p = mnPolosa(kontur, tt, vdol); polosy.set(tt, p); }
+    return p;
+  };
+  const schitatMesto = (uh, dir, rad, tPred, tTek)=>{
     const u0 = Math.min(uh, uh + dir * rad), u1 = Math.max(uh, uh + dir * rad);
     if(u0 < -eps || u1 > L + eps) return false;
     if(dyry.some(d=> u1 > d.u0 + eps && u0 < d.u1 - eps
@@ -25296,97 +25358,435 @@ function skZmeykaOtrezki(dlina, shirina, shagM, kuski, kontur){
         const a = Math.PI * sh / 40;
         const uu = uh + dir * rad * Math.sin(a);
         const tt = (tPred + tTek) / 2 - rad * Math.cos(a);
-        if(!mnPolosa(kontur, tt, vdol).some(p=> uu > p[0] - eps && uu < p[1] + eps))
-          return false;
+        if(!polosa(tt).some(p=> uu > p[0] - eps && uu < p[1] + eps)) return false;
       }
     }
     return true;
   };
-  // Подрезка витка под сдвинутый поворот. `tolko` — только спросить,
-  // выйдет ли: двигать поворот можно, лишь когда подрежутся ОБА соседних
-  // витка, иначе дуга повиснет в воздухе. От витка при этом должен
-  // остаться хотя бы сантиметр — иначе лучше оставить выпирающую дугу,
-  // чем стереть виток.
-  const podrez = (chasti, uKon, dir, tolko)=>{
-    for(let k = 0; k < chasti.length; k++){
-      const ch = chasti[k];
-      if(dir > 0 && uKon > ch[0] + 0.01 && uKon < ch[1] + eps){
-        if(!tolko) ch[1] = uKon;
-        return true;
-      }
-      if(dir < 0 && uKon < ch[1] - 0.01 && uKon > ch[0] - eps){
-        if(!tolko) ch[0] = uKon;
-        return true;
-      }
-    }
-    return false;
+  const otvety = new Map();
+  const mestoEst = (uh, dir, rad, tPred, tTek)=>{
+    const klyuch = uh + '|' + dir + '|' + tPred + '|' + tTek;
+    let o = otvety.get(klyuch);
+    if(o === undefined){ o = schitatMesto(uh, dir, rad, tPred, tTek); otvety.set(klyuch, o); }
+    return o;
   };
 
-  // ВТОРОЙ ПРОХОД: повороты.
-  const povoroty = {};
-  for(let i = 1; i < n; i++){
-    const pr = ryady[i-1], tk = ryady[i];
-    const oba = obschee(pr.chasti, tk.chasti);
-    if(!oba.length) continue;
-    // ПОВОРОТ ЖМЁТСЯ К КРАЮ, НО К ДОСТУПНОМУ. У стены он встаёт у стены,
-    // а там, где виток упёрся в ванну, — у ванны: кабель огибает кусок,
-    // а не бросает виток без поворота. Стороны чередуются, как у змейки.
-    const sprava = (((i - 1) % 2) === 0);
-    const u = sprava
-      ? oba.reduce((m, c)=> Math.max(m, c[1]), -Infinity)
-      : oba.reduce((m, c)=> Math.min(m, c[0]), Infinity);
-    // Кусок тоньше шага может стоять ровно между витками — сквозь
-    // него поворот не пускаем.
-    if(dyry.some(d=> u > d.u0 + eps && u < d.u1 - eps
-      && d.t1 > pr.t + eps && d.t0 < tk.t - eps)) continue;
-    const dir = sprava ? 1 : -1;
-    const rad = (tk.t - pr.t) / 2;       // радиус полукруга — половина шага
-    let uh = u, duga = true;
-    if(!mestoEst(u, dir, rad, pr.t, tk.t)){
-      const u2 = u - dir * rad;          // макушка встаёт туда, где был угол
-      if(mestoEst(u2, dir, rad, pr.t, tk.t)
-        && podrez(pr.chasti, u2, dir, true) && podrez(tk.chasti, u2, dir, true)){
-        uh = u2;
-        podrez(pr.chasti, u2, dir, false);
-        podrez(tk.chasti, u2, dir, false);
-      } else {
-        // ДВИНУТЬ НЕКУДА — ОСТАВЛЯЕМ ПРЯМОЙ УГОЛ, как было до дуг.
-        // Так бывает на полоске между двумя кусками: виток там короче
-        // половины шага, и подрезать под дугу нечего. Рисовать дугу
-        // поверх ванны нельзя, выбрасывать поворот — рвать линию;
-        // прямой угол хотя бы никуда не лезет, а в метраже это
-        // несколько сантиметров на комнату. Перебор 600 полов
-        // 16 сентября 2026: таких поворотов 7 из 10248.
-        duga = false;
-      }
-    }
-    povoroty[i] = { u:uh, dir:dir, rad:rad, duga:duga };
+  // КУСКИ ВИТКОВ И КТО С КЕМ СОСЕДСТВУЕТ: соседи — куски соседних рядов,
+  // перекрывающиеся вдоль витка.
+  const vse = [];
+  const poRyadam = ryady.map((r, i)=> r.chasti.map(ch=>{
+    const z = { i:i, t:r.t, a:ch[0], b:ch[1], vverh:[], vniz:[], kl:-1 };
+    vse.push(z);
+    return z;
+  }));
+  if(!vse.length) return [];
+  for(let i = 0; i + 1 < n; i++){
+    poRyadam[i].forEach(p=> poRyadam[i+1].forEach(q=>{
+      if(Math.min(p.b, q.b) - Math.max(p.a, q.a) > eps){ p.vverh.push(q); q.vniz.push(p); }
+    }));
   }
+  // КЛЕТКИ — стопки кусков, где у каждого ровно один сосед сверху
+  // и ровно один снизу. Внутри клетки змейка идёт без выбора; выбор
+  // появляется там, где клетки ветвятся.
+  const kletki = [];
+  vse.forEach(z=>{
+    if(z.kl >= 0) return;
+    let niz = z;
+    while(niz.vniz.length === 1 && niz.vniz[0].vverh.length === 1) niz = niz.vniz[0];
+    const k = { id:kletki.length, stroki:[] };
+    let c = niz;
+    for(;;){
+      c.kl = k.id;
+      k.stroki.push(c);
+      if(c.vverh.length === 1 && c.vverh[0].vniz.length === 1) c = c.vverh[0];
+      else break;
+    }
+    kletki.push(k);
+  });
+  // ЧАСТИ ПОЛА: клетки, между которыми витку можно пройти.
+  const chast = kletki.map(()=> -1);
+  let chastey = 0;
+  kletki.forEach(k=>{
+    if(chast[k.id] >= 0) return;
+    const stek = [k.id];
+    chast[k.id] = chastey;
+    while(stek.length){
+      kletki[stek.pop()].stroki.forEach(z=> z.vverh.concat(z.vniz).forEach(q=>{
+        if(chast[q.kl] < 0){ chast[q.kl] = chastey; stek.push(q.kl); }
+      }));
+    }
+    chastey++;
+  });
 
-  // ТРЕТИЙ ПРОХОД: складываем линию. Порядок прежний — поворот, а следом
-  // виток, к которому он привёл.
-  const otrezki = [];
-  for(let i = 0; i < n; i++){
-    const p = povoroty[i];
-    if(p){
-      const a = tochka(p.u, ryady[i-1].t), b = tochka(p.u, ryady[i].t);
-      // МАКУШКА ДУГИ — ТОЧКА, А НЕ ПРАВИЛО. Картинка разворачивает
-      // полукруг в ту сторону, где лежит макушка, и второго описания
-      // поворота в приложении нет: одна линия — одно число.
-      if(p.duga){
-        const m = tochka(p.u + p.dir * p.rad, (ryady[i-1].t + ryady[i].t) / 2);
-        otrezki.push({ x1:a.x, y1:a.y, x2:b.x, y2:b.y, duga:true, mx:m.x, my:m.y });
+  const M = 0.01;         // короче сантиметра — не кусок
+  const G = 2 * shagM;    // прорезь петли: между макушками поворотов шаг
+  const MP = shagM;       // половина ряда в петле не короче шага, иначе вместо
+                          // змейки выходит гармошка из одних поворотов
+
+  // СТРОИМ ЛИНИЮ ДЛЯ ОДНОГО СТВОЛА. `stvol` — цепочка клеток с направлением,
+  // `startLevo` — первый ряд идёт слева направо.
+  const postroit = (stvol, startLevo)=>{
+    const vStvole = new Set(stvol.map(s=> s.kl));
+    const seq = [];
+    stvol.forEach(s=>{
+      const st = kletki[s.kl].stroki;
+      (s.dir > 0 ? st : st.slice().reverse()).forEach(z=> seq.push(z));
+    });
+    const kus = seq.map(z=>({ z:z, i:z.i, t:z.t, lo:z.a, hi:z.b, vl:[] }));
+
+    // ПОВОРОТЫ СТВОЛА. Стороны чередуются, как у змейки. Поворот встаёт
+    // у края, до которого доходят оба ряда; длинный ряд подрезается под
+    // него — иначе хвост за поворотом висел бы оборванным концом.
+    // Выпирать дуге есть куда не всегда: за очертанием пола и внутри
+    // вычитаемого куска кабеля быть не должно. Тогда поворот сдвигается
+    // внутрь, а витки под него подрезаются — решение владельца 15 сентября
+    // 2026: «витки укоротить, а не обрезать дугу». Двинуть некуда —
+    // остаётся прямой угол: он никуда не лезет, а в метраже это
+    // несколько сантиметров.
+    const povoroty = [];
+    for(let k = 1; k < kus.length; k++){
+      const p = kus[k-1], q = kus[k];
+      const sprava = ((k - 1) % 2 === 0) === startLevo;
+      const dir = sprava ? 1 : -1;
+      const tA = Math.min(p.t, q.t), tB = Math.max(p.t, q.t), rad = (tB - tA) / 2;
+      let u = sprava ? Math.min(p.hi, q.hi) : Math.max(p.lo, q.lo);
+      let duga = true;
+      if(!mestoEst(u, dir, rad, tA, tB)){
+        const u2 = u - dir * rad;
+        const hvataet = (x)=> dir > 0 ? (u2 > x.lo + M) : (u2 < x.hi - M);
+        if(mestoEst(u2, dir, rad, tA, tB) && hvataet(p) && hvataet(q)) u = u2;
+        else duga = false;
+      }
+      if(sprava){ p.hi = u; q.hi = u; } else { p.lo = u; q.lo = u; }
+      povoroty.push({ u:u, dir:dir, duga:duga });
+    }
+    if(kus.some(x=> x.hi - x.lo < M - eps)) return null;
+
+    // СВОБОДНОЕ — всё, что не легло в ствол: чужие клетки этой части пола
+    // и хвосты рядов, отрезанные поворотами. Хвост отступает от поворота
+    // на шаг: дуга выпирает на полшага, и ещё полшага — зазор до соседа.
+    const svobodno = ryady.map(()=> []);
+    const vSvobodnoe = (i, t, a, b)=>{ if(b - a > M) svobodno[i].push({ i:i, t:t, a:a, b:b }); };
+    const moyaChast = chast[stvol[0].kl];
+    kletki.forEach(k=>{
+      if(!vStvole.has(k.id) && chast[k.id] === moyaChast)
+        k.stroki.forEach(z=> vSvobodnoe(z.i, z.t, z.a, z.b));
+    });
+    kus.forEach(x=>{
+      vSvobodnoe(x.z.i, x.t, x.z.a, x.lo - G / 2);
+      vSvobodnoe(x.z.i, x.t, x.hi + G / 2, x.z.b);
+    });
+    const sosedi = (i, dirT, lo, hi)=>{
+      const j = i + dirT;
+      if(j < 0 || j >= n) return [];
+      return svobodno[j].filter(q=> Math.min(hi, q.b) - Math.max(lo, q.a) > eps);
+    };
+    // Стопка свободных кусков прочь от ряда-хозяина, пока у каждого ровно
+    // один сосед дальше и он сам — единственный сосед этого соседа.
+    const stopka = (q, dirT)=>{
+      const st = [q];
+      let c = q;
+      for(;;){
+        const dal = sosedi(c.i, dirT, c.a, c.b);
+        if(dal.length !== 1) break;
+        const nazad = sosedi(dal[0].i, -dirT, dal[0].a, dal[0].b);
+        if(nazad.length !== 1 || nazad[0] !== c) break;
+        st.push(dal[0]);
+        c = dal[0];
+      }
+      return st;
+    };
+    // Ближайшее к желаемому место, где выполняется условие.
+    const podobrat = (ot, doo, zhelaem, godno)=>{
+      const c = Math.min(doo, Math.max(ot, zhelaem));
+      if(godno(c)) return c;
+      for(let s = 0.02; ; s += 0.02){
+        const a = c - s, b = c + s;
+        if(a < ot && b > doo) break;
+        if(a >= ot && godno(a)) return a;
+        if(b <= doo && godno(b)) return b;
+      }
+      if(godno(ot)) return ot;
+      if(godno(doo)) return doo;
+      return null;
+    };
+
+    // ПЕТЛЯ ИЗ СТОПКИ `st0` С РЯДА-ХОЗЯИНА `host`. Ряды петли считаем
+    // от ближнего к хозяину: 0 — ближний, последний — дальний, сквозной.
+    // Пары (0,1), (2,3)… поворачивают у внешних краёв, пары (1,2), (3,4)… —
+    // у прорези. Ближний ряд режется прорезью там же, где ряд хозяина.
+    const petlya = (host, st0)=>{
+      let hh = st0.length - (st0.length % 2);
+      if(hh < 2) return null;
+      const P = st0.slice(0, hh).map(z=>({ z:z, t:z.t, lo:z.a, hi:z.b }));
+      const bok = [];
+      for(let j = 0; j + 1 < hh; j += 2){
+        const a = P[j], b = P[j+1];
+        const tA = Math.min(a.t, b.t), tB = Math.max(a.t, b.t), rad = (tB - tA) / 2;
+        let uL = Math.max(a.lo, b.lo), dL = true;
+        let uR = Math.min(a.hi, b.hi), dR = true;
+        if(!mestoEst(uL, -1, rad, tA, tB)){
+          if(mestoEst(uL + rad, -1, rad, tA, tB)) uL += rad; else dL = false;
+        }
+        if(!mestoEst(uR, 1, rad, tA, tB)){
+          if(mestoEst(uR - rad, 1, rad, tA, tB)) uR -= rad; else dR = false;
+        }
+        // Узкой паре прорезь не вместить: петля кончается перед ней.
+        if(uR - uL < G + 2 * MP){
+          if(j === 0) return null;
+          hh = j;
+          break;
+        }
+        a.lo = b.lo = uL; a.hi = b.hi = uR;
+        bok.push({ uL:uL, dL:dL, uR:uR, dR:dR });
+      }
+      // Прорезь ближнего ряда — посередине петли, если там есть место.
+      const tA0 = Math.min(host.t, P[0].t), tB0 = Math.max(host.t, P[0].t), rad0 = (tB0 - tA0) / 2;
+      const ot = Math.max(host.lo + M, P[0].lo + MP), doo = Math.min(host.hi - M, P[0].hi - MP) - G;
+      if(doo < ot) return null;
+      let seredina = 0;
+      for(let j = 0; j < Math.max(1, hh - 1); j++) seredina += (P[j].lo + P[j].hi) / 2;
+      seredina = seredina / Math.max(1, hh - 1) - G / 2;
+      const x0 = podobrat(ot, doo, seredina, (x)=> mestoEst(x, 1, rad0, tA0, tB0)
+        && mestoEst(x + G, -1, rad0, tA0, tB0)
+        && !host.vl.some(v=> x < v.x1 + M && x + G > v.x0 - M));
+      if(x0 === null) return null;
+      // Прорези средних пар — по возможности прямо над прорезью ниже.
+      const shov = {};
+      let pred = x0;
+      for(let j = 1; j <= hh - 3; j += 2){
+        const a = P[j], b = P[j+1];
+        const tA = Math.min(a.t, b.t), tB = Math.max(a.t, b.t), rad = (tB - tA) / 2;
+        const o = Math.max(a.lo, b.lo) + MP, dd = Math.min(a.hi, b.hi) - MP - G;
+        const s = (dd >= o) ? podobrat(o, dd, pred, (x)=> mestoEst(x, 1, rad, tA, tB)
+          && mestoEst(x + G, -1, rad, tA, tB)) : null;
+        if(s === null){ hh = j + 1; break; }
+        shov[j] = s;
+        pred = s;
+      }
+      bok.length = hh / 2;
+      P.length = hh;
+      return { P:P, hh:hh, bok:bok, shov:shov, x0:x0, x1:x0 + G, tC:P[0].t };
+    };
+
+    // ПЕТЛИ ВЕШАЕМ ПО ОЧЕРЕДИ: сначала на ряды ствола, потом на ряды петель.
+    // `d` — куда по ряду идёт линия.
+    const ochered = kus.map((x, k)=>({ kusok:x, d: (((k % 2) === 0) === startLevo) ? 1 : -1 }));
+    for(let qi = 0; qi < ochered.length; qi++){
+      const h = ochered[qi], x = h.kusok;
+      [1, -1].forEach(dirT=> sosedi(x.i, dirT, x.lo, x.hi).forEach(q=>{
+        if(svobodno[q.i].indexOf(q) < 0) return;
+        const X = petlya(x, stopka(q, dirT));
+        if(!X) return;
+        x.vl.push(X);
+        X.P.forEach(p=>{
+          const r = svobodno[p.z.i];
+          r.splice(r.indexOf(p.z), 1);
+          vSvobodnoe(p.z.i, p.t, p.z.a, p.lo - G / 2);
+          vSvobodnoe(p.z.i, p.t, p.hi + G / 2, p.z.b);
+        });
+        const p0 = X.P[0], pk = X.P[X.hh - 1];
+        X.levyy = { i:p0.z.i, t:p0.t, lo:p0.lo, hi:X.x0, vl:[] };
+        X.pravyy = { i:p0.z.i, t:p0.t, lo:X.x1, hi:p0.hi, vl:[] };
+        X.skvoz = { i:pk.z.i, t:pk.t, lo:pk.lo, hi:pk.hi, vl:[] };
+        ochered.push({ kusok:X.levyy, d:-h.d });
+        ochered.push({ kusok:X.pravyy, d:-h.d });
+        ochered.push({ kusok:X.skvoz, d:h.d });
+      }));
+    }
+
+    // ВЫВОД ЛИНИИ — по порядку, от начала к концу: каждое звено начинается
+    // там, где кончилось предыдущее.
+    const out = [];
+    const pryamo = (t, u0, u1)=>{
+      if(Math.abs(u1 - u0) < 1e-12) return;
+      const a = tochka(u0, t), b = tochka(u1, t);
+      out.push({ x1:a.x, y1:a.y, x2:b.x, y2:b.y });
+    };
+    // МАКУШКА ДУГИ — ТОЧКА, А НЕ ПРАВИЛО. Картинка разворачивает полукруг
+    // в ту сторону, где лежит макушка, и второго описания поворота
+    // в приложении нет: одна линия — одно число.
+    const povorot = (u, tOt, tDo, dir, duga)=>{
+      const a = tochka(u, tOt), b = tochka(u, tDo);
+      if(duga){
+        const m = tochka(u + dir * Math.abs(tDo - tOt) / 2, (tOt + tDo) / 2);
+        out.push({ x1:a.x, y1:a.y, x2:b.x, y2:b.y, duga:true, mx:m.x, my:m.y });
       } else {
-        otrezki.push({ x1:a.x, y1:a.y, x2:b.x, y2:b.y });
+        out.push({ x1:a.x, y1:a.y, x2:b.x, y2:b.y });
+      }
+    };
+    const vyvestiRyad = (x, ot, doo)=>{
+      const d = doo >= ot ? 1 : -1;
+      let cur = ot;
+      x.vl.slice().sort((p, q)=> d * (p.x0 - q.x0)).forEach(X=>{
+        const vhod = d > 0 ? X.x0 : X.x1, vyhod = d > 0 ? X.x1 : X.x0;
+        pryamo(x.t, cur, vhod);
+        povorot(vhod, x.t, X.tC, d, true);
+        vyvestiPetlyu(X, d);
+        povorot(vyhod, X.tC, x.t, -d, true);
+        cur = vyhod;
+      });
+      pryamo(x.t, cur, doo);
+    };
+    const vyvestiPetlyu = (X, d)=>{
+      const P = X.P, hh = X.hh, posl = X.bok[X.bok.length - 1];
+      const shovL = (j)=> j === 0 ? X.x0 : X.shov[(j % 2) ? j : j - 1];
+      const bk = (j)=> X.bok[Math.floor(j / 2)];
+      // Ряд половины: `storona` −1 левая, +1 правая; `dd` — куда идём.
+      const ryad = (j, storona, dd)=>{
+        const vnutr = storona < 0 ? shovL(j) : shovL(j) + G;
+        const vnesh = storona < 0 ? bk(j).uL : bk(j).uR;
+        const kProrezi = storona < 0 ? (dd > 0) : (dd < 0);
+        const ot = kProrezi ? vnesh : vnutr, doo = kProrezi ? vnutr : vnesh;
+        if(j === 0) vyvestiRyad(storona < 0 ? X.levyy : X.pravyy, ot, doo);
+        else pryamo(P[j].t, ot, doo);
+        return doo;
+      };
+      const bokDuga = (b, storona)=> storona < 0 ? b.dL : b.dR;
+      // Сначала половина со стороны входа — от хозяина к дальнему ряду.
+      const pervaya = d > 0 ? -1 : 1;
+      let dd = -d;
+      for(let j = 0; j <= hh - 2; j++){
+        const u = ryad(j, pervaya, dd);
+        if(j % 2 === 0) povorot(u, P[j].t, P[j+1].t, pervaya, bokDuga(bk(j), pervaya));
+        else povorot(u, P[j].t, P[j+1].t, -pervaya, true);
+        dd = -dd;
+      }
+      // Дальний ряд — сквозной, без прорези.
+      const vtoraya = -pervaya;
+      const sOt = pervaya < 0 ? posl.uL : posl.uR, sDo = pervaya < 0 ? posl.uR : posl.uL;
+      vyvestiRyad(X.skvoz, sOt, sDo);
+      povorot(sDo, P[hh-1].t, P[hh-2].t, vtoraya, bokDuga(posl, vtoraya));
+      dd = -dd;
+      // Вторая половина — обратно к хозяину.
+      for(let j = hh - 2; j >= 0; j--){
+        const u = ryad(j, vtoraya, dd);
+        if(j > 0){
+          if((j - 1) % 2 === 0) povorot(u, P[j].t, P[j-1].t, vtoraya, bokDuga(bk(j - 1), vtoraya));
+          else povorot(u, P[j].t, P[j-1].t, -vtoraya, true);
+        }
+        dd = -dd;
+      }
+    };
+    kus.forEach((x, k)=>{
+      const vpravo = ((k % 2) === 0) === startLevo;
+      if(k > 0) povorot(povoroty[k-1].u, kus[k-1].t, x.t, povoroty[k-1].dir, povoroty[k-1].duga);
+      vyvestiRyad(x, vpravo ? x.lo : x.hi, vpravo ? x.hi : x.lo);
+    });
+    return { out:out, dl: out.reduce((a, g)=> a + skZvenoDlina(g), 0) };
+  };
+
+  // СТВОЛЫ: цепочки клеток. Из клетки в несколько рядов ствол выходит
+  // с дальнего от входа конца; через одиночный ряд — в любую сторону.
+  // Перебор ограничен: сложному полу хватает, а нажатие не тормозит.
+  const PREDEL = 300;
+  const stvoly = [];
+  const schet = kletki.map(()=> 0);
+  const idti = (put)=>{
+    const c = chast[put[0].kl];
+    if(schet[c] >= PREDEL) return;
+    schet[c]++;
+    stvoly.push(put.slice());
+    const posl = put[put.length - 1], k = kletki[posl.kl];
+    const vyhody = (k.stroki.length === 1)
+      ? [[k.stroki[0].vverh, 1], [k.stroki[0].vniz, -1]]
+      : [[posl.dir > 0 ? k.stroki[k.stroki.length - 1].vverh : k.stroki[0].vniz, posl.dir]];
+    vyhody.forEach(([spisok, dir])=> spisok.forEach(q=>{
+      if(put.some(s=> s.kl === q.kl)) return;
+      put.push({ kl:q.kl, dir:dir });
+      idti(put);
+      put.pop();
+    }));
+  };
+  kletki.forEach(k=>{
+    idti([{ kl:k.id, dir:1 }]);
+    if(k.stroki.length > 1) idti([{ kl:k.id, dir:-1 }]);
+  });
+
+  // В КАЖДОЙ ЧАСТИ — САМАЯ ДЛИННАЯ ЛИНИЯ БЕЗ УЗЛА. Узла построение
+  // давать не должно (перебор 1700 полов 16 сентября 2026 — ни одного),
+  // но если даст, лучше взять следующую линию, чем нарисовать узел.
+  const varianty = kletki.map(()=> []);
+  stvoly.forEach(s=> [true, false].forEach(levo=>{
+    const r = postroit(s, levo);
+    if(r) varianty[chast[s[0].kl]].push(r);
+  }));
+  const gotovye = [];
+  for(let c = 0; c < chastey; c++){
+    // Сортировка устойчива: при равной длине остаётся первый — прежняя змейка.
+    const v = varianty[c].sort((p, q)=> (q.dl - p.dl > 1e-6) ? 1 : ((p.dl - q.dl > 1e-6) ? -1 : 0));
+    const cel = v.find(r=> skLiniyaBezUzla(r.out));
+    if(cel) gotovye.push(cel);
+  }
+  // Самая большая часть — первой.
+  gotovye.sort((p, q)=> q.dl - p.dl);
+  const itog = [];
+  gotovye.forEach(r=> r.out.forEach(g=> itog.push(g)));
+  return itog;
+}
+
+// ЛИНИЯ БЕЗ УЗЛА: ни одно звено не касается другого, кроме соседнего
+// по порядку. Дуги разворачиваем в ломаную из 24 звеньев — хорда лежит
+// внутри дуги, так что касание дуг ломаная не пропустит, пока между ними
+// больше миллиметра. Звенья раскладываем по клеткам сетки, чтобы
+// не сравнивать каждое с каждым.
+function skLiniyaBezUzla(otrezki){
+  const tochki = [];
+  otrezki.forEach(g=>{
+    const zveno = [];
+    if(!g.duga){
+      zveno.push([g.x1, g.y1], [g.x2, g.y2]);
+    } else {
+      const cx = (g.x1 + g.x2) / 2, cy = (g.y1 + g.y2) / 2, r = Math.hypot(g.x1 - cx, g.y1 - cy);
+      const a0 = Math.atan2(g.y1 - cy, g.x1 - cx);
+      let da = Math.atan2(g.my - cy, g.mx - cx) - a0;
+      while(da <= -Math.PI) da += 2 * Math.PI;
+      while(da > Math.PI) da -= 2 * Math.PI;
+      const s = da > 0 ? 1 : -1;
+      for(let k = 0; k <= 24; k++){
+        const a = a0 + s * Math.PI * k / 24;
+        zveno.push([cx + r * Math.cos(a), cy + r * Math.sin(a)]);
       }
     }
-    ryady[i].chasti.forEach(ch=>{
-      if(ch[1] - ch[0] <= 0.01) return;
-      const a = tochka(ch[0], ryady[i].t), b = tochka(ch[1], ryady[i].t);
-      otrezki.push({ x1:a.x, y1:a.y, x2:b.x, y2:b.y });
-    });
+    const pr = tochki[tochki.length - 1];
+    if(pr && Math.hypot(pr[0] - zveno[0][0], pr[1] - zveno[0][1]) > 1e-7) tochki.push(null);
+    zveno.forEach((p, k)=>{ if(k > 0 || !tochki.length || !tochki[tochki.length - 1]) tochki.push(p); });
+  });
+  const zv = [];
+  for(let k = 0; k + 1 < tochki.length; k++)
+    if(tochki[k] && tochki[k+1]) zv.push([tochki[k], tochki[k+1], k]);
+  const kl = 0.05, setka = new Map();
+  zv.forEach((z, n)=>{
+    const x0 = Math.floor(Math.min(z[0][0], z[1][0]) / kl), x1 = Math.floor(Math.max(z[0][0], z[1][0]) / kl);
+    const y0 = Math.floor(Math.min(z[0][1], z[1][1]) / kl), y1 = Math.floor(Math.max(z[0][1], z[1][1]) / kl);
+    for(let x = x0; x <= x1; x++) for(let y = y0; y <= y1; y++){
+      const klyuch = x + ',' + y;
+      if(!setka.has(klyuch)) setka.set(klyuch, []);
+      setka.get(klyuch).push(n);
+    }
+  });
+  const E = 1e-12;
+  const vekt = (o, a, b)=> (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const naOtrezke = (p, a, b)=> Math.min(a[0], b[0]) - 1e-9 <= p[0] && p[0] <= Math.max(a[0], b[0]) + 1e-9
+                            && Math.min(a[1], b[1]) - 1e-9 <= p[1] && p[1] <= Math.max(a[1], b[1]) + 1e-9;
+  const peresek = (p1, p2, p3, p4)=>{
+    const d1 = vekt(p3, p4, p1), d2 = vekt(p3, p4, p2), d3 = vekt(p1, p2, p3), d4 = vekt(p1, p2, p4);
+    if(((d1 > E && d2 < -E) || (d1 < -E && d2 > E)) && ((d3 > E && d4 < -E) || (d3 < -E && d4 > E))) return true;
+    return (Math.abs(d1) <= E && naOtrezke(p1, p3, p4)) || (Math.abs(d2) <= E && naOtrezke(p2, p3, p4))
+        || (Math.abs(d3) <= E && naOtrezke(p3, p1, p2)) || (Math.abs(d4) <= E && naOtrezke(p4, p1, p2));
+  };
+  const vidano = new Set();
+  for(const spisok of setka.values()){
+    for(let a = 0; a < spisok.length; a++) for(let b = a + 1; b < spisok.length; b++){
+      const p = zv[spisok[a]], q = zv[spisok[b]];
+      if(Math.abs(p[2] - q[2]) <= 1) continue;
+      const klyuch = Math.min(spisok[a], spisok[b]) + ',' + Math.max(spisok[a], spisok[b]);
+      if(vidano.has(klyuch)) continue;
+      vidano.add(klyuch);
+      if(peresek(p[0], p[1], q[0], q[1])) return false;
+    }
   }
-  return otrezki;
+  return true;
 }
 
 // ДЛИНА ЗВЕНА ЗМЕЙКИ — ОДНА НА ВСЕХ. Прямой участок меряется по прямой,
@@ -25605,8 +26005,9 @@ function skItogPol(){
       ${skPolOtkuda(d)}
       ${skPolKartinka(r)}
       ${r.poRazmeram ? `<div class="mat-note">Серым — то, что не греем. Схема рисует ровно те куски, которые вычтены: разойтись им нельзя.${
-        zmeyka.length ? ` Оранжевым — кабель: ${vitkov} ${plural(vitkov,'виток','витка','витков')} через ${fmt(r.shag)} см, повороты полукругом шириной в шаг, серые куски виток обходит. Витки от стен не ближе шага; ближе подходит только сам поворот — он выгибается наружу на полшага.` : ` Шаг ${fmt(r.shag)} см для такого пола слишком крупный — виткам негде встать, кабель не рисуем.`}</div>
-      ${zmeyka.length ? `<div class="mat-note">Это схема шага, а не план монтажа. Где стоит термостат и с какой стороны заходит холодный конец, приложение не знает, поэтому начало укладки не показывает. Метраж выше — длина этой самой линии: столько кабеля укладывается на такой пол при таком шаге. Это меньше, чем площадь, делённая на шаг, — от стен отступают, и полоса вдоль них остаётся без кабеля. Повороты считаны дугами, а не углами: кабель квадратом не загнёшь, и полукруг длиннее прямого угла примерно в полтора раза — эти метры тоже в числе.</div>` : ''}` : ''}
+        zmeyka.length ? ` Оранжевым — кабель${r.linii > 1 ? '' : ' одной линией'}: ${vitkov} ${plural(vitkov,'виток','витка','витков')} через ${fmt(r.shag)} см, повороты полукругом шириной в шаг.${((r.kuski && r.kuski.length) || r.kontur) ? ' Куски и выступы стен линия огибает: в часть пола сбоку от них заходит петлёй и возвращается, между половинами петли остаётся прорезь.' : ''} Витки от стен и от серых кусков не ближе шага; ближе подходит только сам поворот — он выгибается наружу на полшага.` : ` Шаг ${fmt(r.shag)} см для такого пола слишком крупный — виткам негде встать, кабель не рисуем.`}</div>
+      ${(zmeyka.length && r.linii > 1) ? `<div class="mat-note">Одной линией этот пол не уложить: куски отгородили часть пола — прохода к ней нет или он уже двух отступов, и витку туда не пройти. Нарисовано ${r.linii} ${plural(r.linii,'линия','линии','линий')}, метраж выше — их сумма.</div>` : ''}
+      ${zmeyka.length ? `<div class="mat-note">Это схема шага, а не план монтажа. Где стоит термостат и с какой стороны заходит холодный конец, приложение не знает, поэтому начало укладки не показывает. Метраж выше — длина этой самой линии: столько кабеля укладывается на такой пол при таком шаге. Это меньше, чем площадь, делённая на шаг, — от стен и от серых кусков отступают, и полоса вдоль них остаётся без кабеля. Повороты считаны дугами, а не углами: кабель квадратом не загнёшь, и полукруг длиннее прямого угла примерно в полтора раза — эти метры тоже в числе.</div>` : ''}` : ''}
       <div class="mat-note">Мата берут ровно на обогреваемую площадь: он режется по сетке, а шаг внутри него задан на заводе и от нашего шага не зависит.</div>
     </div>`;
 }
