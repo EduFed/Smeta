@@ -4183,7 +4183,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-16-274';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-16-275';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -5059,7 +5059,10 @@ const OKNA_ZAKRYVAEMYE = [
   // с правилами, а не жалобой: правило завели 1 сентября, а эти два
   // окна к списку тогда не добавили — оба заведены позже.
   ['previewOverlay',   ()=> hidePreview()],
-  ['otmOverlay',       ()=> otmClose()]
+  ['otmOverlay',       ()=> otmClose()],
+  // Тёплый пол из помещения. Ничего не теряется: расчёт не сохраняется,
+  // обратно в смету не уходит, открыл заново — форма подставилась снова.
+  ['skPolOverlay',     ()=> skPolOknoZakryt()]
 ];
 
 function oknoOtkryto(id){
@@ -7103,6 +7106,10 @@ function applyViewerMode(){
       btn.hasAttribute('data-ph-toggle')    ||   // раскрыть «Фотографии»
       btn.hasAttribute('data-pay-toggle')   ||   // раскрыть «Расклад по деньгам»
       btn.hasAttribute('data-applies-toggle')||  // раскрывающийся список — только смотрит
+      // Тёплый пол — прикидка для себя: в смету, документы и базу оттуда
+      // не уходит ничего, писать ему нечего. Смотрящему она нужна ровно
+      // так же, как владельцу: он стоит на том же объекте.
+      btn.hasAttribute('data-tp-room')      ||   // тёплый пол — окно поверх, ничего не пишет
       btn.hasAttribute('data-more')         ||
       btn.hasAttribute('data-panel')        ||   // раскрыть панель документов
       btn.classList.contains('doc-main-btn')||
@@ -21701,7 +21708,9 @@ function attachHandlers(){
   main.querySelectorAll('[data-tp-room]').forEach(el=>{
     el.onclick = ()=>{
       const r = proj.rooms.find(x=>x.id === el.getAttribute('data-tp-room'));
-      if(r) skOtkrytTyoplyyPol(r, proj);
+      // Окно поверх: страницу не перерисовываем вовсе, поэтому человек
+      // остаётся в том же помещении и на том же месте прокрутки.
+      if(r) skPolOknoOtkryt(r, proj);
     };
   });
 
@@ -25621,7 +25630,7 @@ function skPolFormaPomescheniya(room){
   return { kontur: kontur };
 }
 
-function skOtkrytTyoplyyPol(room, proj){
+function skPolIzPomescheniya(room, proj){
   const g = calcRoomGeometry(room);
   // До сотых — ровно то число, которое человек видит в смете. Точка
   // на запятую: поле читают глазами, а `num` понимает оба знака.
@@ -25646,9 +25655,154 @@ function skOtkrytTyoplyyPol(room, proj){
   SK.pol.imya = imya;
   SK.pol.iz = { id: room.id, imya: imya, forma: (f ? (f.kontur ? 'kontur' : 'para') : ''),
                 proekt: ((proj && proj.name) || '').trim(), ploschad: ploschad };
-  state.view = 'skalk';
-  render();
-  if(window.innerWidth < 1024) setNav(false);
+}
+
+// ОКНО ПОВЕРХ ПОМЕЩЕНИЯ, А НЕ ПЕРЕХОД НА ЭКРАН КАЛЬКУЛЯТОРА.
+//
+// Прежде вход из помещения переключал вид на `skalk`. Пути назад
+// у калькулятора нет (у раскладки плитки есть — `tcPrevView`), и закрыв
+// его, человек попадал не в то помещение, откуда ушёл, да ещё и в самое
+// начало списка. Владелец 15 сентября 2026: «при добавлении тёплого пола
+// в помещении перекидывает в калькулятор, это так задумано?»
+//
+// Окно берём готовое — `.refcfg-overlay`, то же, что служит всем
+// остальным. Третьего вида того же самого не заводим (CLAUDE.md).
+//
+// ОБЫЧНОЕ ОКНО, а не окно решения: расчёт никуда не сохраняется, обратно
+// в помещение ничего не уходит, открыл заново — форма подставилась
+// снова. Значит крестик, Escape и щелчок мимо работают все три —
+// через общий список OKNA_ZAKRYVAEMYE.
+//
+// Экран калькулятора при этом остаётся как был: он открывается без
+// всякого проекта (решение владельца 3 сентября 2026), и окно — это
+// второй вход в тот же расчёт, а не замена ему.
+function skPolOknoHtml(){
+  return `
+    <div class="refcfg-modal">
+      <div class="refcfg-head">
+        <div>
+          <div class="refcfg-title">Тёплый пол</div>
+          <div class="refcfg-sub">прикидка для себя — в смету и закупку не идёт</div>
+        </div>
+        <button class="plan-close" id="skPolX" aria-label="Закрыть">✕</button>
+      </div>
+      <!-- sk-wrap нужен и здесь: он красит поля белым и ставит цифрам
+           моноширинный шрифт. Тот же класс, что на экране калькулятора. -->
+      <div class="refcfg-body sk-wrap">${skTeloPol()}</div>
+    </div>`;
+}
+
+function skPolOknoOtkryto(){
+  const ov = document.getElementById('skPolOverlay');
+  return (ov && ov.style.display && ov.style.display !== 'none') ? ov : null;
+}
+
+// Перерисовать тело окна. Обработчики привязываем к самому окну,
+// а не к #main: разметка раздела живёт здесь.
+function skPolOknoNarisovat(){
+  const ov = skPolOknoOtkryto();
+  if(!ov) return;
+  // ПРОКРУТКА ТЕЛА ОКНА ОСТАЁТСЯ НА МЕСТЕ. На экране калькулятора она
+  // остаётся сама: там подменяется разметка внутри страницы, а сама
+  // страница никуда не девается. Здесь тело окна создаётся заново, и без
+  // этого «+ Кусок», смена края и «Считать своими размерами» отбрасывали
+  // бы человека в начало окна. Замер 16 сентября 2026: на экране 600 ->
+  // 600, в окне 600 -> 0. Одинаковое по смыслу ведёт себя одинаково.
+  const byloTelo = ov.querySelector('.refcfg-body');
+  const mesto = byloTelo ? byloTelo.scrollTop : 0;
+  ov.innerHTML = skPolOknoHtml();
+  const telo = ov.querySelector('.refcfg-body');
+  if(telo && mesto) telo.scrollTop = mesto;
+  const x = ov.querySelector('#skPolX');
+  if(x) x.onclick = skPolOknoZakryt;
+  skAttach(ov);
+}
+
+// Перерисовка того места, где раздел показан сейчас. Окно открыто —
+// перерисовываем окно; иначе это экран калькулятора, и рисует его render().
+// Без этой развилки нажатие внутри окна перерисовывало бы страницу
+// под ним, а окно осталось бы со старой разметкой.
+function skPererisovat(){
+  if(skPolOknoOtkryto()) skPolOknoNarisovat();
+  else render();
+}
+
+function skPolOknoOtkryt(room, proj){
+  skPolIzPomescheniya(room, proj);
+  let ov = document.getElementById('skPolOverlay');
+  if(!ov){
+    ov = document.createElement('div');
+    ov.id = 'skPolOverlay';
+    ov.className = 'refcfg-overlay no-print';
+    // Щелчок мимо и Escape — общим правилом закрытия окон
+    // (см. OKNA_ZAKRYVAEMYE).
+    document.body.appendChild(ov);
+  }
+  ov.style.display = 'flex';
+  skPolOknoNarisovat();
+}
+
+function skPolOknoZakryt(){
+  const ov = document.getElementById('skPolOverlay');
+  if(ov){ ov.style.display = 'none'; ov.innerHTML = ''; }
+}
+
+// ТЕЛО РАЗДЕЛА «ТЁПЛЫЙ ПОЛ» — ОДНО НА ДВА ВХОДА.
+// Экран калькулятора и окно поверх помещения показывают ровно эту
+// разметку: считающая часть ничего не знает об источнике чисел, и вторая
+// её копия разошлась бы с первой молча — в метрах кабеля, то есть
+// в деньгах (CLAUDE.md, грабли 42 и 43).
+function skTeloPol(){
+  return `
+      <div class="cust-grid">
+        ${skPole('pol','imya','Что считаем', {text:true, placeholder:'напр. санузел'})}
+        <div></div>
+      </div>
+      ${SK.pol.iz ? `
+      <div class="sk-pamyatka">
+        <div class="sk-podzag">Откуда форма</div>
+        <div class="mat-note">Помещение <b>${escapeHtml((SK.pol.iz.imya||'').trim() || 'без названия')}</b>${
+          SK.pol.iz.proekt ? ' · ' + escapeHtml(SK.pol.iz.proekt) : ''}. ${
+          SK.pol.iz.forma === 'para'
+          ? `Взяли его длину и ширину — ${escapeHtml(String(SK.pol.dlina))} × ${escapeHtml(String(SK.pol.shirina))} м. Считается ровно так же, как если бы вы набрали их сами.`
+          : SK.pol.iz.forma === 'kontur'
+          ? 'Взяли его очертание — только силуэт пола, без размерных линий, подписей стен и проёмов: по нему и ляжет змейка. Длину с шириной не спрашиваем: у помещения со сложным контуром их нет вовсе.'
+          : 'Формы у него нет: контур не сошёлся или сам себя пересекает. Впишите площадь пола сами — схемы в этом случае не будет.'} Обратно отсюда ничего не уходит: в смете останется прежнее.</div>
+        <button type="button" class="add-link" data-sk-pol-svoi="1">Считать своими размерами</button>
+      </div>
+      <div class="cust-grid">
+        ${skPole('pol','ploschad','Площадь пола, м²', {
+            placeholder: SK.pol.iz.forma ? ('из помещения ' + SK.pol.iz.ploschad) : 'м²',
+            dop: 'data-sk-pol-forma="' + (skPolFormaEst(SK.pol) ? '1' : '0') + '"'})}
+        <div></div>
+      </div>` : `
+      <div class="cust-grid">
+        ${skPole('pol','dlina','Пол: длина, м')}
+        ${skPole('pol','shirina','Пол: ширина, м')}
+      </div>`}
+      ${skProyomyHtml('pol', skPolFormaEst(SK.pol), null, {
+        zagolovok:'Что вычитаем',
+        wPodskazka:'ширина, м', hPodskazka:'длина, м',
+        yPodskazka:'от нижнего края, м', chto:'пола',
+        pusto:'Ничего не вычитаем — греем весь пол.',
+        dobavit:'+ Кусок'})}
+      ${skPolFormaEst(SK.pol)
+        ? `<div class="mat-note">Куски встают на схему по отступам от края${SK.pol.kontur ? ' — от левого нижнего угла габарита, того самого, в который вписан силуэт' : ''}. Оставите отступы пустыми — все лягут в левый нижний угол и налезут друг на друга; тогда итог скажет об этом отдельной строкой.</div>`
+        : `<div class="mat-note">Схему пола рисуем там, где известна его форма. Здесь площадь задана числом — какой она формы, приложение не знает, и рисовать ему нечего.</div>`}
+      <div class="sk-pamyatka">
+        <div class="sk-podzag">О чём не забыть</div>
+        <div class="mat-note">Греется не вся комната. Это напоминание, а не правило: что греть на этом объекте, знаете вы, а не приложение.</div>
+        <div class="mat-note">· Ванна, стиральная машина, встроенная мебель — под ними не греют.</div>
+        <div class="mat-note">· Напольный унитаз — не греют вовсе. Подвесной на инсталляции — греют примерно половину пятна: чаша висит, ноги под ней нет.</div>
+        <div class="mat-note">· Подвесная раковина — греют, пол под ней свободен. А тумба или пьедестал, стоящие на полу, — вычитаются, как любая мебель в пол.</div>
+        <div class="mat-note">· Душевая — как решите. Готовый поддон, акриловый или стальной, не греют; выложенную плиткой с трапом греют, и всё чаще.</div>
+        <div class="mat-note">· От стен отступают на тот же шаг, что между витками. Отдельно вычитать этот отступ не надо — он уже сидит в шаге.</div>
+      </div>
+      <div class="cust-grid">
+        ${skPole('pol','shag','Шаг укладки, см', {placeholder:'пусто — ' + fmt(SK_POL_SHAG) + ' (обычно 7–8)'})}
+        <div></div>
+      </div>
+      <div id="skItog">${skItogPol()}</div>`;
 }
 
 function renderSkalkView(){
@@ -25700,56 +25854,7 @@ function renderSkalkView(){
       ${skPloschadiHtml()}
       <div id="skItog">${skItogPloschadi()}</div>`;
   } else if(r === 'pol'){
-    telo = `
-      <div class="cust-grid">
-        ${skPole('pol','imya','Что считаем', {text:true, placeholder:'напр. санузел'})}
-        <div></div>
-      </div>
-      ${SK.pol.iz ? `
-      <div class="sk-pamyatka">
-        <div class="sk-podzag">Откуда форма</div>
-        <div class="mat-note">Помещение <b>${escapeHtml((SK.pol.iz.imya||'').trim() || 'без названия')}</b>${
-          SK.pol.iz.proekt ? ' · ' + escapeHtml(SK.pol.iz.proekt) : ''}. ${
-          SK.pol.iz.forma === 'para'
-          ? `Взяли его длину и ширину — ${escapeHtml(String(SK.pol.dlina))} × ${escapeHtml(String(SK.pol.shirina))} м. Считается ровно так же, как если бы вы набрали их сами.`
-          : SK.pol.iz.forma === 'kontur'
-          ? 'Взяли его очертание — только силуэт пола, без размерных линий, подписей стен и проёмов: по нему и ляжет змейка. Длину с шириной не спрашиваем: у помещения со сложным контуром их нет вовсе.'
-          : 'Формы у него нет: контур не сошёлся или сам себя пересекает. Впишите площадь пола сами — схемы в этом случае не будет.'} Обратно отсюда ничего не уходит: в смете останется прежнее.</div>
-        <button type="button" class="add-link" data-sk-pol-svoi="1">Считать своими размерами</button>
-      </div>
-      <div class="cust-grid">
-        ${skPole('pol','ploschad','Площадь пола, м²', {
-            placeholder: SK.pol.iz.forma ? ('из помещения ' + SK.pol.iz.ploschad) : 'м²',
-            dop: 'data-sk-pol-forma="' + (skPolFormaEst(SK.pol) ? '1' : '0') + '"'})}
-        <div></div>
-      </div>` : `
-      <div class="cust-grid">
-        ${skPole('pol','dlina','Пол: длина, м')}
-        ${skPole('pol','shirina','Пол: ширина, м')}
-      </div>`}
-      ${skProyomyHtml('pol', skPolFormaEst(SK.pol), null, {
-        zagolovok:'Что вычитаем',
-        wPodskazka:'ширина, м', hPodskazka:'длина, м',
-        yPodskazka:'от нижнего края, м', chto:'пола',
-        pusto:'Ничего не вычитаем — греем весь пол.',
-        dobavit:'+ Кусок'})}
-      ${skPolFormaEst(SK.pol)
-        ? `<div class="mat-note">Куски встают на схему по отступам от края${SK.pol.kontur ? ' — от левого нижнего угла габарита, того самого, в который вписан силуэт' : ''}. Оставите отступы пустыми — все лягут в левый нижний угол и налезут друг на друга; тогда итог скажет об этом отдельной строкой.</div>`
-        : `<div class="mat-note">Схему пола рисуем там, где известна его форма. Здесь площадь задана числом — какой она формы, приложение не знает, и рисовать ему нечего.</div>`}
-      <div class="sk-pamyatka">
-        <div class="sk-podzag">О чём не забыть</div>
-        <div class="mat-note">Греется не вся комната. Это напоминание, а не правило: что греть на этом объекте, знаете вы, а не приложение.</div>
-        <div class="mat-note">· Ванна, стиральная машина, встроенная мебель — под ними не греют.</div>
-        <div class="mat-note">· Напольный унитаз — не греют вовсе. Подвесной на инсталляции — греют примерно половину пятна: чаша висит, ноги под ней нет.</div>
-        <div class="mat-note">· Подвесная раковина — греют, пол под ней свободен. А тумба или пьедестал, стоящие на полу, — вычитаются, как любая мебель в пол.</div>
-        <div class="mat-note">· Душевая — как решите. Готовый поддон, акриловый или стальной, не греют; выложенную плиткой с трапом греют, и всё чаще.</div>
-        <div class="mat-note">· От стен отступают на тот же шаг, что между витками. Отдельно вычитать этот отступ не надо — он уже сидит в шаге.</div>
-      </div>
-      <div class="cust-grid">
-        ${skPole('pol','shag','Шаг укладки, см', {placeholder:'пусто — ' + fmt(SK_POL_SHAG) + ' (обычно 7–8)'})}
-        <div></div>
-      </div>
-      <div id="skItog">${skItogPol()}</div>`;
+    telo = skTeloPol();
   } else {
     telo = `
       <div class="cust-grid">
@@ -25798,8 +25903,11 @@ function renderSkalkView(){
 // Теперь как в смете: поля не трогаем вовсе, обновляем только итог.
 // Тогда и считать можно на каждый знак — поле живёт своей жизнью,
 // отнимать у него фокус нечем.
-function skItogObnovit(){
-  const box = document.getElementById('skItog');
+function skItogObnovit(koren){
+  // Ищем внутри своего корня, а не по всей странице: раздел живёт
+  // в двух местах — на экране калькулятора и в окне поверх помещения
+  // (грабля 49: «искали по классу, а таких на экране стало несколько»).
+  const box = (koren || document).querySelector('#skItog');
   if(!box) return;
   box.innerHTML = SK.razdel === 'listy' ? skItogListy()
                 : SK.razdel === 'bloki' ? skItogBloki()
@@ -25808,22 +25916,24 @@ function skItogObnovit(){
                 : skItogSmes();
 }
 
-function skAttach(){
-  const main = document.getElementById('main');
+// Корень передаётся: на экране калькулятора это #main, в окне тёплого
+// пола — само окно. Разметка одна и та же, обработчики одни и те же.
+function skAttach(koren){
+  const main = koren || document.getElementById('main');
   main.querySelectorAll('[data-sk-razdel]').forEach(el=>{
-    el.onclick = ()=>{ SK.razdel = el.getAttribute('data-sk-razdel'); render(); };
+    el.onclick = ()=>{ SK.razdel = el.getAttribute('data-sk-razdel'); skPererisovat(); };
   });
   // Отвязаться от помещения и считать своими размерами. Без этой кнопки
   // пришедший из помещения оказался бы заперт в одном поле до перезагрузки.
   main.querySelectorAll('[data-sk-pol-svoi]').forEach(el=>{
-    el.onclick = ()=>{ SK.pol.iz = null; SK.pol.kontur = null; SK.pol.ploschad = ''; render(); };
+    el.onclick = ()=>{ SK.pol.iz = null; SK.pol.kontur = null; SK.pol.ploschad = ''; skPererisovat(); };
   });
   main.querySelectorAll('[data-sk]').forEach(el=>{
     const [razdel, klyuch] = el.getAttribute('data-sk').split('|');
     const prinyat = ()=>{
       SK[razdel][klyuch] = el.value;
       skZapomnit(razdel + '.' + klyuch, el.value);
-      skItogObnovit();
+      skItogObnovit(main);
     };
     el.addEventListener('input', prinyat);
     el.addEventListener('change', prinyat);
@@ -25834,7 +25944,7 @@ function skAttach(){
   // на каждый знак отнимала бы у поля фокус (правка 4 сентября 2026).
   main.querySelectorAll('[data-sk-pol-forma]').forEach(el=>{
     const bylo = el.getAttribute('data-sk-pol-forma') === '1';
-    el.addEventListener('change', ()=>{ if(skPolFormaEst(SK.pol) !== bylo) render(); });
+    el.addEventListener('change', ()=>{ if(skPolFormaEst(SK.pol) !== bylo) skPererisovat(); });
   });
   // Куда писать проём: в стену листового или в общий список раздела.
   const proyomySpiska = (adr)=>{
@@ -25849,7 +25959,7 @@ function skAttach(){
     const [razdel, i, pole] = el.getAttribute('data-sk-st').split('|');
     const prinyat = ()=>{
       const st = SK[razdel].steny[parseInt(i)];
-      if(st){ st[pole] = el.value; skItogObnovit(); }
+      if(st){ st[pole] = el.value; skItogObnovit(main); }
     };
     el.addEventListener('input', prinyat);
     el.addEventListener('change', prinyat);
@@ -25859,11 +25969,11 @@ function skAttach(){
   main.querySelectorAll('[data-sk-forma]').forEach(el=>{
     el.addEventListener('change', ()=>{
       const pv = SK.ploschadi.steny[parseInt(el.getAttribute('data-sk-forma'))];
-      if(pv){ pv.shape = el.value; render(); }
+      if(pv){ pv.shape = el.value; skPererisovat(); }
     });
   });
   main.querySelectorAll('[data-sk-st-add]').forEach(el=>{
-    el.onclick = ()=>{ SK[el.getAttribute('data-sk-st-add')].steny.push(pustayaStena()); render(); };
+    el.onclick = ()=>{ SK[el.getAttribute('data-sk-st-add')].steny.push(pustayaStena()); skPererisovat(); };
   });
   main.querySelectorAll('[data-sk-st-zamok]').forEach(el=>{
     el.onclick = ()=> showLimit('Несколько стен — в полном тарифе',
@@ -25878,7 +25988,7 @@ function skAttach(){
       const [razdel, i] = el.getAttribute('data-sk-st-del').split('|');
       SK[razdel].steny.splice(parseInt(i), 1);
       if(!SK[razdel].steny.length) SK[razdel].steny.push(pustayaStena());
-      render();
+      skPererisovat();
     };
   });
 
@@ -25886,7 +25996,7 @@ function skAttach(){
     const [adr, i, pole] = el.getAttribute('data-sk-pr').split('|');
     const prinyat = ()=>{
       const o = proyomySpiska(adr)[parseInt(i)];
-      if(o){ o[pole] = el.value; skItogObnovit(); }
+      if(o){ o[pole] = el.value; skItogObnovit(main); }
     };
     el.addEventListener('input', prinyat);
     el.addEventListener('change', prinyat);
@@ -25898,20 +26008,20 @@ function skAttach(){
     el.onclick = ()=>{
       const [adr, i, v] = el.getAttribute('data-sk-pr-kray').split('|');
       const o = proyomySpiska(adr)[parseInt(i)];
-      if(o){ o.kray = v; render(); }
+      if(o){ o.kray = v; skPererisovat(); }
     };
   });
   main.querySelectorAll('[data-sk-pr-add]').forEach(el=>{
     el.onclick = ()=>{
       proyomySpiska(el.getAttribute('data-sk-pr-add')).push({ w:'', h:'', x:'', y:'', n:'', kray:'L' });
-      render();
+      skPererisovat();
     };
   });
   main.querySelectorAll('[data-sk-pr-del]').forEach(el=>{
     el.onclick = ()=>{
       const [adr, i] = el.getAttribute('data-sk-pr-del').split('|');
       proyomySpiska(adr).splice(parseInt(i), 1);
-      render();
+      skPererisovat();
     };
   });
 }
