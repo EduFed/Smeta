@@ -4217,7 +4217,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-17-284';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-17-285';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -24647,6 +24647,9 @@ const SK_POL_OTSTUP = 5;      // см
 // «если при прокладке кабеля остаётся большой зазор от стены либо впритык,
 // тогда можно как раз поиграть с шагом, в приоритете от 7-8 либо
 // приближенное к этим цифрам». См. `skShagPodobrat`.
+// НЕ ДАЛЬШЕ СЕМИ — ЖЁСТКО (владелец 17 сентября 2026: «от стены не менее
+// 5 см, но не более 7»). У стен вдоль витков это держит подбор шага, у выступов
+// и кусков — доводка линии (`skOtstupDovesti`).
 const SK_POL_OTSTUP_MAX = 7;  // см
 const SK_POL_SHAG_MAX = 8;    // см
 
@@ -24857,7 +24860,9 @@ function skPolRaschet(d){
     // Тупики и подход к углу (см. `skZmeykaOtrezki`): подход уже в метраже,
     // здесь его длина только для слов под схемой.
     tupikov:(otrezki.tupikov || 0), koncyVTupikah:(otrezki.koncyVTupikah || 0),
-    podhod:(otrezki.podhod || 0), podhodNet:(otrezki.podhodNet || 0)
+    podhod:(otrezki.podhod || 0), podhodNet:(otrezki.podhodNet || 0),
+    // Стены, от которых кабель дальше 7 см, и доступны ли они (`skOtstupDovesti`).
+    daleko:(otrezki.daleko || [])
   }, forma);
 }
 
@@ -25537,7 +25542,8 @@ function skKusokBlizko(d, t, r){
 //
 // Правила укладки (владелец, 10 сентября 2026):
 // · витки идут через заданный шаг;
-// · от стен и от кусков кабель не ближе 5 см, по-хорошему 5–7 —
+// · от стен и от кусков кабель не ближе 5 см и не дальше 7 (владелец
+//   17 сентября 2026, оба предела жёсткие; дальний держит `skOtstupDovesti`) —
 //   владелец 16 сентября 2026; прежнее «отступ равен шагу» отменено;
 // · под тем, что не греем, кабеля нет.
 //
@@ -26423,7 +26429,598 @@ function skZmeykaOtrezki(dlina, shirina, shagM, kuski, kontur, vitkovZadano, vdo
   itog.koncyVTupikah = gotovye.reduce((a, r)=> a + r.koncy, 0);
   itog.podhod = gotovye.reduce((a, r)=> a + (r.pod ? r.pod.dlina : 0), 0);
   itog.podhodNet = gotovye.reduce((a, r)=> a + (r.podhodNet ? 1 : 0), 0);
+  // ОТСТУП НЕ ДАЛЬШЕ СЕМИ (задача 2026-09-17-04): линия построена — доводим
+  // её к стенам, от которых витки легли дальше. Чего довести нельзя, уходит
+  // списком в итог, и там это сказано словами.
+  // УЗКАЯ ПОЛОСА — ОТСТУП БОЛЬШЕ СЕМИ ПО РЕШЕНИЮ, А НЕ ПО НЕДОСМОТРУ.
+  // Владелец 17 сентября 2026 про полосу в 14–17 см: «в данном случае
+  // выбираем 7-8.5». Второго витка туда не поставить, не сжав шаг ниже
+  // семи, а такой шаг решено «даже не рассматривать» (16 сентября).
+  // Значит один виток посередине — это выбор, и стены вдоль него
+  // нарушением не считаются: предел отступа здесь `kray`, а не семь.
+  // Иначе выходило противоречие — подпись говорила «виток посередине,
+  // в 7,5 см от стен», а строкой ниже та же стена числилась в списке
+  // «кабеля в таком месте нет».
+  const predel = (n === 1) ? Math.max(SK_POL_OTSTUP_MAX / 100, kray) : (SK_POL_OTSTUP_MAX / 100);
+  itog.daleko = skOtstupDovesti(itog, dlina, shirina, shagM, kuski, kontur, predel).daleko;
   return itog;
+}
+
+// ОТСТУП НЕ ДАЛЬШЕ СЕМИ — ДОВОДКА ГОТОВОЙ ЛИНИИ (задача 2026-09-17-04).
+//
+// Владелец 17 сентября 2026: «от стены не менее 5 см, но не более 7». Оба
+// предела жёсткие, мера — до ближайшей точки кабеля, макушки поворотов тоже.
+// У крайних стен 5–7 даёт подбор шага. У выступов, косых стен и вычитаемых
+// кусков — нет: витки идут через шаг, а выступ стоит где придётся, и ближний
+// виток оказывается от него в 5 + шаг. Поэтому готовую линию доводим:
+// · конец линии продлеваем прямо к стене;
+// · поворот выдвигаем к стене вдоль витков;
+// · участок витка отгибаем к стене (косыми или прямыми углами);
+// · конец витка сдвигаем вбок вместе с поворотом, поворот перестраиваем.
+// Каждая замена проверяется: не ближе 5 см к стенам и кускам, до чужого
+// кабеля не ближе шага (или не ближе, чем было), без узлов, и ни одна стена,
+// бывшая в 5–7, не уходит дальше семи. Направление витков доводка не трогает:
+// его решает `skPolRaschet`.
+//
+// МЕСТО, КУДА КАБЕЛЬ НЕ ПРОХОДИТ, не доводится вовсе. Порог числом не задан:
+// стена доступна, если рядом с ней встаёт поворот — круг в полшага, весь
+// не ближе отступа ко всем стенам, от которого до стены не дальше семи.
+// Такие места и недоведённые стены уходят списком `daleko` в итог.
+//
+// Скорость: считается на каждое нажатие. Соседи ищутся по сетке, варианты
+// пробуются по порядку и берётся первый годный (замер 17 сентября 2026:
+// самый долгий пол перебора — десятки миллисекунд на компьютере).
+function skTochkaOtrezok(px, py, ax, ay, bx, by){
+  const dx = bx - ax, dy = by - ay, l2 = dx*dx + dy*dy;
+  const k = l2 > 0 ? Math.max(0, Math.min(1, ((px - ax)*dx + (py - ay)*dy) / l2)) : 0;
+  return Math.hypot(px - ax - k*dx, py - ay - k*dy);
+}
+function skOtrezokOtrezok(a, b, c, d){
+  const vek = (o, p, q)=> (p[0] - o[0]) * (q[1] - o[1]) - (p[1] - o[1]) * (q[0] - o[0]);
+  const d1 = vek(c, d, a), d2 = vek(c, d, b), d3 = vek(a, b, c), d4 = vek(a, b, d);
+  if(((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))) return 0;
+  return Math.min(skTochkaOtrezok(a[0], a[1], c[0], c[1], d[0], d[1]), skTochkaOtrezok(b[0], b[1], c[0], c[1], d[0], d[1]),
+                  skTochkaOtrezok(c[0], c[1], a[0], a[1], b[0], b[1]), skTochkaOtrezok(d[0], d[1], a[0], a[1], b[0], b[1]));
+}
+// Звено ломаной: прямое — два конца, дуга — N хорд.
+function skZvenoTochki(g, N){
+  if(!g.duga) return [[g.x1, g.y1], [g.x2, g.y2]];
+  const cx = (g.x1 + g.x2) / 2, cy = (g.y1 + g.y2) / 2, r = Math.hypot(g.x1 - cx, g.y1 - cy);
+  const a0 = Math.atan2(g.y1 - cy, g.x1 - cx);
+  let da = Math.atan2(g.my - cy, g.mx - cx) - a0;
+  while(da <= -Math.PI) da += 2 * Math.PI;
+  while(da > Math.PI) da -= 2 * Math.PI;
+  const s = da > 0 ? 1 : -1, out = [];
+  for(let k = 0; k <= N; k++){ const a = a0 + s * Math.PI * k / N; out.push([cx + r * Math.cos(a), cy + r * Math.sin(a)]); }
+  out[0] = [g.x1, g.y1]; out[N] = [g.x2, g.y2];
+  return out;
+}
+function skLomLom(P, Q){
+  let m = Infinity;
+  for(let i = 0; i + 1 < P.length; i++) for(let j = 0; j + 1 < Q.length; j++){
+    const d = skOtrezokOtrezok(P[i], P[i+1], Q[j], Q[j+1]);
+    if(d < m) m = d;
+  }
+  return m;
+}
+
+// ГРАНИЦА ОБОГРЕВАЕМОГО ПОЛА — СТЕНЫ, ОТ КОТОРЫХ МЕРЯЕТСЯ ОТСТУП.
+function skPolGranica(dlina, shirina, kontur, kuski){
+  const K = kontur || [[0,0],[dlina,0],[dlina,shirina],[0,shirina]];
+  const vnutri = (p)=>{
+    let c = false;
+    for(let i = 0, j = K.length - 1; i < K.length; j = i++){
+      const xi = K[i][0], yi = K[i][1], xj = K[j][0], yj = K[j][1];
+      if(((yi > p[1]) !== (yj > p[1])) && (p[0] < (xj - xi) * (p[1] - yi) / (yj - yi) + xi)) c = !c;
+    }
+    return c;
+  };
+  const greem = (p)=> vnutri(p) && !(kuski || []).some(c=> p[0] >= c.x0 && p[0] <= c.x1 && p[1] >= c.y0 && p[1] <= c.y1);
+  const kand = [];
+  for(let i = 0, j = K.length - 1; i < K.length; j = i++) kand.push({ a:K[j], b:K[i], kusok:false });
+  (kuski || []).forEach(c=>{
+    const P = [[c.x0,c.y0],[c.x1,c.y0],[c.x1,c.y1],[c.x0,c.y1]];
+    for(let i = 0; i < 4; i++) kand.push({ a:P[i], b:P[(i+1)%4], kusok:true });
+  });
+  const vek = (o, p, q)=> (p[0] - o[0]) * (q[1] - o[1]) - (p[1] - o[1]) * (q[0] - o[0]);
+  const out = [], vidano = new Set();
+  kand.forEach(s=>{
+    const dx = s.b[0] - s.a[0], dy = s.b[1] - s.a[1], L = Math.hypot(dx, dy);
+    if(L < 1e-9) return;
+    const ts = [0, 1];
+    kand.forEach(o=>{
+      if(o === s) return;
+      [o.a, o.b].forEach(q=>{
+        if(skTochkaOtrezok(q[0], q[1], s.a[0], s.a[1], s.b[0], s.b[1]) < 1e-9)
+          ts.push(((q[0] - s.a[0]) * dx + (q[1] - s.a[1]) * dy) / (L * L));
+      });
+      const e1 = vek(o.a, o.b, s.a), e2 = vek(o.a, o.b, s.b);
+      if(Math.abs(e1 - e2) > 1e-15){
+        const t = e1 / (e1 - e2);
+        if(t > 0 && t < 1 && skTochkaOtrezok(s.a[0] + t*dx, s.a[1] + t*dy, o.a[0], o.a[1], o.b[0], o.b[1]) < 1e-9) ts.push(t);
+      }
+    });
+    ts.sort((p, q)=> p - q);
+    const nx = -dy / L, ny = dx / L, h = 1e-5;
+    let tek = null;
+    for(let i = 0; i + 1 < ts.length; i++){
+      const t0 = Math.max(0, ts[i]), t1 = Math.min(1, ts[i+1]);
+      if(t1 - t0 < 1e-9) continue;
+      const tm = (t0 + t1) / 2, mx = s.a[0] + tm * dx, my = s.a[1] + tm * dy;
+      const plyus = greem([mx + nx*h, my + ny*h]), minus = greem([mx - nx*h, my - ny*h]);
+      if(plyus !== minus){
+        const sg = plyus ? 1 : -1;
+        if(tek && tek.sg === sg && Math.abs(tek.t1 - t0) < 1e-9) tek.t1 = t1;
+        else { tek = { s:s, t0:t0, t1:t1, sg:sg }; out.push(tek); }
+      } else tek = null;
+    }
+  });
+  return out.map(w=>{
+    const dx = w.s.b[0] - w.s.a[0], dy = w.s.b[1] - w.s.a[1], L = Math.hypot(dx, dy);
+    return { a:[w.s.a[0] + w.t0*dx, w.s.a[1] + w.t0*dy], b:[w.s.a[0] + w.t1*dx, w.s.a[1] + w.t1*dy],
+             n:[-dy / L * w.sg, dx / L * w.sg], kusok:w.s.kusok, dlina:(w.t1 - w.t0) * L };
+  }).filter(w=>{
+    const k = [w.a, w.b].map(q=> q[0].toFixed(7) + ',' + q[1].toFixed(7)).sort().join('|');
+    if(vidano.has(k)) return false;
+    vidano.add(k);
+    return true;
+  });
+}
+
+function skOtstupDovesti(itog, dlina, shirina, shagM, kuski, kontur, predel){
+  // `predel` — докуда отступ считается своим. Обычно это семь сантиметров;
+  // у пола, в который встаёт один виток, — выбранное положение витка
+  // (см. вызов). Не передали — семь, как было.
+  const Z = SK_POL_OTSTUP / 100, X = (predel > 0 ? predel : SK_POL_OTSTUP_MAX / 100), eps = 1e-9;
+  // ДО ЧУЖОГО КАБЕЛЯ — НЕ БЛИЖЕ ШАГА, как у подхода к углу и хвостов петель:
+  // подогнутый к стене участок не должен ложиться теснее витков.
+  const sep = shagM * 0.999;
+  const N = 16, sagitta = (r)=> r * (1 - Math.cos(Math.PI / (2 * N)));
+  const itogo = { daleko:[] };
+  const steny = skPolGranica(dlina, shirina, kontur, kuski);
+  if(!steny.length || !itog.length) return itogo;
+  const K = kontur || [[0,0],[dlina,0],[dlina,shirina],[0,shirina]];
+  const ramka = (P, zap)=>{
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for(const p of P){ if(p[0] < x0) x0 = p[0]; if(p[0] > x1) x1 = p[0]; if(p[1] < y0) y0 = p[1]; if(p[1] > y1) y1 = p[1]; }
+    return [x0 - zapas0(zap), y0 - zapas0(zap), x1 + zapas0(zap), y1 + zapas0(zap)];
+  };
+  function zapas0(z){ return z || 0; }
+  const vRamkah = (A, B, zap)=> A[0] - zap <= B[2] && B[0] - zap <= A[2] && A[1] - zap <= B[3] && B[1] - zap <= A[3];
+  steny.forEach(w=>{ w.rm = ramka([w.a, w.b], 0); });
+
+  // ЧТО ГРЕЕМ — внутри очертания и не в куске (край куска не греется).
+  const vnutri = (x, y)=>{
+    let c = false;
+    for(let i = 0, j = K.length - 1; i < K.length; j = i++){
+      const xi = K[i][0], yi = K[i][1], xj = K[j][0], yj = K[j][1];
+      if(((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) c = !c;
+    }
+    return c;
+  };
+  const greem = (x, y)=> vnutri(x, y) && !(kuski || []).some(c=> x >= c.x0 && x <= c.x1 && y >= c.y0 && y <= c.y1);
+
+  // Ломаная ближе `nado` к стенам?
+  const blizheStena = (P, nado)=>{
+    const rm = ramka(P, nado);
+    for(const w of steny){
+      if(!vRamkah(rm, w.rm, 0)) continue;
+      for(let i = 0; i + 1 < P.length; i++) if(skOtrezokOtrezok(P[i], P[i+1], w.a, w.b) < nado) return true;
+    }
+    return false;
+  };
+  // Две ломаные ближе `nado`?
+  const blizheLom = (P, rmP, Q, rmQ, nado)=>{
+    if(!vRamkah(rmP, rmQ, nado)) return false;
+    for(let i = 0; i + 1 < P.length; i++){
+      const a = P[i], b = P[i+1];
+      const x0 = Math.min(a[0], b[0]) - nado, x1 = Math.max(a[0], b[0]) + nado;
+      const y0 = Math.min(a[1], b[1]) - nado, y1 = Math.max(a[1], b[1]) + nado;
+      if(x1 < rmQ[0] || x0 > rmQ[2] || y1 < rmQ[1] || y0 > rmQ[3]) continue;
+      for(let j = 0; j + 1 < Q.length; j++){
+        const c = Q[j], d = Q[j+1];
+        if(Math.max(c[0], d[0]) < x0 || Math.min(c[0], d[0]) > x1 || Math.max(c[1], d[1]) < y0 || Math.min(c[1], d[1]) > y1) continue;
+        if(skOtrezokOtrezok(a, b, c, d) < nado) return true;
+      }
+    }
+    return false;
+  };
+  const lomLom = (P, Q)=> skLomLom(P, Q);
+
+  // СЕТКА КАБЕЛЯ: клетка → звенья. Соседей ищем в клетках, а не по всей линии.
+  const KL = 0.15, setka = new Map();
+  const klyuchi = (rm, zap)=>{
+    const out = [];
+    const ax = Math.floor((rm[0] - zap) / KL), bx = Math.floor((rm[2] + zap) / KL);
+    const ay = Math.floor((rm[1] - zap) / KL), by = Math.floor((rm[3] + zap) / KL);
+    for(let x = ax; x <= bx; x++) for(let y = ay; y <= by; y++) out.push(x * 100003 + y);
+    return out;
+  };
+  const vSetku = (z)=>{ z.kl = klyuchi(z.rm, 0); z.kl.forEach(k=>{ let s = setka.get(k); if(!s){ s = new Set(); setka.set(k, s); } s.add(z); }); };
+  const izSetki = (z)=> z.kl.forEach(k=> setka.get(k).delete(z));
+  const ryadom = (rm, zap)=>{
+    const s = new Set();
+    klyuchi(rm, zap).forEach(k=>{ const c = setka.get(k); if(c) c.forEach(z=> s.add(z)); });
+    return s;
+  };
+  const zveno = (g)=>{ const P = skZvenoTochki(g, N); return { g:g, P:P, rm:ramka(P, 0), dw:new Map() }; };
+  let zv = itog.map(zveno);
+  zv.forEach(vSetku);
+  const nomera = ()=> zv.forEach((z, i)=>{ z.n = i; });
+  nomera();
+  const styk = (A, B)=> Math.hypot(A.x2 - B.x1, A.y2 - B.y1) < 1e-7;
+  const dzw = (z, wi)=>{
+    let d = z.dw.get(wi);
+    if(d === undefined){ const w = steny[wi]; d = lomLom(z.P, [w.a, w.b]); z.dw.set(wi, d); }
+    return d;
+  };
+  // ОТСТУП СТЕНЫ — до ближайшего звена. Дальше `RAD` не ищем: там «далеко».
+  const RAD = X + 2 * shagM + 0.05;
+  const dStena = (wi, bez, dop)=>{
+    const w = steny[wi];
+    let m = RAD;
+    ryadom(w.rm, RAD).forEach(z=>{
+      if(bez && bez.has(z)) return;
+      if(!vRamkah(z.rm, w.rm, m)) return;
+      const d = dzw(z, wi);
+      if(d < m) m = d;
+    });
+    if(dop) for(const z of dop){ const d = dzw(z, wi); if(d < m) m = d; }
+    return m;
+  };
+  const cel = steny.map(w=> w.dlina >= 0.01);
+  const D = steny.map((w, wi)=> cel[wi] ? dStena(wi) : 0);
+
+  // ДОЙДЁТ ЛИ КАБЕЛЬ ДО СТЕНЫ. Дойдёт, если рядом со стеной встаёт поворот:
+  // круг в полшага, весь не ближе отступа ко всем стенам, и от него до этой
+  // стены не дальше 7 см. Иначе это ниша или щель, куда кабель не проходит.
+  // Порог числом не задаётся — он складывается из отступа и шага.
+  const dostup = new Map();
+  const dostupna = (wi)=>{
+    if(dostup.has(wi)) return dostup.get(wi);
+    const w = steny[wi], r = shagM / 2, h = 0.005, rad = X + r, nado = Z + r;
+    const blizkie = steny.filter(v=> vRamkah(v.rm, w.rm, rad + nado));
+    let est = false;
+    for(let x = w.rm[0] - rad; x <= w.rm[2] + rad && !est; x += h){
+      for(let y = w.rm[1] - rad; y <= w.rm[3] + rad; y += h){
+        if(skTochkaOtrezok(x, y, w.a[0], w.a[1], w.b[0], w.b[1]) > rad) continue;
+        if(!greem(x, y)) continue;
+        let ok = true;
+        for(const v of blizkie) if(skTochkaOtrezok(x, y, v.a[0], v.a[1], v.b[0], v.b[1]) < nado){ ok = false; break; }
+        if(ok){ est = true; break; }
+      }
+    }
+    dostup.set(wi, est);
+    return est;
+  };
+
+  const chastiNa = (gor, t)=>{
+    let ch;
+    if(kontur) ch = mnVitokChasti(kontur, t, gor, Z);
+    else {
+      const S = gor ? shirina : dlina, L = gor ? dlina : shirina;
+      ch = (t >= Z - eps && t <= S - Z + eps) ? [[Z, L - Z]] : [];
+    }
+    (kuski || []).forEach(c=>{
+      const d = gor ? { u0:c.x0, u1:c.x1, t0:c.y0, t1:c.y1 } : { u0:c.y0, u1:c.y1, t0:c.x0, t1:c.x1 };
+      const g = skKusokBlizko(d, t, Z);
+      if(g) ch = mnVychest(ch, g[0], g[1]);
+    });
+    return ch;
+  };
+
+  // ОЦЕНКА ЗАМЕНЫ звеньев [ot, doo) на `novye`. `proverka:'net'` — часть
+  // прежнего звена на прежнем месте. `bylo` — сдвинутое звено: до чужого
+  // кабеля не ближе шага, а если прежде было ближе — не ближе прежнего.
+  const ocenit = (ot, doo, novye, wi)=>{
+    const nz = novye.map(zveno);
+    for(const z of nz){
+      if(z.g.proverka === 'net') continue;
+      const r = z.g.duga ? Math.hypot(z.g.x2 - z.g.x1, z.g.y2 - z.g.y1) / 2 : 0;
+      if(blizheStena(z.P, Z - eps + sagitta(r))) return null;
+    }
+    const starye = new Set(zv.slice(ot, doo));
+    const pered = ot > 0 ? zv[ot - 1] : null, posle = doo < zv.length ? zv[doo] : null;
+    for(let i = 0; i < nz.length; i++){
+      const z = nz[i];
+      if(z.g.proverka === 'net') continue;
+      for(const o of ryadom(z.rm, sep)){
+        if(starye.has(o)) continue;
+        if(i === 0 && o === pered && styk(o.g, z.g)) continue;
+        if(i === nz.length - 1 && o === posle && styk(z.g, o.g)) continue;
+        if(!blizheLom(z.P, z.rm, o.P, o.rm, sep - eps)) continue;
+        if(!z.g.bylo) return null;
+        if(blizheLom(z.P, z.rm, o.P, o.rm, Math.min(sep, lomLom(z.g.bylo, o.P)) - eps)) return null;
+      }
+      for(let j = 0; j < nz.length; j++){
+        if(Math.abs(i - j) <= 1) continue;
+        if(blizheLom(z.P, z.rm, nz[j].P, nz[j].rm, 1e-7)) return null;
+      }
+    }
+    // ЗАЗОР ВНУТРИ ЗАМЕНЫ. Две части кабеля, далёкие друг от друга по кабелю
+    // (больше двух шагов), не ближе шага по прямой — или не ближе, чем было.
+    // Иначе отгиб с прямыми углами вырастает в карман с ножками теснее шага.
+    const cep = (spisok)=> (pered ? [obrezat(pered.g, 3 * shagM, false)] : []).concat(spisok, posle ? [obrezat(posle.g, 3 * shagM, true)] : []);
+    const klyuchZ = ot + '|' + doo;
+    let bylZazor = byliZazory.get(klyuchZ);
+    if(bylZazor === undefined){ bylZazor = zazorCepi(cep(zv.slice(ot, doo).map(z=> z.g)), sep); byliZazory.set(klyuchZ, bylZazor); }
+    if(zazorCepi(cep(nz.map(z=> z.g)), Math.min(sep, bylZazor)) < Math.min(sep, bylZazor) - 1e-6) return null;
+    // Какие стены задело: рядом со старыми и новыми звеньями.
+    let rmAll = null;
+    zv.slice(ot, doo).concat(nz).forEach(z=>{
+      rmAll = rmAll ? [Math.min(rmAll[0], z.rm[0]), Math.min(rmAll[1], z.rm[1]), Math.max(rmAll[2], z.rm[2]), Math.max(rmAll[3], z.rm[3])] : z.rm.slice();
+    });
+    const izm = new Map();
+    steny.forEach((w, j)=>{
+      if(!cel[j] || !vRamkah(w.rm, rmAll, RAD)) return;
+      izm.set(j, dStena(j, starye, nz));
+    });
+    return { nz:nz, izm:izm, dCel:izm.has(wi) ? izm.get(wi) : D[wi] };
+  };
+  // Наименьшее расстояние между точками цепи, разнесёнными по кабелю больше
+  // чем на два шага. Считаем не дальше `predel`: больше — всё равно годно.
+  // Длинного соседа берём только у стыка: дальняя его часть с заменой
+  // сравнивается обычной проверкой звеньев.
+  function obrezat(g, L, uNachala){
+    if(g.duga) return g;
+    const dl = Math.hypot(g.x2 - g.x1, g.y2 - g.y1);
+    if(dl <= L) return g;
+    const k = L / dl;
+    return uNachala ? { x1:g.x1, y1:g.y1, x2:g.x1 + (g.x2 - g.x1) * k, y2:g.y1 + (g.y2 - g.y1) * k }
+                    : { x1:g.x2 - (g.x2 - g.x1) * k, y1:g.y2 - (g.y2 - g.y1) * k, x2:g.x2, y2:g.y2 };
+  }
+  let byliZazory = new Map();
+  function zazorCepi(cep, predel){
+    const h = 0.01, pts = [];
+    let s = 0;
+    cep.forEach(g=>{
+      const P = skZvenoTochki(g, N);
+      for(let i = 0; i + 1 < P.length; i++){
+        const a = P[i], b = P[i+1], L = Math.hypot(b[0] - a[0], b[1] - a[1]), n = Math.max(1, Math.ceil(L / h));
+        for(let j = 0; j < n; j++) pts.push([a[0] + (b[0] - a[0]) * j / n, a[1] + (b[1] - a[1]) * j / n, s + L * j / n]);
+        s += L;
+      }
+    });
+    const dal = 2 * shagM;
+    if(s < dal) return Infinity;
+    const kl = predel, sk = new Map();
+    pts.forEach((p, i)=>{ const k = Math.floor(p[0] / kl) * 100003 + Math.floor(p[1] / kl); let l = sk.get(k); if(!l){ l = []; sk.set(k, l); } l.push(i); });
+    let m = Infinity;
+    for(const p of pts){
+      const cx = Math.floor(p[0] / kl), cy = Math.floor(p[1] / kl);
+      for(let dx = -1; dx <= 1; dx++) for(let dy = -1; dy <= 1; dy++){
+        const l = sk.get((cx + dx) * 100003 + cy + dy);
+        if(!l) continue;
+        for(const j of l){
+          const q = pts[j];
+          if(q[2] - p[2] < dal) continue;
+          const d = Math.hypot(p[0] - q[0], p[1] - q[1]);
+          if(d < m) m = d;
+        }
+      }
+    }
+    return m;
+  }
+  const primenit = (c, o)=>{
+    o.nz.forEach(z=>{ delete z.g.bylo; delete z.g.proverka; });
+    zv.slice(c.ot, c.doo).forEach(izSetki);
+    zv.splice(c.ot, c.doo - c.ot, ...o.nz);
+    byliZazory = new Map();
+    o.nz.forEach(vSetku);
+    nomera();
+    o.izm.forEach((d, j)=>{ D[j] = d; });
+  };
+
+  const shagi = (ot, doo)=>{ const s = []; for(let v = ot; v <= doo + 1e-9; v += 0.005) s.push(v); return s; };
+  const neVyshlo = new Set(), popytok = new Map();
+  let krugov = 0;
+  for(;;){
+    if(++krugov > 4 * steny.length + 20) break;
+    const plohie = steny.map((w, wi)=> wi).filter(wi=> cel[wi] && D[wi] > X + eps && !neVyshlo.has(wi))
+      .filter(dostupna).sort((p, q)=> D[p] - D[q]);
+    if(!plohie.length) break;
+    let sdelano = false;
+    for(const wi of plohie){
+      const W = steny[wi], WP = [W.a, W.b];
+      const Dw = D[wi];
+      const kand = [];
+      const blizkie = [...ryadom(W.rm, Math.min(Dw, RAD) + 2 * shagM + 0.02)].sort((a, b)=> a.n - b.n);
+      const shagDo = Math.min(2 * shagM + 0.03, Dw - Z + 0.01);
+
+      for(const zk of blizkie){
+        const k = zk.n, g = zk.g;
+        // 1. КОНЕЦ ЛИНИИ — ПРОДЛИТЬ ПРЯМО.
+        if(!g.duga){
+          const nachalo = k === 0 || !styk(zv[k-1].g, g);
+          const konec = k === zv.length - 1 || !styk(g, zv[k+1].g);
+          const len = Math.hypot(g.x2 - g.x1, g.y2 - g.y1);
+          if((nachalo || konec) && len > 1e-9){
+            const ex = (g.x2 - g.x1) / len, ey = (g.y2 - g.y1) / len;
+            [[nachalo, -1], [konec, 1]].forEach(([est, st])=>{
+              if(!est) return;
+              const P0 = st < 0 ? [g.x1, g.y1] : [g.x2, g.y2];
+              for(const lam of shagi(0.005, shagDo)){
+                const P1 = [P0[0] + st * ex * lam, P0[1] + st * ey * lam];
+                const kus = [P0, P1], rm = ramka(kus, 0);
+                if(blizheStena(kus, Z - eps)) break;
+                let tesno = false;
+                for(const o of ryadom(rm, sep)) if(o !== zk && blizheLom(kus, rm, o.P, o.rm, sep - eps)){ tesno = true; break; }
+                if(tesno) break;
+                const dCel = skOtrezokOtrezok(P0, P1, W.a, W.b);
+                if(dCel > X + eps) continue;
+                const ng = st < 0 ? { x1:P1[0], y1:P1[1], x2:g.x2, y2:g.y2 } : { x1:g.x1, y1:g.y1, x2:P1[0], y2:P1[1] };
+                ng.proverka = 'net';
+                kand.push({ ot:k, doo:k + 1, novye:[ng], dop:lam, dCel:dCel });
+                if(dCel < Z + 0.01) break;
+              }
+            });
+          }
+        }
+        // 2. ПОВОРОТ — ВЫДВИНУТЬ К СТЕНЕ вдоль витков.
+        if(g.duga && k >= 1 && k + 1 < zv.length){
+          const p = zv[k-1].g, q = zv[k+1].g;
+          if(!p.duga && !q.duga && styk(p, g) && styk(g, q)){
+            const cx = (g.x1 + g.x2) / 2, cy = (g.y1 + g.y2) / 2;
+            const ml = Math.hypot(g.mx - cx, g.my - cy);
+            const pl = Math.hypot(p.x2 - p.x1, p.y2 - p.y1), ql = Math.hypot(q.x2 - q.x1, q.y2 - q.y1);
+            if(ml > 1e-9 && pl > 1e-9 && ql > 1e-9){
+              const ex = (g.mx - cx) / ml, ey = (g.my - cy) / ml;
+              if(Math.abs((p.x2 - p.x1) / pl * ex + (p.y2 - p.y1) / pl * ey - 1) < 1e-9
+                && Math.abs((q.x2 - q.x1) / ql * ex + (q.y2 - q.y1) / ql * ey + 1) < 1e-9){
+                const rad = Math.hypot(g.x2 - g.x1, g.y2 - g.y1) / 2;
+                for(const del of shagi(0.005, shagDo)){
+                  const ng = { x1:g.x1 + ex*del, y1:g.y1 + ey*del, x2:g.x2 + ex*del, y2:g.y2 + ey*del, duga:true,
+                               mx:g.mx + ex*del, my:g.my + ey*del };
+                  const P = skZvenoTochki(ng, N);
+                  const kp = [[p.x2, p.y2], [p.x2 + ex*del, p.y2 + ey*del]], kq = [[q.x1, q.y1], [q.x1 + ex*del, q.y1 + ey*del]];
+                  if(blizheStena(kp, Z - eps) || blizheStena(kq, Z - eps) || blizheStena(P, Z - eps + sagitta(rad))) break;
+                  const rmP = ramka(P, 0), rmp = ramka(kp, 0), rmq = ramka(kq, 0);
+                  let tesno = false;
+                  for(const o of ryadom(rmP, sep)){
+                    if(o.n >= k - 1 && o.n <= k + 1) continue;
+                    if(blizheLom(kp, rmp, o.P, o.rm, sep - eps) || blizheLom(kq, rmq, o.P, o.rm, sep - eps)){ tesno = true; break; }
+                    if(blizheLom(P, rmP, o.P, o.rm, sep - eps)
+                      && blizheLom(P, rmP, o.P, o.rm, Math.min(sep, lomLom(zk.P, o.P)) - eps)){ tesno = true; break; }
+                  }
+                  if(tesno) break;
+                  const dCel = lomLom(P, WP);
+                  if(dCel > X + eps) continue;
+                  kand.push({ ot:k - 1, doo:k + 2, dop:2 * del, dCel:dCel, novye:[
+                    { x1:p.x1, y1:p.y1, x2:p.x2 + ex*del, y2:p.y2 + ey*del, proverka:'net' },
+                    Object.assign(ng, { proverka:'net' }),
+                    { x1:q.x1 + ex*del, y1:q.y1 + ey*del, x2:q.x2, y2:q.y2, proverka:'net' } ] });
+                  if(dCel < Z + 0.01) break;
+                }
+              }
+            }
+          }
+        }
+        if(g.duga) continue;
+        const gor = Math.abs(g.y1 - g.y2) < 1e-12, ver = Math.abs(g.x1 - g.x2) < 1e-12;
+        if(gor === ver) continue;
+        const u1 = gor ? g.x1 : g.y1, u2 = gor ? g.x2 : g.y2, tg = gor ? g.y1 : g.x1;
+        const lo = Math.min(u1, u2), hi = Math.max(u1, u2), vpered = u2 >= u1;
+        const wa = Math.min(gor ? W.a[0] : W.a[1], gor ? W.b[0] : W.b[1]);
+        const wb = Math.max(gor ? W.a[0] : W.a[1], gor ? W.b[0] : W.b[1]);
+        const wt = (gor ? W.a[1] + W.b[1] : W.a[0] + W.b[0]) / 2;
+        const s = wt > tg ? 1 : -1;
+        const tochka = (u, t)=> gor ? [u, t] : [t, u];
+        // 3. УЧАСТОК ВИТКА — ОТОГНУТЬ К СТЕНЕ.
+        const oLo = Math.max(lo, wa - X), oHi = Math.min(hi, wb + X);
+        if(oHi - oLo >= 0.01){
+          const S0 = tochka(u1, tg), S1 = tochka(u2, tg), bylo = [S0, S1];
+          for(const del of shagi(0.005, shagDo)){
+            const t2 = tg + s * del;
+            const svob = chastiNa(gor, t2);
+            if(!svob.length) break;
+            for(const F of svob) for(const kosye of [true, false]){
+              const otst = kosye ? del : 0;
+              const a = Math.max(oLo, F[0], lo + otst + sep), b = Math.min(oHi, F[1], hi - otst - sep);
+              if(b - a < 0.01) continue;
+              const A0 = tochka(vpered ? a - otst : b + otst, tg), A1 = tochka(vpered ? a : b, t2);
+              const B1 = tochka(vpered ? b : a, t2), B0 = tochka(vpered ? b + otst : a - otst, tg);
+              const dCel = Math.min(skOtrezokOtrezok(A0, A1, W.a, W.b), skOtrezokOtrezok(A1, B1, W.a, W.b), skOtrezokOtrezok(B1, B0, W.a, W.b));
+              if(dCel > X + eps) continue;
+              const novye = [];
+              if(Math.hypot(A0[0] - S0[0], A0[1] - S0[1]) > 1e-9) novye.push({ x1:S0[0], y1:S0[1], x2:A0[0], y2:A0[1], proverka:'net' });
+              novye.push({ x1:A0[0], y1:A0[1], x2:A1[0], y2:A1[1], bylo:bylo });
+              novye.push({ x1:A1[0], y1:A1[1], x2:B1[0], y2:B1[1], bylo:bylo });
+              novye.push({ x1:B1[0], y1:B1[1], x2:B0[0], y2:B0[1], bylo:bylo });
+              if(Math.hypot(S1[0] - B0[0], S1[1] - B0[1]) > 1e-9) novye.push({ x1:B0[0], y1:B0[1], x2:S1[0], y2:S1[1], proverka:'net' });
+              kand.push({ ot:k, doo:k + 1, novye:novye, dop:2 * (Math.hypot(otst, del) - otst), dCel:dCel });
+            }
+          }
+        }
+        // 4. КОНЕЦ ВИТКА ВМЕСТЕ С ПОВОРОТОМ — СДВИНУТЬ ВБОК. Поворот
+        // перестраивается под новое расстояние до соседнего витка, макушка
+        // остаётся на месте; соседний виток удлиняется или укорачивается.
+        [1, -1].forEach(side=>{
+          const ka = k + side, ko = k + 2 * side;
+          if(ko < 0 || ko >= zv.length) return;
+          const a = zv[ka].g, o = zv[ko].g;
+          if(!a.duga || o.duga) return;
+          if(side > 0 ? !(styk(g, a) && styk(a, o)) : !(styk(o, a) && styk(a, g))) return;
+          const oGor = Math.abs(o.y1 - o.y2) < 1e-12;
+          if(oGor !== gor || (gor ? Math.abs(o.x1 - o.x2) < 1e-12 : Math.abs(o.y1 - o.y2) < 1e-12)) return;
+          const to = gor ? o.y1 : o.x1;
+          // Конец витка у поворота и дальний конец.
+          const uE = side > 0 ? u2 : u1, uF = side > 0 ? u1 : u2;
+          const vp = uE >= uF ? 1 : -1;            // от дальнего конца к повороту
+          const amx = gor ? a.mx : a.my;
+          const dirA = amx > uE ? 1 : -1;          // куда выгибается поворот
+          const Rold = Math.abs(tg - to) / 2;
+          const oFar = side > 0 ? (gor ? o.x2 : o.y2) : (gor ? o.x1 : o.y1);
+          const byloG = [tochka(u1, tg), tochka(u2, tg)];
+          const byloA = zv[ka].P;
+          const byloO = [tochka(gor ? o.x1 : o.y1, to), tochka(gor ? o.x2 : o.y2, to)];
+          for(const del of shagi(0.005, shagDo)){
+            const t2 = tg + s * del;
+            const Rnew = Math.abs(t2 - to) / 2;
+            if(2 * Rnew < sep - eps) break;   // поворот уже шага не делаем: витки сблизились бы
+            if(Math.sign(t2 - to) !== Math.sign(tg - to)) break;
+            const uE2 = uE + dirA * (Rold - Rnew);
+            if((oFar - uE2) * (oFar - uE) <= 0 || Math.abs(oFar - uE2) < 0.01) break;
+            for(const kosye of [true, false]){
+              const otst = kosye ? del : 0;
+              // Начало сдвига: там, где стена начинает быть рядом, но не ближе
+              // шага к дальнему концу.
+              const wBlizh = vp > 0 ? wa - X : wb + X;
+              let uB = vp > 0 ? Math.max(wBlizh, uF + sep + otst) : Math.min(wBlizh, uF - sep - otst);
+              if((uE2 - uB) * vp < 0.01) uB = uE2 - vp * 0.01;
+              if((uB - otst * vp - uF) * vp < sep - eps) continue;
+              const A0 = tochka(uB - vp * otst, tg), A1 = tochka(uB, t2), E2 = tochka(uE2, t2), O2 = tochka(uE2, to);
+              const Fp = tochka(uF, tg), Of = tochka(oFar, to);
+              const cT = (t2 + to) / 2;
+              const M = tochka(uE2 + dirA * Rnew, cT);
+              const dugaG = side > 0 ? { x1:E2[0], y1:E2[1], x2:O2[0], y2:O2[1] } : { x1:O2[0], y1:O2[1], x2:E2[0], y2:E2[1] };
+              Object.assign(dugaG, { duga:true, mx:M[0], my:M[1], bylo:byloA });
+              const oUdl = (uE2 - uE) * dirA > 0;   // сосед удлиняется — проверяем
+              const pO = side > 0 ? { x1:O2[0], y1:O2[1], x2:Of[0], y2:Of[1] } : { x1:Of[0], y1:Of[1], x2:O2[0], y2:O2[1] };
+              if(oUdl) pO.bylo = byloO; else pO.proverka = 'net';
+              const chastG = [
+                { x1:Fp[0], y1:Fp[1], x2:A0[0], y2:A0[1], proverka:'net' },
+                { x1:A0[0], y1:A0[1], x2:A1[0], y2:A1[1], bylo:byloG },
+                { x1:A1[0], y1:A1[1], x2:E2[0], y2:E2[1], bylo:byloG } ].filter(x=> Math.hypot(x.x2 - x.x1, x.y2 - x.y1) > 1e-9);
+              let novye;
+              if(side > 0) novye = chastG.concat([dugaG, pO]);
+              else novye = [pO, dugaG].concat(chastG.slice().reverse().map(x=> Object.assign({}, x, { x1:x.x2, y1:x.y2, x2:x.x1, y2:x.y1 })));
+              const tmp = novye.map(x=> x.duga ? skZvenoTochki(x, N) : [[x.x1, x.y1], [x.x2, x.y2]]);
+              let dCel = Infinity;
+              tmp.forEach(P=>{ const d = lomLom(P, WP); if(d < dCel) dCel = d; });
+              if(dCel > X + eps) continue;
+              kand.push({ ot:Math.min(k, ko), doo:Math.max(k, ko) + 1, novye:novye, dop:Math.abs(del) * 2, dCel:dCel });
+            }
+          }
+        });
+      }
+      // ПЕРВЫЙ ГОДНЫЙ: ближе к середине 5–7, потом меньше лишнего кабеля.
+      const zhelaem = (Z + X) / 2;
+      kand.sort((p, q)=> (Math.round(Math.abs(p.dCel - zhelaem) * 2000) - Math.round(Math.abs(q.dCel - zhelaem) * 2000)) || (p.dop - q.dop));
+      let vzyat = null;
+      for(const c of kand){
+        if(c.dCel < Z - eps) continue;
+        const o = ocenit(c.ot, c.doo, c.novye, wi);
+        if(!o || o.dCel > X + eps) continue;
+        let novyh = 0;
+        o.izm.forEach((d, j)=>{ if(j !== wi && D[j] <= X + eps && d > X + eps) novyh++; });
+        if(novyh) continue;
+        vzyat = { c:c, o:o };
+        break;
+      }
+      if(vzyat){ primenit(vzyat.c, vzyat.o); sdelano = true; break; }
+      neVyshlo.add(wi);
+    }
+    if(!sdelano) break;
+  }
+  itog.length = 0;
+  zv.forEach(z=> itog.push(z.g));
+  steny.forEach((w, wi)=>{
+    if(!cel[wi] || D[wi] <= X + eps) return;
+    let m = Infinity;
+    zv.forEach(z=>{ const d = dzw(z, wi); if(d < m) m = d; });
+    if(m > X + eps) itogo.daleko.push({ a:w.a, b:w.b, dlina:w.dlina, kusok:w.kusok, d:m, dostup:dostupna(wi) });
+  });
+  return itogo;
 }
 
 // ЛИНИЯ БЕЗ УЗЛА: ни одно звено не касается другого, кроме соседнего
@@ -26681,9 +27278,14 @@ function skItogPol(){
     const otst = fmt(p.otstup);
     let slova;
     if(p.odin){
+      // ОТСТУП БОЛЬШЕ СЕМИ ЗДЕСЬ — ВЫБОР, И СКАЗАТЬ НАДО ИМЕННО ТАК.
+      // Владелец 17 сентября 2026: «в данном случае выбираем 7-8.5».
+      // Прежний текст назывался причиной («на два витка нужно 17 см»),
+      // а звучал как оправдание; мастеру важно знать, что это решение,
+      // а не промах приложения, — иначе он полезет исправлять.
       slova = `Пол узкий: помещается один виток, посередине, в ${otst} см от стен вдоль него — шага здесь нет.`
         + (p.otstup > SK_POL_OTSTUP_MAX
-            ? ` Отступ больше обычных ${fmt(SK_POL_OTSTUP)}–${fmt(SK_POL_OTSTUP_MAX)} см: на два витка нужно хотя бы ${fmt(p.naDva)} см ширины.`
+            ? ` Это выбор, а не недоработка: на два витка нужно хотя бы ${fmt(p.naDva)} см ширины, а сжимать шаг ниже ${fmt(SK_POL_SHAG_MIN)} см мы не берёмся — кабель на повороте гнётся круче, чем можно. Один виток посередине, в ${fmt(SK_POL_OTSTUP_MAX)}–${fmt(p.naDva / 2)} см от стен, лучше двух впритирку.`
             : '');
     } else {
       const rovno = `витки встают ровно, отступ у обеих стен вдоль витков одинаковый — ${otst} см`;
@@ -26697,9 +27299,21 @@ function skItogPol(){
       else if(r.shagZadan && Math.abs(r.shag - r.shagCel) >= 0.5)
         slova += ` Ближе к вашему числу ровно не встать: отступ вышел бы меньше ${fmt(SK_POL_OTSTUP)} или больше ${fmt(SK_POL_OTSTUP_MAX)} см.`;
     }
-    slova += ` У стен поперёк витков до макушки поворота — ${fmt(SK_POL_OTSTUP)} см.`;
-    if((r.kuski && r.kuski.length) || r.kontur)
-      slova += ` Ровный отступ подобран у крайних стен; у выступов, косых стен и серых кусков он выходит свой, но не меньше ${fmt(SK_POL_OTSTUP)} см.`;
+    // Один виток — поворотов нет вовсе, и говорить про их макушки нечего.
+    if(!p.odin) slova += ` У стен поперёк витков до макушки поворота — ${fmt(SK_POL_OTSTUP)} см.`;
+    // «ТОЖЕ В 5–7» — ТОЛЬКО КОГДА СПИСОК ПУСТ. Прежде эта половина зависела
+    // от `dostup`, и пол с нишей получал «но тоже в 5–7 см», а строкой ниже
+    // примечание перечисляло стены с отступом 7,5 и 8,7. Две подписи об одном
+    // и том же спорили друг с другом на одном экране.
+    if((r.kuski && r.kuski.length) || r.kontur){
+      const dal = r.daleko || [];
+      slova += ` Ровный отступ подобран у крайних стен; у выступов, косых стен и серых кусков он выходит свой, но не ближе ${fmt(SK_POL_OTSTUP)} см`
+        + (!dal.length
+            ? ` и не дальше ${fmt(SK_POL_OTSTUP_MAX)} см: где витки легли дальше, линия подогнута к стене.`
+            : dal.some(w=> w.dostup)
+              ? `. Где витки легли дальше ${fmt(SK_POL_OTSTUP_MAX)} см, линия подогнута к стене, но удалось это не везде — об этом ниже.`
+              : `. Есть места, куда кабелю не встать вовсе, — они перечислены ниже.`);
+    }
     kakKlast = `<div class="sk-chisla uzkiy">
         <div><span>шаг</span><b>${p.odin ? '—' : fmt(r.shag) + ' см'}</b></div>
         <div><span>от стен</span><b>${otst} см</b></div>
@@ -26762,6 +27376,26 @@ function skItogPol(){
   const proNachalo = (r.podhod > 0)
     ? `Где стоит термостат, приложение не знает. Начало линии поставлено в тупиковый угол — туда, куда иначе пришлось бы заходить петлёй и возвращаться: кабель подходит к углу вдоль стены, в ${fmt(SK_POL_OTSTUP)} см от неё, и оттуда начинает змейку. Подход — ${fmt(Math.round(r.podhod * 100))} см, он в метраже.`
     : `Где стоит термостат и с какой стороны заходит холодный конец, приложение не знает, поэтому начало укладки не показывает.`;
+  // ОТСТУП 5–7 СМ, ОБА ПРЕДЕЛА ЖЁСТКИЕ (владелец 17 сентября 2026: «от стены
+  // не менее 5 см, но не более 7»). Где кабель дальше семи, говорим словами
+  // и различаем два случая — для мастера они разные:
+  // · место, куда кабель не проходит: повороту там не встать, не подойдя
+  //   к стенам ближе пяти. Кабеля там нет намеренно;
+  // · стена, до которой дойти можно, а доводка (`skOtstupDovesti`) линию
+  //   не довела. Это недоработка приложения, и молчать о ней нельзя.
+  const daleko = r.poZmeyke ? (r.daleko || []) : [];
+  const nishi = daleko.filter(w=> !w.dostup), nedovedeno = daleko.filter(w=> w.dostup);
+  const stenki = (sp)=>{
+    const t = sp.slice(0, 5).map(w=> `${w.kusok ? 'край куска' : 'стенка'} ${fmt(Math.round(w.dlina * 100))} см — отступ ${fmt(Math.round(w.d * 1000) / 10)} см`);
+    if(sp.length > 5) t.push(`и ещё ${sp.length - 5}`);
+    return t.join('; ');
+  };
+  let proOtstup = '';
+  if(nishi.length)
+    proOtstup += `Кабель не заходит туда, где ему не развернуться, не подойдя к стенам ближе ${fmt(SK_POL_OTSTUP)} см: ${stenki(nishi)}. Там отступ больше ${fmt(SK_POL_OTSTUP_MAX)} см намеренно — кабеля в таком месте нет.`;
+  if(nedovedeno.length)
+    proOtstup += (proOtstup ? ' ' : '') + `Не у всех стен удалось удержать отступ ${fmt(SK_POL_OTSTUP)}–${fmt(SK_POL_OTSTUP_MAX)} см: ${stenki(nedovedeno)}. Кабель туда подвести можно, но приложение линию не довело — при укладке подведите его к ${nedovedeno.length > 1 ? 'этим стенам' : 'этой стене'} ближе.`;
+  if(proOtstup) proOtstup = `<div class="mat-note">${proOtstup}</div>`;
   const proTesno = (r.shag < SK_POL_SHAG_MIN)
     ? `<div class="mat-note">Шаг ${fmt(r.shag)} см — так класть не стоит: на повороте кабель пришлось бы согнуть радиусом ${fmt(Math.round(r.shag * 5) / 10)} см, а греющий кабель круче 3,5 см не гнут — жила ломается. Посчитали как просили, решать вам.</div>`
     : '';
@@ -26778,11 +27412,11 @@ function skItogPol(){
       ${skPolOtkuda(d)}
       ${skPolKartinka(r)}
       ${r.poRazmeram ? `<div class="mat-note">Серым — то, что не греем. Схема рисует ровно те куски, которые вычтены: разойтись им нельзя.${
-        zmeyka.length ? ` Оранжевым — кабель${r.linii > 1 ? '' : ' одной линией'}: ${vitkov} ${plural(vitkov,'виток','витка','витков')} через ${fmt(r.shag)} см, повороты полукругом шириной в шаг.${((r.kuski && r.kuski.length) || r.kontur) ? ' Куски и выступы стен линия огибает: в часть пола сбоку от них заходит петлёй и возвращается, между половинами петли остаётся прорезь.' : ''} Кабель нигде не подходит к стенам и к серым кускам ближе ${fmt(SK_POL_OTSTUP)} см — ни виток, ни поворот: поворот выгибается наружу, поэтому торцы витков стоят на полшага дальше.` : (r.vitkiEst ? ` Витки на этот пол встают, но линию по ним приложение проложить не смогло — это сбой, кабель не рисуем.` : (!r.podbor
+        zmeyka.length ? ` Оранжевым — кабель${r.linii > 1 ? '' : ' одной линией'}: ${vitkov} ${plural(vitkov,'виток','витка','витков')} через ${fmt(r.shag)} см, повороты полукругом шириной в шаг.${((r.kuski && r.kuski.length) || r.kontur) ? ' Куски и выступы стен линия огибает: в часть пола сбоку от них заходит петлёй и возвращается, между половинами петли остаётся прорезь.' : ''} Кабель нигде не подходит к стенам и к серым кускам ближе ${fmt(SK_POL_OTSTUP)} см — ни виток, ни поворот: поворот выгибается наружу, поэтому торцы витков стоят на полшага дальше.${(r.daleko && r.daleko.length) ? '' : ` И дальше ${fmt(SK_POL_OTSTUP_MAX)} см от них не отходит.`}` : (r.vitkiEst ? ` Витки на этот пол встают, но линию по ним приложение проложить не смогло — это сбой, кабель не рисуем.` : (!r.podbor
           ? ` Пол в ширину меньше ${fmt(2 * SK_POL_OTSTUP)} см: от каждой стены кабель держат не ближе ${fmt(SK_POL_OTSTUP)} см, и виткам не остаётся места ни при каком шаге. Кабель не рисуем.`
           : ` При шаге ${fmt(r.shag)} см кабель на такой пол не уложить: после отступа ${fmt(SK_POL_OTSTUP)} см от стен и кусков виткам негде встать. Кабель не рисуем.`))}</div>
       ${(zmeyka.length && r.linii > 1) ? `<div class="mat-note">Одной линией этот пол не уложить: куски отгородили часть пола — прохода к ней нет или он уже двух отступов, и витку туда не пройти. Нарисовано ${r.linii} ${plural(r.linii,'линия','линии','линий')}, метраж выше — их сумма.</div>` : ''}
-      ${proTupiki}
+      ${proTupiki}${proOtstup}
       ${zmeyka.length ? `<div class="mat-note">Это схема шага, а не план монтажа. ${proNachalo} Метраж выше — длина этой самой линии: столько кабеля укладывается на такой пол при таком шаге. Обычно это меньше, чем площадь, делённая на шаг, — от стен и от серых кусков отступают, и полоса вдоль них остаётся без кабеля. Повороты считаны дугами, а не углами: кабель квадратом не загнёшь, и полукруг длиннее прямого угла примерно в полтора раза — эти метры тоже в числе.</div>` : ''}` : ''}
       <div class="mat-note">Мата берут ровно на обогреваемую площадь: он режется по сетке, а шаг внутри него задан на заводе и от нашего шага не зависит.</div>
     </div>`;
@@ -27026,7 +27660,7 @@ function skTeloPol(){
         <div class="mat-note">· Напольный унитаз — не греют вовсе. Подвесной на инсталляции — греют примерно половину пятна: чаша висит, ноги под ней нет.</div>
         <div class="mat-note">· Подвесная раковина — греют, пол под ней свободен. А тумба или пьедестал, стоящие на полу, — вычитаются, как любая мебель в пол.</div>
         <div class="mat-note">· Душевая — как решите. Готовый поддон, акриловый или стальной, не греют; выложенную плиткой с трапом греют, и всё чаще.</div>
-        <div class="mat-note">· От стен и от того, что не греем, кабель держат не ближе ${fmt(SK_POL_OTSTUP)} см, обычно 5–7. Отдельно вычитать этот отступ не надо — схема и метраж его уже учли.</div>
+        <div class="mat-note">· От стен и от того, что не греем, кабель держат не ближе ${fmt(SK_POL_OTSTUP)} и не дальше ${fmt(SK_POL_OTSTUP_MAX)} см. Отдельно вычитать этот отступ не надо — схема и метраж его уже учли.</div>
       </div>
       <div class="cust-grid">
         ${skPole('pol','shag','Шаг укладки, см', {placeholder:'пусто — ' + fmt(SK_POL_SHAG) + ' (обычно 7–8)'})}
