@@ -3353,13 +3353,31 @@
   .extra-group-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;
     flex-wrap:wrap;margin:0 0 8px;padding-bottom:5px;border-bottom:1px solid var(--paper-line);
     font-size:12px;font-weight:600;color:var(--ink-soft);}
-  .extra-group-sum{font-family:'JetBrains Mono',monospace;font-weight:500;white-space:nowrap;}
+  /* СУММЫ И КНОПКА — СОСЕДИ, А НЕ ОДНО ЦЕЛОЕ (задача 2026-09-17-02).
+     Кнопка «снять подписание» лежала внутри блока сумм, а у блока был
+     запрет переноса: вся строка «позиции · сумма · исключено · снять
+     подписание» обязана была встать целиком и на телефоне обрезалась.
+     Теперь кнопка — отдельный сосед в .extra-group-pravo и уходит
+     на свою строку сама. Числа по-прежнему не рвутся: запрет переноса
+     стоит на каждой части («14 позиций ·», «35 555 544 ₽ ·»,
+     «исключено 2 850 000 ₽»), а переносится только в стыке между
+     частями. Запрет на весь блок не годился: «8 позиций · 245 000 ₽ ·
+     исключено 120 000 ₽» — это 43 знака, а на 375 точек влезает 42. */
+  .extra-group-sum{font-family:'JetBrains Mono',monospace;font-weight:500;}
+  .extra-sum-chast{white-space:nowrap;}
+  /* Отступ между суммами и кнопкой прежний: пробел моноширинного шрифта
+     (7 точек) плюс 12 точек старого отступа кнопки. Отступ перенесён
+     в промежуток, чтобы перенесённая кнопка не съезжала вправо. */
+  /* Шрифт обёртки — моноширинный: кнопка берёт его через inherit, как брала,
+     пока лежала внутри блока сумм. Без этого надпись сменила бы шрифт. */
+  .extra-group-pravo{display:flex;flex-wrap:wrap;align-items:baseline;column-gap:19px;row-gap:6px;min-width:0;
+    font-family:'JetBrains Mono',monospace;}
   .extra-row-frozen{opacity:.72;}
   .extra-zamok{display:flex;align-items:center;justify-content:center;width:28px;font-size:13px;opacity:.55;cursor:default;}
   .ew-podpisat{font-size:13px;padding:8px 16px;}
   .extra-zamok{opacity:.55;font-size:13px;}
   .extra-zamok:hover{opacity:1;}
-  .extra-rassp{background:none;border:none;padding:0 0 0 12px;margin:0;
+  .extra-rassp{background:none;border:none;padding:0;margin:0;white-space:nowrap;
     font-family:inherit;font-size:11px;font-weight:500;color:var(--ink-soft);
     text-decoration:underline;text-underline-offset:2px;cursor:pointer;}
   .extra-rassp:hover{color:var(--orange);}
@@ -4199,7 +4217,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-17-282';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-17-283';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -19981,6 +19999,11 @@ function renderExtraWorksBlock(proj){
                              title="Вернуть позицию в смету">вернуть</button>` : ''}
     </div>`;
 
+  // Части итога в шапке группы: каждая неразрывна, «·» держится
+  // за предыдущей частью, чтобы перенесённая строка не начиналась с точки.
+  // Пустые части выпадают вместе со своим разделителем.
+  const sumChasti = chasti => chasti.filter(Boolean).map((t,k,a)=>
+    `<span class="extra-sum-chast">${t}${k < a.length - 1 ? ' ·' : ''}</span>`).join(' ');
   const gruppy = dopNomera(proj).map(nom=>{
     const svoi = vse.map((e,i)=>({e,i})).filter(x=> (x.e.dopNo||'').trim() === nom);
     const sum = svoi.reduce((a,x)=> a + num(x.e.qty)*num(x.e.price), 0);
@@ -19991,9 +20014,13 @@ function renderExtraWorksBlock(proj){
     return `<div class="extra-group">
       <div class="extra-group-head">
         <span>Соглашение № ${escapeHtml(nom)}${dat ? ' от ' + fmtDate(dat) : ''} · подписано</span>
-        <span class="extra-group-sum">${vsegoStrok} ${plural(vsegoStrok,'позиция','позиции','позиций')} · ${sum ? fmtMoney(sum) : ''}${
-          isk.length ? `${sum ? ' · ' : ''}исключено ${fmtMoney(iskSum)}` : ''}
-          <button class="extra-rassp" data-dop-rassp="${escapeAttr(nom)}" title="Вернуть в черновик всё соглашение — и добавленные работы, и исключённые позиции">снять подписание</button></span>
+        <span class="extra-group-pravo">
+          <span class="extra-group-sum">${sumChasti([
+            vsegoStrok + ' ' + plural(vsegoStrok,'позиция','позиции','позиций'),
+            sum ? fmtMoney(sum) : '',
+            isk.length ? 'исключено ' + fmtMoney(iskSum) : ''])}</span>
+          <button class="extra-rassp" data-dop-rassp="${escapeAttr(nom)}" title="Вернуть в черновик всё соглашение — и добавленные работы, и исключённые позиции">снять подписание</button>
+        </span>
       </div>
       ${svoi.map(x=> stroka(x.e, x.i, true)).join('')}
       ${isk.map(x=> iskStroka(x, false)).join('')}
@@ -20012,8 +20039,9 @@ function renderExtraWorksBlock(proj){
   const rows = gruppy + `<div class="extra-group extra-group-open">
       ${shapkaChern ? `<div class="extra-group-head">
         <span>Ещё не подписано · войдёт в соглашение № ${escapeHtml(dopSleduyuschiyNomer(proj))}</span>
-        <span class="extra-group-sum">${podpis ? fmtMoney(podpis) : ''}${
-          chern.length ? `${podpis ? ' · ' : ''}исключено ${fmtMoney(chernSum)}` : ''}</span></div>` : ''}
+        <span class="extra-group-sum">${sumChasti([
+          podpis ? fmtMoney(podpis) : '',
+          chern.length ? 'исключено ' + fmtMoney(chernSum) : ''])}</span></div>` : ''}
       ${svobodnye.map(x=> stroka(x.e, x.i, false)).join('')}
       ${chern.map(x=> iskStroka(x, true)).join('')}
     </div>`;
