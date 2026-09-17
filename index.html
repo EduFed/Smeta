@@ -4217,7 +4217,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-17-283';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-17-284';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -24807,7 +24807,13 @@ function skPolRaschet(d){
   // ФОРМА ЕСТЬ — ШАГ ПОДБИРАЕМ ПОД НЕЁ (`skShagPodobrat`). Поперёк витков
   // идёт короткая сторона габарита: витки кладутся вдоль длинной.
   // Формы нет — подбирать не подо что, шаг тот, что просили.
-  const podbor = poRazmeram ? skShagPodobrat(Math.min(dlina, shirina), shagCel) : null;
+  // НАПРАВЛЕНИЕ — ОДНО НА ПОДБОР ШАГА И НА ЗМЕЙКУ. По умолчанию вдоль
+  // длинной стороны; кнопка разворачивает на 90°. Поперёк витков идёт
+  // та сторона, по которой витки и считаются, — её и отдаём подбору.
+  // Без разворота это ровно прежний `Math.min(dlina, shirina)`.
+  const poperyok = d.vitki === 'poperyok';
+  const vdolX = poperyok ? !(dlina >= shirina) : (dlina >= shirina);
+  const podbor = poRazmeram ? skShagPodobrat(vdolX ? shirina : dlina, shagCel) : null;
   const shag = podbor ? podbor.shag : shagCel;
 
   // МЕТРАЖ БЕРЁТСЯ ИЗ ТОЙ ЖЕ ЗМЕЙКИ, ЧТО РИСУЕТСЯ. Решение владельца
@@ -24824,7 +24830,7 @@ function skPolRaschet(d){
   // без кабеля: отсюда разница. Мастеру нужно число, от которого
   // он пляшет, — сколько кабеля ВЛЕЗЕТ при таком шаге. Купив 80 м туда,
   // где ложится 73, он будет класть теснее и узнает об этом уже на полу.
-  const otrezki = poRazmeram ? skZmeykaOtrezki(dlina, shirina, shag / 100, kuski, kontur, podbor ? podbor.vitkov : 0) : [];
+  const otrezki = poRazmeram ? skZmeykaOtrezki(dlina, shirina, shag / 100, kuski, kontur, podbor ? podbor.vitkov : 0, vdolX) : [];
   const poZmeyke = otrezki.reduce((a, g)=> a + skZvenoDlina(g), 0);
   // ФОРМЫ НЕТ — ЗМЕЙКИ НЕТ. Площадь, заданная одним числом, формы не даёт
   // (6 м² — это и 3×2, и 6×1), построить по ней змейку не из чего. То же
@@ -24842,6 +24848,9 @@ function skPolRaschet(d){
     brutto:brutto, snyato:snyato, ploschad:ploschad,
     shag:shag, shagZadan:(shagZadan > 0), shagCel:shagCel, podbor:podbor, dlinaKabelya:dlinaKabelya,
     otrezki:otrezki, poZmeyke:(poZmeyke > 0), linii:linii,
+    // Повороты — дуги змейки. Ради их числа мастер и выбирает направление:
+    // метраж от разворота почти не меняется, а поворотов бывает впятеро больше.
+    poperyok:poperyok, vdolX:vdolX, povorotov:otrezki.filter(g=> g.duga).length,
     // Витки на полу встают, а линии досталось не всему (см. конец
     // `skZmeykaOtrezki`). Должно быть нулём всегда; не ноль — сбой.
     vitkiEst:!!otrezki.vitkiEst, bezLinii:(otrezki.bezLinii || 0),
@@ -24908,7 +24917,11 @@ function skPustoy(){
   // поправил его мастер или нет). Пусто — считаем размерами, как
   // в магазине: калькулятор работает без проекта и останется таким
   // (решение владельца 3 сентября 2026).
-  pol: { imya:'', dlina:'', shirina:'', shag:'', ploschad:'', kontur:null, iz:null, proyomy: [] }
+  pol: { imya:'', dlina:'', shirina:'', shag:'', ploschad:'', kontur:null, iz:null, proyomy: [],
+         // Направление витков: пусто — вдоль длинной стороны (как было до
+         // сборки 284), 'poperyok' — развёрнуты на 90°. Строкой, чтобы
+         // память экрана калькулятора подхватила его сама (`skZagruzit`).
+         vitki:'' }
   };
 }
 
@@ -24974,13 +24987,15 @@ let skPolOkno = null;   // { room, proj, pol, razdel }
 // обработчик не забудет сохранить.
 function skSohranit(){
   if(skPolOkno){
-    // Из помещения храним только то, что мастер ввёл сам: куски и шаг.
+    // Из помещения храним только то, что мастер ввёл сам: куски, шаг
+    // и направление витков.
     // Форма, площадь и название приходят из помещения при каждом открытии.
     let vse = skChitat(SK_VVOD_POL, {});
     if(Array.isArray(vse)) vse = {};
     const proyomy = SK.pol.proyomy || [];
-    if((SK.pol.shag || '') === '' && !proyomy.length) delete vse[skPolOkno.room.id];
-    else vse[skPolOkno.room.id] = { shag: SK.pol.shag || '', proyomy: proyomy };
+    // Направление — тоже ввод: запись с одним только разворотом не пустая.
+    if((SK.pol.shag || '') === '' && !proyomy.length && (SK.pol.vitki || '') === '') delete vse[skPolOkno.room.id];
+    else vse[skPolOkno.room.id] = { shag: SK.pol.shag || '', proyomy: proyomy, vitki: SK.pol.vitki || '' };
     skPisat(SK_VVOD_POL, vse);
     return;
   }
@@ -25576,10 +25591,16 @@ function skKusokBlizko(d, t, r){
 // очертания, витки по-прежнему идут через шаг по всему габариту, а вот
 // полосу, на которой виток лежит, считает контур: отрезок, вышедший
 // за очертание, не рисуется и в длину не идёт.
-function skZmeykaOtrezki(dlina, shirina, shagM, kuski, kontur, vitkovZadano){
+function skZmeykaOtrezki(dlina, shirina, shagM, kuski, kontur, vitkovZadano, vdolZadano){
   const eps = 1e-9;
   if(!(dlina > 0) || !(shirina > 0) || !(shagM > 0)) return [];
-  const vdol = dlina >= shirina;          // виток идёт по оси X
+  // НАПРАВЛЕНИЕ ВИТКОВ ПРИХОДИТ СНАРУЖИ (сборка 284, кнопка «развернуть
+  // на 90°»). Решает его `skPolRaschet`, и решает ОДИН РАЗ: подбор шага
+  // считает витки поперёк того же направления. Раньше обе стороны сами
+  // брали длинную сторону — развернув только здесь, получили бы витки
+  // одного направления и их число от другого (коридор 5×1,2: 17 м вместо 75).
+  // Не передали — прежнее правило: вдоль длинной стороны.
+  const vdol = (typeof vdolZadano === 'boolean') ? vdolZadano : (dlina >= shirina);   // виток идёт по оси X
   const L = vdol ? dlina : shirina;       // длина витка
   const S = vdol ? shirina : dlina;       // поперёк — по ней считаем витки
   // ОТСТУП — ДО БЛИЖАЙШЕЙ ЧАСТИ КАБЕЛЯ (владелец 16 сентября 2026:
@@ -26635,7 +26656,12 @@ function skItogPol(){
   const zmeyka = skPolZmeyka(r);
   // Виток, разрезанный куском надвое, остаётся ОДНИМ витком: считаем
   // не отрезки, а положения, на которых они стоят.
-  const vdolX = r.dlina >= r.shirina;
+  // Направление — у расчёта (`r.vdolX`), а не своим выражением. Прежде здесь
+  // стояло `r.dlina >= r.shirina`, и после кнопки разворота (сборка 284)
+  // подпись искала горизонтальные витки среди вертикальных: «витков 0»
+  // при 65 поворотах. Третье место с тем же решением о направлении —
+  // ровно то, что расходится молча (грабля 83).
+  const vdolX = r.vdolX;
   const polozheniya = {};
   zmeyka.forEach(g=>{
     const vitok = !g.duga && (vdolX ? Math.abs(g.y1 - g.y2) < 1e-9 : Math.abs(g.x1 - g.x2) < 1e-9);
@@ -26678,6 +26704,7 @@ function skItogPol(){
         <div><span>шаг</span><b>${p.odin ? '—' : fmt(r.shag) + ' см'}</b></div>
         <div><span>от стен</span><b>${otst} см</b></div>
         <div><span>витков</span><b>${vitkov}</b></div>
+        <div><span>поворотов</span><b>${r.povorotov}</b></div>
       </div>
       <div class="mat-note">${slova}</div>`;
   }
@@ -26826,6 +26853,7 @@ function skPolIzPomescheniya(room, proj){
   if(bylo && typeof bylo === 'object' && !Array.isArray(bylo)){
     SK.pol.shag = skStroka(bylo.shag);
     SK.pol.proyomy = skProyomyIz(bylo.proyomy);
+    SK.pol.vitki = (bylo.vitki === 'poperyok') ? 'poperyok' : '';
   }
   SK.razdel = 'pol';
   // ФОРМУ БЕРЁМ, ПЛОЩАДЬ СТАВИМ ПОДСКАЗКОЙ. Готовое число в поле
@@ -27002,7 +27030,13 @@ function skTeloPol(){
       </div>
       <div class="cust-grid">
         ${skPole('pol','shag','Шаг укладки, см', {placeholder:'пусто — ' + fmt(SK_POL_SHAG) + ' (обычно 7–8)'})}
-        <div></div>
+        <div class="cust-field">
+          <label>Витки</label>
+          <div class="calc-mode">
+            <button type="button" class="calc-mode-btn uzkiy${SK.pol.vitki==='poperyok'?'':' active'}" data-sk-pol-vitki="" title="Витки вдоль длинной стороны пола — поворотов меньше">Вдоль</button>
+            <button type="button" class="calc-mode-btn uzkiy${SK.pol.vitki==='poperyok'?' active':''}" data-sk-pol-vitki="poperyok" title="Развернуть витки на 90°">Поперёк</button>
+          </div>
+        </div>
       </div>
       <div id="skItog">${skItogPol()}</div>`;
 }
@@ -27216,6 +27250,12 @@ function skAttach(koren){
       const o = proyomySpiska(adr)[parseInt(i)];
       if(o){ o.kray = v; skPererisovat(); }
     };
+  });
+  // Направление витков тёплого пола. Перерисовываем целиком: меняются
+  // подсветка, схема, шаг и метраж. `skPererisovat` сохранит выбор
+  // и перерисует окно помещения, если расчёт открыт из него.
+  main.querySelectorAll('[data-sk-pol-vitki]').forEach(el=>{
+    el.onclick = ()=>{ SK.pol.vitki = el.getAttribute('data-sk-pol-vitki'); skPererisovat(); };
   });
   main.querySelectorAll('[data-sk-pr-add]').forEach(el=>{
     el.onclick = ()=>{
