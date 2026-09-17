@@ -3453,6 +3453,12 @@
      `.sk-podzag`, текст тот же `.mat-note`. Класс нужен только ради
      отступов между строчками — без них список слипается в кашу. */
   .sk-pamyatka{margin:14px 0;}
+  /* ОЧИСТКА — В САМОМ НИЗУ, ЗА ЧЕРТОЙ. Видна, но не под рукой: тем же
+     движением, каким набирают и смотрят итог, её не задеть. */
+  .sk-ochistka{display:flex;align-items:center;justify-content:space-between;gap:12px;
+    flex-wrap:wrap;margin-top:28px;padding-top:14px;border-top:1px solid var(--paper-line);}
+  .sk-ochistka .mat-note{flex:1 1 220px;}
+  .sk-ochistka .btn{flex:none;}
   .sk-pamyatka .mat-note{margin-bottom:5px;}
   .sel-work.pozicia-isklyuchena .sel-work-name{text-decoration:line-through;opacity:.55;}
   .sel-work.pozicia-isklyuchena .wsum{text-decoration:line-through;opacity:.55;}
@@ -4193,7 +4199,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-17-280';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-17-281';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -5070,8 +5076,8 @@ const OKNA_ZAKRYVAEMYE = [
   // окна к списку тогда не добавили — оба заведены позже.
   ['previewOverlay',   ()=> hidePreview()],
   ['otmOverlay',       ()=> otmClose()],
-  // Тёплый пол из помещения. Ничего не теряется: расчёт не сохраняется,
-  // обратно в смету не уходит, открыл заново — форма подставилась снова.
+  // Тёплый пол из помещения. Ничего не теряется: куски и шаг хранятся
+  // на устройстве, в смету ничего не уходит, форма подставится снова.
   ['skPolOverlay',     ()=> skPolOknoZakryt()]
 ];
 
@@ -21056,8 +21062,8 @@ function fotoBlokPokazat(roomId, open){
 //
 // Замер по отдельным поверхностям (мансарда, стена с фронтоном) переехал
 // в строительный калькулятор, раздел «Площади»: там ручная прикидка
-// по своей природе, и там ничего не хранится по решению владельца —
-// значит и терять нечего.
+// по своей природе, и набранное хранится на устройстве (владелец
+// 16 сентября 2026), а не пропадает при перезагрузке.
 function renderGeometryBlock(room){
   return `<div class="geometry-block">${renderDimsBlock(room)}</div>`;
 }
@@ -24184,16 +24190,36 @@ let tcSelRect  = null;        // выделенная на схеме плитк
 // и ошибка стала бы виной приложения, а не опечаткой.
 
 const SK_PAMYAT = 'skalk-pamyat-v1';   // последнее введённое — ПОДСКАЗКОЙ, не значением
+const SK_VVOD = 'skalk-vvod-v1';       // набранное на экране калькулятора, все пять разделов
+const SK_VVOD_POL = 'skalk-pol-pomescheniya-v1';   // тёплый пол из помещения: номер помещения → куски и шаг
 
+// ХРАНИЛИЩЕ УСТРОЙСТВА — ОДНА ОБЁРТКА НА ВЕСЬ КАЛЬКУЛЯТОР. Через неё
+// ходят и подсказки «в прошлый раз», и сам набранный ввод; второго
+// способа не заводим.
+//
+// Хранилище может не открыться вовсе: частное окно, запрет в браузере,
+// переполнение. Тогда чтение отдаёт запасное, запись молча не удаётся,
+// и калькулятор работает без памяти — но работает и не падает.
+function skChitat(klyuch, zapas){
+  try{ const o = JSON.parse(localStorage.getItem(klyuch) || 'null');
+       return (o && typeof o === 'object') ? o : zapas; }catch(_){ return zapas; }
+}
+function skPisat(klyuch, obj){
+  try{ localStorage.setItem(klyuch, JSON.stringify(obj)); return true; }catch(_){ return false; }
+}
+function skHranilischeEst(){
+  try{ localStorage.setItem('skalk-proba', '1'); localStorage.removeItem('skalk-proba'); return true; }
+  catch(_){ return false; }
+}
 function skPamyat(){
-  try{ const o = JSON.parse(localStorage.getItem(SK_PAMYAT) || '{}');
-       return (o && typeof o === 'object') ? o : {}; }catch(_){ return {}; }
+  const o = skChitat(SK_PAMYAT, {});
+  return Array.isArray(o) ? {} : o;
 }
 function skZapomnit(klyuch, znachenie){
   const v = String(znachenie === null || znachenie === undefined ? '' : znachenie).trim();
   if(!v) return;
   const o = skPamyat(); o[klyuch] = v;
-  try{ localStorage.setItem(SK_PAMYAT, JSON.stringify(o)); }catch(_){}
+  skPisat(SK_PAMYAT, o);
 }
 
 // ---------- ЛИСТОВОЙ МАТЕРИАЛ: НАСТОЯЩАЯ РАСКЛАДКА ----------
@@ -24794,10 +24820,25 @@ function skPolRaschet(d){
   }, forma);
 }
 
-// Что набрано в калькуляторе. Живёт, пока открыта вкладка: это прикидка,
-// а не документ, и хранить её в проекте незачем (решение владельца —
-// «отдельно от проектов»).
-let SK = {
+// ЧТО НАБРАНО В КАЛЬКУЛЯТОРЕ — ХРАНИТСЯ НА УСТРОЙСТВЕ.
+//
+// Владелец 16 сентября 2026: «расчёты должны сохраняться. Просто я могу
+// себе посчитать заранее и закрыть, потом получается заново нужно данные
+// вводить. Нужно сделать, чтоб данные сохранились, а очистить можно
+// только принудительно». Это отменяет прежнее решение от 3 сентября
+// («живёт, пока открыта вкладка»): прикидка оказалась не одноразовой.
+//
+// На устройстве, а не в проекте и не в базе: калькулятор работает без
+// проекта и без входа (решение владельца 3 сентября 2026 остаётся).
+//
+// ХРАНИМ ВВЕДЁННОЕ, А НЕ ПОСЧИТАННОЕ. Итоги, схемы и змейка собираются
+// заново при каждом показе. Сохранённый итог однажды разошёлся бы
+// с тем, что даёт нынешний счёт, и врал бы уверенно.
+//
+// Стирает набранное только кнопка «Очистить» и только с вопросом
+// (см. `skOchistit`).
+function skPustoy(){
+  return {
   razdel: 'listy',
   listy: { imya:'', listD:'', listSh:'', napravlenie:'vdol', sloyov:'', zapas:'',
            // Стены списком: обрезки ходят между ними, поэтому считаются
@@ -24817,9 +24858,9 @@ let SK = {
   // перезагрузке. За всё время им не посчитали ни одной стены — 19
   // помещений в боевой базе, ни одной записи.
   //
-  // Здесь ему место: калькулятор и есть ручная прикидка, он ничего
-  // не хранит по решению владельца, и никто этого от него не ждёт.
-  // Перенесено 4 сентября 2026.
+  // Здесь ему место: калькулятор и есть ручная прикидка. Перенесено
+  // 4 сентября 2026. Набранное здесь хранится на устройстве (владелец
+  // 16 сентября 2026) — перезагрузка его больше не стирает.
   ploschadi: { imya:'', steny: [ { imya:'', shape:'rect', proyomy:[] } ] },
   // ТЁПЛЫЙ ПОЛ, электрический. Считается одно — сколько метров кабеля:
   // обогреваемая площадь, шаг, длина. Мат идёт строкой того же итога,
@@ -24836,7 +24877,135 @@ let SK = {
   // в магазине: калькулятор работает без проекта и останется таким
   // (решение владельца 3 сентября 2026).
   pol: { imya:'', dlina:'', shirina:'', shag:'', ploschad:'', kontur:null, iz:null, proyomy: [] }
-};
+  };
+}
+
+const SK_RAZDELY = { listy:'Листовой материал', bloki:'Кирпич и блоки', ploschadi:'Площади',
+                     smes:'Смеси', pol:'Тёплый пол' };
+
+// Читаем осторожно: в хранилище может лежать что угодно — от старой
+// сборки, от ручной правки, обрезок. Берём только поля, которые есть
+// в пустом состоянии, и только строками. Всё прочее — в том числе
+// посчитанное, если бы оно туда попало, — пропускается молча.
+function skStroka(v){
+  return typeof v === 'string' ? v : (typeof v === 'number' && isFinite(v)) ? String(v) : '';
+}
+function skProyomyIz(a){
+  return (Array.isArray(a) ? a : []).filter(o=> o && typeof o === 'object').map(o=>({
+    w:skStroka(o.w), h:skStroka(o.h), x:skStroka(o.x), y:skStroka(o.y), n:skStroka(o.n),
+    kray:(o.kray === 'R' ? 'R' : 'L') }));
+}
+// Поля стены задаёт её форма (у трапеции два основания, у треугольника
+// основание и высота), поэтому перечнем их не взять: берём строковые.
+function skStenyIz(a, obrazec){
+  const steny = (Array.isArray(a) ? a : []).filter(o=> o && typeof o === 'object').map(o=>{
+    const st = {};
+    Object.keys(o).forEach(k=>{
+      if(k !== 'proyomy' && (typeof o[k] === 'string' || typeof o[k] === 'number')) st[k] = skStroka(o[k]);
+    });
+    st.proyomy = skProyomyIz(o.proyomy);
+    return st;
+  });
+  return steny.length ? steny : obrazec;
+}
+function skZagruzit(pusto){
+  const b = skChitat(SK_VVOD, null);
+  if(!b || Array.isArray(b)) return pusto;
+  if(SK_RAZDELY[b.razdel]) pusto.razdel = b.razdel;
+  Object.keys(SK_RAZDELY).forEach(r=>{
+    const byl = b[r];
+    if(!byl || typeof byl !== 'object') return;
+    const cel = pusto[r];
+    Object.keys(cel).forEach(k=>{
+      // Форма пола из помещения — не ввод мастера: её берём из помещения
+      // при каждом открытии (сборки 273, 277), а не из памяти.
+      if(k === 'kontur' || k === 'iz') return;
+      if(k === 'steny') cel.steny = skStenyIz(byl.steny, cel.steny);
+      else if(k === 'proyomy') cel.proyomy = skProyomyIz(byl.proyomy);
+      else if(typeof cel[k] === 'string') cel[k] = skStroka(byl[k]) || cel[k];
+    });
+  });
+  return pusto;
+}
+
+let SK = skZagruzit(skPustoy());
+
+// ТЁПЛЫЙ ПОЛ ИЗ ПОМЕЩЕНИЯ ПОМНИТ СВОЁ ПО КАЖДОМУ ПОМЕЩЕНИЮ.
+// Пока окно открыто, здесь лежит, что было на экране калькулятора до него:
+// окно подменяет `SK.pol` помещением, закрытие возвращает экранное.
+// Иначе куски санузла всплыли бы на кухне, а кухня — на экране
+// калькулятора без проекта.
+let skPolOkno = null;   // { room, proj, pol, razdel }
+
+// Записать набранное. Зовётся из `skItogObnovit` и `skPererisovat` —
+// через одну из них проходит любая правка ввода, так что новый
+// обработчик не забудет сохранить.
+function skSohranit(){
+  if(skPolOkno){
+    // Из помещения храним только то, что мастер ввёл сам: куски и шаг.
+    // Форма, площадь и название приходят из помещения при каждом открытии.
+    let vse = skChitat(SK_VVOD_POL, {});
+    if(Array.isArray(vse)) vse = {};
+    const proyomy = SK.pol.proyomy || [];
+    if((SK.pol.shag || '') === '' && !proyomy.length) delete vse[skPolOkno.room.id];
+    else vse[skPolOkno.room.id] = { shag: SK.pol.shag || '', proyomy: proyomy };
+    skPisat(SK_VVOD_POL, vse);
+    return;
+  }
+  const o = { razdel: SK.razdel };
+  ['listy','bloki','ploschadi','smes'].forEach(r=>{ o[r] = SK[r]; });
+  const pol = Object.assign({}, SK.pol);
+  delete pol.kontur; delete pol.iz;
+  o.pol = pol;
+  skPisat(SK_VVOD, o);
+}
+
+// ОЧИСТКА — ТОЛЬКО КНОПКОЙ И ТОЛЬКО С ВОПРОСОМ. Кнопка стоит в самом
+// низу, под итогом и отдельной чертой: видна, но тем же движением,
+// каким набирают и смотрят итог, её не задеть. Стирает один раздел
+// (или куски одного помещения), а не всё сразу.
+function skOchistkaHtml(vOkne){
+  const note = !skHranilischeEst()
+    ? 'Это устройство не даёт хранить набранное: закроете — придётся вводить заново.'
+    : vOkne
+    ? 'Куски и шаг этого помещения хранятся на этом устройстве: закроете окно — останутся. Форму пола берём из помещения при каждом открытии.'
+    : 'Набранное хранится на этом устройстве: закроете — останется. Стирает его только эта кнопка, и только в этом разделе.';
+  return `<div class="sk-ochistka no-print">
+      <div class="mat-note">${note}</div>
+      <button type="button" class="btn btn-outline" data-sk-ochistit="${vOkne ? 'okno' : 'ekran'}">${vOkne ? 'Очистить куски и шаг' : 'Очистить раздел'}</button>
+    </div>`;
+}
+
+async function skOchistit(vOkne){
+  // ЧТО ОЧИЩАЕМ, ЗАПОМИНАЕМ ДО ВОПРОСА. Пока висит вопрос, окно тёплого
+  // пола под ним могут закрыть, и после ответа `SK.pol` будет уже
+  // экранным. Стереть тогда чужое хуже, чем не стереть ничего.
+  const komnata = vOkne ? (skPolOkno && skPolOkno.room) : null;
+  if(vOkne && !komnata) return;
+  const razdel = SK.razdel;
+  const da = await sprosit(vOkne
+    ? `Очистить тёплый пол помещения «${(komnata.name || '').trim() || 'без названия'}»?
+
+Сотрутся вычитаемые куски и шаг укладки этого помещения. Форма пола останется — её берём из помещения. Вернуть стёртое не получится.`
+    : `Очистить раздел «${SK_RAZDELY[razdel] || ''}»?
+
+Сотрётся всё, что набрано в этом разделе. Остальные разделы останутся как есть. Вернуть стёртое не получится.`,
+    { da:'Очистить', opasno:true });
+  if(!da) return;
+  if(vOkne){
+    let vse = skChitat(SK_VVOD_POL, {});
+    if(!Array.isArray(vse)){ delete vse[komnata.id]; skPisat(SK_VVOD_POL, vse); }
+    if(skPolOkno && skPolOkno.room.id === komnata.id){
+      skPolIzPomescheniya(skPolOkno.room, skPolOkno.proj);
+      skPererisovat();
+    }
+    return;
+  }
+  // Пока спрашивали, открылось окно помещения — экранное не трогаем.
+  if(skPolOkno || !SK_RAZDELY[razdel]) return;
+  SK[razdel] = skPustoy()[razdel];
+  skPererisovat();
+}
 
 // Поле с подсказкой последнего введённого. Подсказка — В ПУСТОМ ПОЛЕ,
 // а не значением: подставленное принимают не глядя, подсказку надо
@@ -26327,10 +26496,17 @@ function skPolIzPomescheniya(room, proj){
   // на запятую: поле читают глазами, а `num` понимает оба знака.
   const ploschad = String(Math.round(g.floorArea * 100) / 100).replace('.', ',');
   const imya = (room.name || '').trim();
-  // Помещение сменилось — вычитаемое от прошлого не переносим: куски
-  // из санузла, тихо оставшиеся в расчёте кухни, и есть та самая
-  // ошибка, ради которой видно, откуда площадь.
-  if(!SK.pol.iz || SK.pol.iz.id !== room.id) SK.pol.proyomy = [];
+  // КУСКИ СВОИ У КАЖДОГО ПОМЕЩЕНИЯ. Начинаем с пустого и берём из памяти
+  // только записанное под номером ЭТОГО помещения: куски из санузла,
+  // тихо оставшиеся в расчёте кухни, и есть та самая ошибка, ради
+  // которой видно, откуда площадь. Прежде это держалось сбросом кусков
+  // при смене помещения; теперь у каждого помещения своя запись.
+  const bylo = skChitat(SK_VVOD_POL, {})[room.id];
+  SK.pol = skPustoy().pol;
+  if(bylo && typeof bylo === 'object' && !Array.isArray(bylo)){
+    SK.pol.shag = skStroka(bylo.shag);
+    SK.pol.proyomy = skProyomyIz(bylo.proyomy);
+  }
   SK.razdel = 'pol';
   // ФОРМУ БЕРЁМ, ПЛОЩАДЬ СТАВИМ ПОДСКАЗКОЙ. Готовое число в поле
   // отменило бы форму, а с ней и схему (см. `skPolFormaEst`), поэтому
@@ -26359,9 +26535,10 @@ function skPolIzPomescheniya(room, proj){
 // Окно берём готовое — `.refcfg-overlay`, то же, что служит всем
 // остальным. Третьего вида того же самого не заводим (CLAUDE.md).
 //
-// ОБЫЧНОЕ ОКНО, а не окно решения: расчёт никуда не сохраняется, обратно
-// в помещение ничего не уходит, открыл заново — форма подставилась
-// снова. Значит крестик, Escape и щелчок мимо работают все три —
+// ОБЫЧНОЕ ОКНО, а не окно решения: закрыв его, ничего не теряешь.
+// Куски и шаг хранятся на устройстве по каждому помещению отдельно,
+// форма подставляется из помещения заново, обратно в смету ничего
+// не уходит. Значит крестик, Escape и щелчок мимо работают все три —
 // через общий список OKNA_ZAKRYVAEMYE.
 //
 // Экран калькулятора при этом остаётся как был: он открывается без
@@ -26379,7 +26556,7 @@ function skPolOknoHtml(){
       </div>
       <!-- sk-wrap нужен и здесь: он красит поля белым и ставит цифрам
            моноширинный шрифт. Тот же класс, что на экране калькулятора. -->
-      <div class="refcfg-body sk-wrap">${skTeloPol()}</div>
+      <div class="refcfg-body sk-wrap">${skTeloPol()}${skOchistkaHtml(true)}</div>
     </div>`;
 }
 
@@ -26414,11 +26591,15 @@ function skPolOknoNarisovat(){
 // Без этой развилки нажатие внутри окна перерисовывало бы страницу
 // под ним, а окно осталось бы со старой разметкой.
 function skPererisovat(){
+  skSohranit();
   if(skPolOknoOtkryto()) skPolOknoNarisovat();
   else render();
 }
 
 function skPolOknoOtkryt(room, proj){
+  // Экранное откладываем до закрытия, помещение подставляем на его место.
+  if(skPolOkno) skPolOknoVernut();
+  skPolOkno = { room: room, proj: proj, pol: SK.pol, razdel: SK.razdel };
   skPolIzPomescheniya(room, proj);
   let ov = document.getElementById('skPolOverlay');
   if(!ov){
@@ -26436,6 +26617,16 @@ function skPolOknoOtkryt(room, proj){
 function skPolOknoZakryt(){
   const ov = document.getElementById('skPolOverlay');
   if(ov){ ov.style.display = 'none'; ov.innerHTML = ''; }
+  skPolOknoVernut();
+}
+
+// Записать помещение и вернуть экрану калькулятора его собственное.
+function skPolOknoVernut(){
+  if(!skPolOkno) return;
+  skSohranit();
+  SK.pol = skPolOkno.pol;
+  SK.razdel = skPolOkno.razdel;
+  skPolOkno = null;
 }
 
 // ТЕЛО РАЗДЕЛА «ТЁПЛЫЙ ПОЛ» — ОДНО НА ДВА ВХОДА.
@@ -26577,7 +26768,7 @@ function renderSkalkView(){
         ${vkladka('smes','Смеси')}
         ${vkladka('pol','Тёплый пол')}
       </div>
-      <div class="section">${telo}</div>
+      <div class="section">${telo}${skOchistkaHtml(false)}</div>
     </div>`;
 }
 
@@ -26595,6 +26786,7 @@ function renderSkalkView(){
 // Тогда и считать можно на каждый знак — поле живёт своей жизнью,
 // отнимать у него фокус нечем.
 function skItogObnovit(koren){
+  skSohranit();
   // Ищем внутри своего корня, а не по всей странице: раздел живёт
   // в двух местах — на экране калькулятора и в окне поверх помещения
   // (грабля 49: «искали по классу, а таких на экране стало несколько»).
@@ -26613,6 +26805,9 @@ function skAttach(koren){
   const main = koren || document.getElementById('main');
   main.querySelectorAll('[data-sk-razdel]').forEach(el=>{
     el.onclick = ()=>{ SK.razdel = el.getAttribute('data-sk-razdel'); skPererisovat(); };
+  });
+  main.querySelectorAll('[data-sk-ochistit]').forEach(el=>{
+    el.onclick = ()=> skOchistit(el.getAttribute('data-sk-ochistit') === 'okno');
   });
   // Отвязаться от помещения и считать своими размерами. Без этой кнопки
   // пришедший из помещения оказался бы заперт в одном поле до перезагрузки.
