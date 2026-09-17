@@ -4217,7 +4217,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-17-286';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-17-287';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -24839,7 +24839,7 @@ function skPolRaschet(d){
   // без кабеля: отсюда разница. Мастеру нужно число, от которого
   // он пляшет, — сколько кабеля ВЛЕЗЕТ при таком шаге. Купив 80 м туда,
   // где ложится 73, он будет класть теснее и узнает об этом уже на полу.
-  const otrezki = poRazmeram ? skZmeykaOtrezki(dlina, shirina, shag / 100, kuski, kontur, podbor ? podbor.vitkov : 0, vdolX) : [];
+  const otrezki = poRazmeram ? skZmeykaOtrezki(dlina, shirina, shag / 100, kuski, kontur, podbor ? podbor.vitkov : 0, vdolX, podbor ? podbor.otstup / 100 : 0) : [];
   const poZmeyke = otrezki.reduce((a, g)=> a + skZvenoDlina(g), 0);
   // ФОРМЫ НЕТ — ЗМЕЙКИ НЕТ. Площадь, заданная одним числом, формы не даёт
   // (6 м² — это и 3×2, и 6×1), построить по ней змейку не из чего. То же
@@ -25603,7 +25603,7 @@ function skKusokBlizko(d, t, r){
 // очертания, витки по-прежнему идут через шаг по всему габариту, а вот
 // полосу, на которой виток лежит, считает контур: отрезок, вышедший
 // за очертание, не рисуется и в длину не идёт.
-function skZmeykaOtrezki(dlina, shirina, shagM, kuski, kontur, vitkovZadano, vdolZadano){
+function skZmeykaOtrezki(dlina, shirina, shagM, kuski, kontur, vitkovZadano, vdolZadano, celZadan){
   const eps = 1e-9;
   if(!(dlina > 0) || !(shirina > 0) || !(shagM > 0)) return [];
   // НАПРАВЛЕНИЕ ВИТКОВ ПРИХОДИТ СНАРУЖИ (сборка 284, кнопка «развернуть
@@ -25624,6 +25624,29 @@ function skZmeykaOtrezki(dlina, shirina, shagM, kuski, kontur, vitkovZadano, vdo
   // и для кусков — так было и до этого. Исключение — один виток
   // на голом полу, см. `odinProstoy` ниже.
   const zazor = SK_POL_OTSTUP / 100;
+  // ОТСТУП У ВСЕХ СТЕН ОДИН. Владелец 17 сентября 2026, посмотрев на схему
+  // своего санузла: «судя по фото отступ от стены везде разный. Можно данный
+  // разброс привести к одному среднему значению?»
+  //
+  // Разброс брался оттуда, что пять сантиметров — это ПРЕДЕЛ, а не цель.
+  // У крайних витков своё число давал подбор шага (5–7 см), а торцы витков
+  // вставали ровно в предел. На «Арфе» выходило 6,15 см у одного края
+  // и 5,0 у другого, и глазом это видно.
+  //
+  // Теперь цель одна на комнату — та, что подобрал шаг (`podbor.otstup`),
+  // и в неё встают все стены очертания. Одно число на комнату, а не на все
+  // комнаты: ширина пола связывает отступ с шагом
+  // (S = 2·отступ + (витков−1)·шаг), и держать оба разом нельзя.
+  // Шаг важнее — он стандарт владельца.
+  //
+  // У ВЫЧИТАЕМЫХ КУСКОВ ОСТАЁТСЯ ПРЕДЕЛ, А НЕ ЦЕЛЬ — и это проверено, а не
+  // выбрано. Ванна и тумба стоят где придётся, и отодвигание от них съедало
+  // короткие обрывки витков: полоска рядом с ванной оставалась без кабеля
+  // вовсе. Перебор 200 полов: с целью у кусков нарушений 45, с пределом 28,
+  // против 41 до правки.
+  const cel = (celZadan > 0)
+    ? Math.max(zazor, Math.min(SK_POL_OTSTUP_MAX / 100, celZadan))
+    : zazor;
   const rad = shagM / 2;                  // на столько выгибается поворот
   if(S - 2*zazor < -eps) return [];
   // ЧИСЛО ВИТКОВ ДАЁТ ПОДБОР ШАГА (`skShagPodobrat`): шаг подобран под
@@ -25641,7 +25664,7 @@ function skZmeykaOtrezki(dlina, shirina, shagM, kuski, kontur, vitkovZadano, vdo
   // разворот есть, и ей полшага нужны.
   const odinProstoy = n === 1 && !(kuski && kuski.length) && !kontur;
   const torec = odinProstoy ? 0 : rad;    // на столько торец уходит от края полосы
-  const otstup = zazor + torec;           // торец витка от стены и от куска
+  const otstup = cel + torec;             // торец витка от стены и от куска
   if(L - 2*otstup <= eps) return [];      // отступы съели виток целиком
   // Остаток делим поровну на обе стены: иначе у одной выходит ровно
   // отступ, а у другой почти на шаг больше. С подбором шага крайний виток
@@ -25662,7 +25685,7 @@ function skZmeykaOtrezki(dlina, shirina, shagM, kuski, kontur, vitkovZadano, vdo
     // контуром, её считает `mnVitokChasti` — тем же правилом «не ближе
     // отступа к стене», только стен там сколько угодно, и полос на одном
     // уровне может оказаться несколько.
-    let chasti = kontur ? mnVitokChasti(kontur, t, vdol, zazor) : [[zazor, L - zazor]];
+    let chasti = kontur ? mnVitokChasti(kontur, t, vdol, cel) : [[cel, L - cel]];
     dyry.forEach(d=>{
       const g = skKusokBlizko(d, t, zazor);
       if(g) chasti = mnVychest(chasti, g[0], g[1]);
