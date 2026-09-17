@@ -3419,6 +3419,11 @@
   .sk-chisla span{display:block;font-size:11px;color:var(--ink-soft);
     text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px;}
   .sk-chisla b{font-family:'JetBrains Mono',monospace;font-size:19px;color:var(--orange);}
+  /* Узкий вариант — три коротких числа в ряд и на телефоне: шаг, отступ,
+     витки. Тот же вид, отличается только шириной карточки (CLAUDE.md). */
+  .sk-chisla.uzkiy{gap:8px;}
+  .sk-chisla.uzkiy > div{flex:1 1 80px;min-width:0;padding:8px 10px;}
+  .sk-chisla.uzkiy b{font-size:17px;white-space:nowrap;}
   /* ПОЛЯ КАК В РАСКЛАДКЕ ПЛИТКИ — БЕЛЫЕ (правка владельца 4 сентября 2026).
      Я взял обёртку .cust-field, а у неё фон серый (var(--paper)): она
      сделана для данных заказчика, где поле — часть карточки. В расчёте
@@ -4188,7 +4193,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-17-279';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-17-280';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -24584,6 +24589,76 @@ const SK_POL_SHAG_MIN = 7;    // см
 // Тем же числом кабель держится от вычитаемых кусков — ванны, тумбы:
 // и то и другое край обогреваемого пола.
 const SK_POL_OTSTUP = 5;      // см
+// ПО-ХОРОШЕМУ — НЕ ДАЛЬШЕ СЕМИ, А ШАГ 7–8. Владелец 16 сентября 2026:
+// «если при прокладке кабеля остаётся большой зазор от стены либо впритык,
+// тогда можно как раз поиграть с шагом, в приоритете от 7-8 либо
+// приближенное к этим цифрам». См. `skShagPodobrat`.
+const SK_POL_OTSTUP_MAX = 7;  // см
+const SK_POL_SHAG_MAX = 8;    // см
+
+// ШАГ ПОДБИРАЕТСЯ ПОД КОМНАТУ (задача 2026-09-16-04). Мастер держит
+// в голове «семь-восемь» и раскладывает так, чтобы легло ровно. Поперёк
+// витков ширина пола — это два отступа и промежутки между витками:
+//   S = 2·отступ + (витков − 1)·шаг.
+// Перебираем число витков и берём шаг, ближайший к желаемому, при котором
+// отступ у обеих стен вдоль витков одинаковый и лежит в 5–7 см.
+//
+// ЖЕЛАЕМОЕ — ТО, ЧТО ВПИСАЛ МАСТЕР. Вписал 10 — подбираем вокруг десяти,
+// к восьми не тащим. Пусто — 7,5. Его число помещается — оно и остаётся,
+// до знака. Не помещается — берём ближайшее, кратное миллиметру,
+// и итог говорит «просили — легло». Поле при этом не трогаем: молча
+// поменянное число человек примет за враньё.
+//
+// ОТСТУП МЕНЬШЕ ПЯТИ НЕ БЕРЁТСЯ НИКОГДА. Больше семи — только когда пол
+// так узок, что влезает один виток (уже 17 см при шаге 7). Шаг ниже
+// желаемого и ниже семи сразу не берём: на повороте такой кабель гнут
+// круче 3,5 см (см. `SK_POL_SHAG_MIN`); один виток посередине лучше.
+//
+// Считаем в десятых долях миллиметра целыми числами: отступ ровно в 5 см
+// не должен уехать в 4,9999 от сложения дробей.
+// `S` — поперечный размер пола, м; `cel` — желаемый шаг, см.
+// Возвращает null, если отступам в 5 см не хватает самой ширины.
+function skShagPodobrat(S, cel){
+  const Su = Math.round(S * 10000), cu = Math.round(cel * 100);
+  const kLo = Math.round(SK_POL_OTSTUP * 100), kHi = Math.round(SK_POL_OTSTUP_MAX * 100);
+  if(!(cu > 0) || !(Su >= 2 * kLo)) return null;
+  const nizhe = Math.min(cu, Math.round(SK_POL_SHAG_MIN * 100));
+  let luchshiy = null;
+  const vzvesit = (m, su)=>{
+    const k2 = Su - m * su;                    // два отступа
+    // Сорт: 0 — витков несколько и шаг не мельче допустимого;
+    // 1 — один виток, отступ в пределах; 2 — один виток, отступ больше 7.
+    const sort = m > 0 ? 0 : (k2 <= 2 * kHi ? 1 : 2);
+    const v = { sort:sort, dal:(m > 0 ? Math.abs(su - cu) : 0), cent:Math.abs(k2 - (kLo + kHi)),
+                m:m, su:su, k2:k2 };
+    const luchshe = !luchshiy || v.sort < luchshiy.sort
+      || (v.sort === luchshiy.sort && (v.dal < luchshiy.dal
+        || (v.dal === luchshiy.dal && v.cent < luchshiy.cent)));
+    if(luchshe) luchshiy = v;
+  };
+  vzvesit(0, cu);
+  const mMax = Math.min(20000, Math.floor((Su - 2 * kLo) / nizhe));
+  for(let m = 1; m <= mMax; m++){
+    const sLo = Math.max(nizhe, Math.ceil((Su - 2 * kHi) / m));
+    const sHi = Math.floor((Su - 2 * kLo) / m);
+    if(sLo > sHi) continue;
+    let su;
+    if(cu >= sLo && cu <= sHi) su = cu;
+    else if(cu < sLo){ su = Math.ceil(sLo / 10) * 10; if(su > sHi) su = sLo; }
+    else { su = Math.floor(sHi / 10) * 10; if(su < sLo) su = sHi; }
+    vzvesit(m, su);
+  }
+  const b = luchshiy;
+  return {
+    shag: b.su / 100,                 // см
+    vitkov: b.m + 1,
+    otstup: b.k2 / 200,               // см, у каждой из двух стен вдоль витков
+    tochno: b.m === 0 || b.su === cu, // вписанное число легло как есть
+    odin: b.m === 0,
+    // Сколько нужно ширины на два витка — для слов, когда влез один.
+    naDva: (2 * kLo + nizhe) / 100
+  };
+}
 
 // ФОРМА ПОЛА ИЗВЕСТНА? Один ответ на всех, кто его спрашивает: и поля
 // вычитаемых кусков, и схема, и счёт по змейке стоят на нём. Формы пола
@@ -24674,7 +24749,12 @@ function skPolRaschet(d){
   // число, итог говорит словами: подставленное, о котором не сказали,
   // принимают за своё.
   const shagZadan = num(d.shag);
-  const shag = shagZadan > 0 ? shagZadan : SK_POL_SHAG;
+  const shagCel = shagZadan > 0 ? shagZadan : SK_POL_SHAG;
+  // ФОРМА ЕСТЬ — ШАГ ПОДБИРАЕМ ПОД НЕЁ (`skShagPodobrat`). Поперёк витков
+  // идёт короткая сторона габарита: витки кладутся вдоль длинной.
+  // Формы нет — подбирать не подо что, шаг тот, что просили.
+  const podbor = poRazmeram ? skShagPodobrat(Math.min(dlina, shirina), shagCel) : null;
+  const shag = podbor ? podbor.shag : shagCel;
 
   // МЕТРАЖ БЕРЁТСЯ ИЗ ТОЙ ЖЕ ЗМЕЙКИ, ЧТО РИСУЕТСЯ. Решение владельца
   // 15 сентября 2026: «считай по змейке». Отрезки складываются один раз
@@ -24690,7 +24770,7 @@ function skPolRaschet(d){
   // без кабеля: отсюда разница. Мастеру нужно число, от которого
   // он пляшет, — сколько кабеля ВЛЕЗЕТ при таком шаге. Купив 80 м туда,
   // где ложится 73, он будет класть теснее и узнает об этом уже на полу.
-  const otrezki = poRazmeram ? skZmeykaOtrezki(dlina, shirina, shag / 100, kuski, kontur) : [];
+  const otrezki = poRazmeram ? skZmeykaOtrezki(dlina, shirina, shag / 100, kuski, kontur, podbor ? podbor.vitkov : 0) : [];
   const poZmeyke = otrezki.reduce((a, g)=> a + skZvenoDlina(g), 0);
   // ФОРМЫ НЕТ — ЗМЕЙКИ НЕТ. Площадь, заданная одним числом, формы не даёт
   // (6 м² — это и 3×2, и 6×1), построить по ней змейку не из чего. То же
@@ -24706,7 +24786,7 @@ function skPolRaschet(d){
 
   return Object.assign({
     brutto:brutto, snyato:snyato, ploschad:ploschad,
-    shag:shag, shagZadan:(shagZadan > 0), dlinaKabelya:dlinaKabelya,
+    shag:shag, shagZadan:(shagZadan > 0), shagCel:shagCel, podbor:podbor, dlinaKabelya:dlinaKabelya,
     otrezki:otrezki, poZmeyke:(poZmeyke > 0), linii:linii,
     // Витки на полу встают, а линии досталось не всему (см. конец
     // `skZmeykaOtrezki`). Должно быть нулём всегда; не ноль — сбой.
@@ -25295,7 +25375,7 @@ function skKusokBlizko(d, t, r){
 // очертания, витки по-прежнему идут через шаг по всему габариту, а вот
 // полосу, на которой виток лежит, считает контур: отрезок, вышедший
 // за очертание, не рисуется и в длину не идёт.
-function skZmeykaOtrezki(dlina, shirina, shagM, kuski, kontur){
+function skZmeykaOtrezki(dlina, shirina, shagM, kuski, kontur, vitkovZadano){
   const eps = 1e-9;
   if(!(dlina > 0) || !(shirina > 0) || !(shagM > 0)) return [];
   const vdol = dlina >= shirina;          // виток идёт по оси X
@@ -25313,13 +25393,16 @@ function skZmeykaOtrezki(dlina, shirina, shagM, kuski, kontur){
   const otstup = zazor + rad;             // торец витка от стены и от куска
   if(L - 2*otstup <= eps) return [];      // отступы съели виток целиком
   if(S - 2*zazor < -eps) return [];
-  const n = Math.floor((S - 2*zazor + eps) / shagM) + 1;
+  // ЧИСЛО ВИТКОВ ДАЁТ ПОДБОР ШАГА (`skShagPodobrat`): шаг подобран под
+  // него, и пересчёт делением мог бы на краю округления дать соседнее.
+  // Подбора нет — считаем, сколько влезет при этом шаге, как прежде.
+  // Отступ меньше пяти не берётся ни в каком случае.
+  let n = Math.floor((S - 2*zazor + eps) / shagM) + 1;
+  if(vitkovZadano > 0 && (S - (vitkovZadano - 1) * shagM) / 2 >= zazor - eps) n = vitkovZadano;
   if(n < 1) return [];
-  // Целое число витков в комнату влезает редко. Остаток делим поровну
-  // на обе стены: иначе у одной выходит ровно отступ, а у другой почти
-  // на шаг больше, и схема выглядит перекошенной. Крайний виток встаёт
-  // от стены не ближе отступа и не дальше отступа с полушагом: при
-  // заданном шаге попасть точно в 5–7 можно не всегда.
+  // Остаток делим поровну на обе стены: иначе у одной выходит ровно
+  // отступ, а у другой почти на шаг больше. С подбором шага крайний виток
+  // встаёт в 5–7 см; без подбора — от 5 до 5 с полушагом.
   const kray = (S - (n - 1) * shagM) / 2;
   // Куски переводим в оси витка: u — вдоль витка, t — поперёк.
   const dyry = (kuski || []).map(c=> vdol
@@ -26080,9 +26163,57 @@ function skItogPol(){
   const proVychet = r.snyato > 0
     ? `Из ${fmt(r.brutto)} м² пола вычтено ${fmt(r.snyato)} м².`
     : `Греем весь пол — ${fmt(r.brutto)} м², ничего не вычтено.`;
-  const proShag = r.shagZadan
+  // Та же змейка, что уйдёт на картинку: подпись под схемой считает витки
+  // по ней, а не своим выражением.
+  const zmeyka = skPolZmeyka(r);
+  // Виток, разрезанный куском надвое, остаётся ОДНИМ витком: считаем
+  // не отрезки, а положения, на которых они стоят.
+  const vdolX = r.dlina >= r.shirina;
+  const polozheniya = {};
+  zmeyka.forEach(g=>{
+    const vitok = !g.duga && (vdolX ? Math.abs(g.y1 - g.y2) < 1e-9 : Math.abs(g.x1 - g.x2) < 1e-9);
+    if(vitok) polozheniya[(vdolX ? g.y1 : g.x1).toFixed(4)] = 1;
+  });
+  const vitkov = Object.keys(polozheniya).length;
+
+  // КАК КЛАСТЬ — ТРИ ЧИСЛА: шаг, отступ, витки (задача 2026-09-16-04).
+  // Показываем, только когда кабель нарисован: числа относятся к нему.
+  const p = (r.podbor && zmeyka.length) ? r.podbor : null;
+  const proShag = p ? '' : (r.shagZadan
     ? ` Шаг ${fmt(r.shag)} см — ваш.`
-    : ` Шаг не задан: считаем по стандартному ${fmt(SK_POL_SHAG)} см (обычно кладут 7–8).`;
+    : ` Шаг не задан: считаем по стандартному ${fmt(SK_POL_SHAG)} см (обычно кладут 7–8).`);
+  let kakKlast = '';
+  if(p){
+    // Отступ кратен полумиллиметру — показываем как есть, до сотых.
+    const otst = fmt(p.otstup);
+    let slova;
+    if(p.odin){
+      slova = `Пол узкий: помещается один виток, посередине, в ${otst} см от стен вдоль него — шага здесь нет.`
+        + (p.otstup > SK_POL_OTSTUP_MAX
+            ? ` Отступ больше обычных ${fmt(SK_POL_OTSTUP)}–${fmt(SK_POL_OTSTUP_MAX)} см: на два витка нужно хотя бы ${fmt(p.naDva)} см ширины.`
+            : '');
+    } else {
+      const rovno = `витки встают ровно, отступ у обеих стен вдоль витков одинаковый — ${otst} см`;
+      if(r.shagZadan && p.tochno) slova = `Шаг ${fmt(r.shag)} см — ваш: при нём ${rovno}.`;
+      else if(r.shagZadan) slova = `Просили ${fmt(r.shagCel)} — легло по ${fmt(r.shag)} см: так ${rovno}. В поле осталось ваше число.`;
+      else if(p.tochno) slova = `Шаг не задан — стандартные ${fmt(r.shag)} см подходят: ${rovno}.`;
+      else slova = `Шаг не задан — подобрали ${fmt(r.shag)} см под ширину пола вместо стандартных ${fmt(SK_POL_SHAG)}: так ${rovno}.`;
+      const vne = r.shag < SK_POL_SHAG_MIN || r.shag > SK_POL_SHAG_MAX;
+      if(!r.shagZadan && vne)
+        slova += ` В обычные ${fmt(SK_POL_SHAG_MIN)}–${fmt(SK_POL_SHAG_MAX)} см на этот пол не уложиться: при таком шаге отступ вышел бы меньше ${fmt(SK_POL_OTSTUP)} или больше ${fmt(SK_POL_OTSTUP_MAX)} см. Взяли ближайший шаг.`;
+      else if(r.shagZadan && Math.abs(r.shag - r.shagCel) >= 0.5)
+        slova += ` Ближе к вашему числу ровно не встать: отступ вышел бы меньше ${fmt(SK_POL_OTSTUP)} или больше ${fmt(SK_POL_OTSTUP_MAX)} см.`;
+    }
+    slova += ` У стен поперёк витков до макушки поворота — ${fmt(SK_POL_OTSTUP)} см.`;
+    if((r.kuski && r.kuski.length) || r.kontur)
+      slova += ` Ровный отступ подобран у крайних стен; у выступов, косых стен и серых кусков он выходит свой, но не меньше ${fmt(SK_POL_OTSTUP)} см.`;
+    kakKlast = `<div class="sk-chisla uzkiy">
+        <div><span>шаг</span><b>${p.odin ? '—' : fmt(r.shag) + ' см'}</b></div>
+        <div><span>от стен</span><b>${otst} см</b></div>
+        <div><span>витков</span><b>${vitkov}</b></div>
+      </div>
+      <div class="mat-note">${slova}</div>`;
+  }
   // ОТКУДА ВЗЯЛСЯ МЕТРАЖ — ПИШЕМ РЯДОМ С НИМ. Считаем по змейке не всегда:
   // без длины и ширины пола её не построить. Разница между двумя способами
   // доходит до 15 %, и переключаться между ними молча нельзя.
@@ -26095,7 +26226,9 @@ function skItogPol(){
     : (r.poRazmeram
         ? (r.vitkiEst
             ? ' Метраж посчитан по площади и шагу: витки на этот пол встают, но проложить по ним линию приложение не смогло. Это сбой приложения, а не свойство пола.'
-            : ' Метраж посчитан по площади и шагу: при таком шаге и отступе ' + fmt(SK_POL_OTSTUP) + ' см от стен виткам на этом полу не встать, змейки нет.')
+            : (r.podbor
+                ? ' Метраж посчитан по площади и шагу: при таком шаге и отступе ' + fmt(SK_POL_OTSTUP) + ' см от стен виткам на этом полу не встать, змейки нет.'
+                : ' Метраж посчитан по площади и шагу: при отступе ' + fmt(SK_POL_OTSTUP) + ' см от стен виткам на этом полу не встать ни при каком шаге, змейки нет.'))
         : ' Метраж посчитан по площади и шагу: формы пола приложение не знает, а по одной площади змейку не построить. Такой счёт даёт чуть больше — он ведёт витки от стены до стены.');
   // ОГОВОРКИ СТОЯТ ТАМ, ГДЕ ЧИСЛО, а не в прокручиваемом теле окна
   // (грабля 76). Обе про одно: почему вычлось меньше заявленного.
@@ -26117,19 +26250,6 @@ function skItogPol(){
   const proTesno = (r.shag < SK_POL_SHAG_MIN)
     ? `<div class="mat-note">Шаг ${fmt(r.shag)} см — так класть не стоит: на повороте кабель пришлось бы согнуть радиусом ${fmt(Math.round(r.shag * 5) / 10)} см, а греющий кабель круче 3,5 см не гнут — жила ломается. Посчитали как просили, решать вам.</div>`
     : '';
-  // Та же змейка, что уйдёт на картинку: подпись под схемой считает витки
-  // по ней, а не своим выражением.
-  const zmeyka = skPolZmeyka(r);
-  // Виток, разрезанный куском надвое, остаётся ОДНИМ витком: считаем
-  // не отрезки, а положения, на которых они стоят.
-  const vdolX = r.dlina >= r.shirina;
-  const polozheniya = {};
-  zmeyka.forEach(g=>{
-    const vitok = !g.duga && (vdolX ? Math.abs(g.y1 - g.y2) < 1e-9 : Math.abs(g.x1 - g.x2) < 1e-9);
-    if(vitok) polozheniya[(vdolX ? g.y1 : g.x1).toFixed(4)] = 1;
-  });
-  const vitkov = Object.keys(polozheniya).length;
-
   return `<div class="sk-itog">
       ${imya ? `<div class="sk-itog-imya">${escapeHtml(imya)}</div>` : ''}
       <div class="sk-chisla">
@@ -26138,11 +26258,14 @@ function skItogPol(){
         <div><span>мата нужно</span><b>${fmt(r.ploschad)} м²</b></div>
       </div>
       <div class="mat-note">${proVychet}${proShag}${proSchyot} Длину округлили до десятых метра.</div>
+      ${kakKlast}
       ${proNaloz}${proKray}${proBezLinii}${proTesno}
       ${skPolOtkuda(d)}
       ${skPolKartinka(r)}
       ${r.poRazmeram ? `<div class="mat-note">Серым — то, что не греем. Схема рисует ровно те куски, которые вычтены: разойтись им нельзя.${
-        zmeyka.length ? ` Оранжевым — кабель${r.linii > 1 ? '' : ' одной линией'}: ${vitkov} ${plural(vitkov,'виток','витка','витков')} через ${fmt(r.shag)} см, повороты полукругом шириной в шаг.${((r.kuski && r.kuski.length) || r.kontur) ? ' Куски и выступы стен линия огибает: в часть пола сбоку от них заходит петлёй и возвращается, между половинами петли остаётся прорезь.' : ''} Кабель нигде не подходит к стенам и к серым кускам ближе ${fmt(SK_POL_OTSTUP)} см — ни виток, ни поворот: поворот выгибается наружу, поэтому торцы витков стоят на полшага дальше.` : (r.vitkiEst ? ` Витки на этот пол встают, но линию по ним приложение проложить не смогло — это сбой, кабель не рисуем.` : ` При шаге ${fmt(r.shag)} см кабель на такой пол не уложить: после отступа ${fmt(SK_POL_OTSTUP)} см от стен и кусков виткам негде встать. Кабель не рисуем.`)}</div>
+        zmeyka.length ? ` Оранжевым — кабель${r.linii > 1 ? '' : ' одной линией'}: ${vitkov} ${plural(vitkov,'виток','витка','витков')} через ${fmt(r.shag)} см, повороты полукругом шириной в шаг.${((r.kuski && r.kuski.length) || r.kontur) ? ' Куски и выступы стен линия огибает: в часть пола сбоку от них заходит петлёй и возвращается, между половинами петли остаётся прорезь.' : ''} Кабель нигде не подходит к стенам и к серым кускам ближе ${fmt(SK_POL_OTSTUP)} см — ни виток, ни поворот: поворот выгибается наружу, поэтому торцы витков стоят на полшага дальше.` : (r.vitkiEst ? ` Витки на этот пол встают, но линию по ним приложение проложить не смогло — это сбой, кабель не рисуем.` : (!r.podbor
+          ? ` Пол в ширину меньше ${fmt(2 * SK_POL_OTSTUP)} см: от каждой стены кабель держат не ближе ${fmt(SK_POL_OTSTUP)} см, и виткам не остаётся места ни при каком шаге. Кабель не рисуем.`
+          : ` При шаге ${fmt(r.shag)} см кабель на такой пол не уложить: после отступа ${fmt(SK_POL_OTSTUP)} см от стен и кусков виткам негде встать. Кабель не рисуем.`))}</div>
       ${(zmeyka.length && r.linii > 1) ? `<div class="mat-note">Одной линией этот пол не уложить: куски отгородили часть пола — прохода к ней нет или он уже двух отступов, и витку туда не пройти. Нарисовано ${r.linii} ${plural(r.linii,'линия','линии','линий')}, метраж выше — их сумма.</div>` : ''}
       ${zmeyka.length ? `<div class="mat-note">Это схема шага, а не план монтажа. Где стоит термостат и с какой стороны заходит холодный конец, приложение не знает, поэтому начало укладки не показывает. Метраж выше — длина этой самой линии: столько кабеля укладывается на такой пол при таком шаге. Обычно это меньше, чем площадь, делённая на шаг, — от стен и от серых кусков отступают, и полоса вдоль них остаётся без кабеля. Повороты считаны дугами, а не углами: кабель квадратом не загнёшь, и полукруг длиннее прямого угла примерно в полтора раза — эти метры тоже в числе.</div>` : ''}` : ''}
       <div class="mat-note">Мата берут ровно на обогреваемую площадь: он режется по сетке, а шаг внутри него задан на заводе и от нашего шага не зависит.</div>
