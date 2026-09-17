@@ -4217,7 +4217,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-17-287';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-17-288';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -25685,7 +25685,19 @@ function skZmeykaOtrezki(dlina, shirina, shagM, kuski, kontur, vitkovZadano, vdo
     // контуром, её считает `mnVitokChasti` — тем же правилом «не ближе
     // отступа к стене», только стен там сколько угодно, и полос на одном
     // уровне может оказаться несколько.
-    let chasti = kontur ? mnVitokChasti(kontur, t, vdol, cel) : [[cel, L - cel]];
+    // ГРАНИЦУ СЧИТАЕМ ПО ПРЕДЕЛУ, А РОВНЯЕМ ПОСЛЕ. Считать сразу по цели
+    // нельзя: ряд, идущий от стены ровно на целевом отступе, при мерке
+    // «не ближе цели» пропадает или рвётся, и вместе с ним рушится вся
+    // раскладка ряда. Так сборка `287` разбила дверной проём «Арфы» на две
+    // диагонали вместо витка с поворотом — владелец увидел это сразу.
+    // Поэтому: полосу берём по пределу в 5 см, а потом подтягиваем торцы
+    // к цели — но только там, где полоса от этого не исчезает.
+    let chasti = kontur ? mnVitokChasti(kontur, t, vdol, zazor) : [[zazor, L - zazor]];
+    const dop = cel - zazor;
+    if(dop > 1e-9) chasti = chasti.map(ch=>{
+      const a = ch[0] + dop, b = ch[1] - dop;
+      return (b - a > 2 * torec + 0.01) ? [a, b] : ch;
+    });
     dyry.forEach(d=>{
       const g = skKusokBlizko(d, t, zazor);
       if(g) chasti = mnVychest(chasti, g[0], g[1]);
