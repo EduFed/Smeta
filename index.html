@@ -589,6 +589,14 @@
     box-shadow:var(--ten-knopka);
   }
   body.app-ready .nav-toggle{ display:flex; }
+  /* ЗНАЧОК МЕНЮ — ПО ВИДУ ТОГО «☰», ЧТО ВЛАДЕЛЬЦУ НРАВИТСЯ НА НОУТБУКЕ
+     И АНДРОИДЕ («на ноутбуке вообще красота»), но нарисованный, а не
+     из шрифта. Замер знака в Хроме: черты ≈17 точек длиной, ≈2 толщиной,
+     просвет ≈7,5. Отсюда рамка 18 точек (черты 16 из 24 единиц), толщина
+     2,6 единицы (≈2 точки), просвет 7,5 единицы — сверено рядом со знаком. Отступа справа, как у значков рядом с подписью,
+     здесь нет — подписи у кнопки нет, и отступ сдвигал знак влево. */
+  .nav-toggle .zn{ width:18px; height:18px; margin:0; stroke-width:2.6; }
+  .nav-toggle .zn-mesto{ vertical-align:0; }
 
   /* РАСТВОРЕНИЕ У ВЕРХНЕГО КРАЯ.
      На iPhone страница прокручивается целиком, и заголовок проекта
@@ -3764,7 +3772,7 @@
     <span>Сформировано в <b></b> — <i></i></span>
   </div>
 </div>
-<button class="nav-toggle no-print" id="navToggle" aria-label="Меню">☰</button>
+<button class="nav-toggle no-print" id="navToggle" aria-label="Меню"><span class="zn-mesto" data-zn="menyu"></span></button>
 <!-- Растворение у верхнего края. Ничего не делает, кроме как гасит
      то, что подъезжает к самому верху окна. -->
 <div class="verh-tuman no-print" aria-hidden="true"></div>
@@ -4293,7 +4301,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-21-303';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-21-305';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -12661,6 +12669,10 @@ async function afterLogin(){
 // ---------- NAV (сворачивание меню) ----------
 function setNav(open){
   document.body.classList.toggle('nav-open', open);
+  // Меню открыли или закрыли — прокрутка теперь другая (меню или страница):
+  // кнопку показываем и считаем сдвиг заново, с нового места.
+  document.body.classList.remove('menyu-skryta');
+  if(typeof menyuIstochnikY === 'function') menyuPoslY = menyuIstochnikY();
 }
 
 // КНОПКА МЕНЮ ПРИ ПРОКРУТКЕ: ВНИЗ — УЕЗЖАЕТ, ВВЕРХ — ВОЗВРАЩАЕТСЯ.
@@ -12671,7 +12683,8 @@ function setNav(open){
 // Порог в 6 точек — чтобы дрожание пальца и пружина айфона в конце
 // страницы не дёргали кнопку туда-сюда: мелкие сдвиги копятся, пока
 // не наберут порог.
-// Открыто меню — кнопку не прячем: ею меню и закрывают.
+// Открыто меню — кнопка следит уже за прокруткой меню, а не страницы
+// (см. `menyuIstochnikY` ниже).
 // ПРИЛИПШАЯ ШАПКА УЕЗЖАЕТ ВМЕСТЕ С КНОПКОЙ. Сборка 298 держала кнопку
 // на месте в «Видах работ», «Материалах» и справочнике — там она стоит
 // в строке шапки. Владелец 21 сентября 2026: «давай, может, закреплённые
@@ -12683,15 +12696,25 @@ function setNav(open){
 //   месте — спрятав её раньше, оставили бы у верха пустую полосу;
 // · человек печатает в поле внутри шапки — не прячем из-под пальцев.
 let menyuPoslY = 0;
+// ОТКРЫТОЕ МЕНЮ ПРОКРУЧИВАЕТСЯ САМО — И КНОПКА ВЕДЁТ СЕБЯ ТАК ЖЕ.
+// Владелец 21 сентября 2026: «и в сайдбаре бургер вообще закреплён».
+// Меню прокручивается отдельно от страницы, и список проектов уезжал
+// прямо под неподвижную кнопку. Теперь при открытом меню смотрим на его
+// прокрутку, а не на страницу. Закрыть меню можно и нажатием
+// на затемнённую полосу справа — кнопка для этого не единственная.
+function menyuIstochnikY(){
+  const sb = document.body.classList.contains('nav-open') ? document.querySelector('.sidebar') : null;
+  return sb ? sb.scrollTop : window.scrollY;
+}
 function menyuPodlozhka(){
-  const y = window.scrollY;
+  const y = menyuIstochnikY();
   const dy = y - menyuPoslY;
   const b = document.body;
-  const shapka = document.querySelector('.main .proj-header.sticky-head');
+  const menyu = b.classList.contains('nav-open');
+  const shapka = menyu ? null : document.querySelector('.main .proj-header.sticky-head');
   const pechataet = shapka && document.activeElement && document.activeElement !== b
                     && shapka.contains(document.activeElement);
-  if(y <= 4 || b.classList.contains('nav-open') || pechataet
-     || (shapka && y <= shapka.offsetHeight)){
+  if(y <= 4 || pechataet || (shapka && y <= shapka.offsetHeight)){
     b.classList.remove('menyu-skryta');
     menyuPoslY = y;
   } else if(dy > 6){
@@ -12710,6 +12733,9 @@ function menyuPodlozhka(){
     requestAnimationFrame(()=>{ zhdyom = false; menyuPodlozhka(); });
   };
   window.addEventListener('scroll', raz, { passive:true });
+  // Меню прокручивается само по себе — слушаем и его.
+  const sb = document.querySelector('.sidebar');
+  if(sb) sb.addEventListener('scroll', raz, { passive:true });
   // Сменился экран — прилипшая шапка могла появиться или пропасть.
   const ustanovit = ()=> new MutationObserver(raz).observe(document.body, { childList:true, subtree:true });
   if(document.body) ustanovit(); else document.addEventListener('DOMContentLoaded', ustanovit);
@@ -19305,8 +19331,13 @@ function renderSmetaBlock(proj){
 // свой размер 15, своя толщина 2; 4 сентября 2026 внесены в набор
 // и выровнены по общей рамке, а старая пара убрана.
 //
-// Типографские знаки — ✕ ▾ → ← ⋯ ⋮ ✓ − ○ ✎ ⌫ ☰ — оставлены как
+// Типографские знаки — ✕ ▾ → ← ⋯ ⋮ ✓ − ○ ✎ ⌫ — оставлены как
 // были: они одноцветные по своей природе и цвет текста уже берут.
+// «☰» из этого списка УБРАН 21 сентября 2026: знак шрифта каждая система
+// рисует своим шрифтом, и у Apple три черты стоят вплотную. Владелец:
+// «именно на айфоне строчки бургера слишком прижаты друг к другу,
+// на андроиде намного лучше, на ноутбуке вообще красота». Теперь это
+// `ZN_MENYU` — нарисованные линии, одинаковые везде.
 // ОДИН РАЗМЕР НА ВСЕХ. Владелец 4 сентября 2026: «все значки должны
 // быть одного размера, у нас шестерёнка огромная, а калькулятор малыш».
 // Так и было: замер показал разброс от 15 до 22 при одинаковом окне 24×24 —
@@ -19348,6 +19379,8 @@ const ZN_UGOLNIK  = ZN('<path d="M4 4v16h16"/><path d="M4 20L20 4"/><path d="M9 
 const ZN_KLYUCH   = ZN('<path d="M14.5 6.5a4 4 0 1 0 3 3L21 6l-2-2-2 2-1.5-1.5z"/><path d="M11.5 9.5L3 18v3h3l8.5-8.5"/>', 1, 0, -0.5);
 const ZN_SCHYOTY  = ZN('<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 7h8"/><path d="M8 12h.01M12 12h.01M16 12h.01M8 16h.01M12 16h.01M16 16h.01"/>');
 const ZN_ZAMOK    = ZN('<rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/>');
+// Кнопка меню: три черты с ровным просветом — вместо знака «☰» (см. выше).
+const ZN_MENYU    = ZN('<path d="M4 4.5h16"/><path d="M4 12h16"/><path d="M4 19.5h16"/>');
 const ZN_LIST     = ZN('<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h4"/>');
 const ZN_CHELOVEK = ZN('<circle cx="12" cy="8" r="3.5"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/>', 1.161, -1.94, -2.23);
 const ZN_KAMERA   = ZN('<path d="M3 8h3l1.5-2h9L18 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.5"/>', 0.9, 1.2, 0.75);
@@ -19390,7 +19423,7 @@ const ZN_PLITKA   = ZN('<rect x="3.5" y="3.5" width="7" height="7" rx="1"/><rect
 const ZN_PO_IMENI = {
   schyoty: ZN_SCHYOTY, solnce: ZN_SOLNCE, mesyats: ZN_MESYATS, plitka: ZN_PLITKA,
   shesternya: ZN_SHESTERNYA, samolyot: ZN_SAMOLYOT, skachat: ZN_SKACHAT,
-  zamok: ZN_ZAMOK, vnimanie: ZN_VNIMANIE
+  zamok: ZN_ZAMOK, vnimanie: ZN_VNIMANIE, menyu: ZN_MENYU
 };
 // ПОДПИСЬ ПОСЛЕ ПЕРЕНОСА УЖИМАЕТСЯ ДО САМОЙ ДЛИННОЙ СВОЕЙ СТРОКИ.
 //
