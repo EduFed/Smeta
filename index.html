@@ -628,8 +628,16 @@
      Полоса растёт до низа кнопки и становится сплошной; уехавшее вверх
      уходит под неё, а не под кнопку. На экране со своей прилипшей шапкой
      полоса остаётся прежней: выросшая, она закрыла бы саму шапку.
-     Включает класс сценарий `menyuPodlozhka`. */
+     Включает класс сценарий `menyuPodlozhka`.
+     СБОРКА 294: подложка — только пока кнопка ВИДНА посреди страницы.
+     Листаете вниз — кнопка уезжает вверх (`menyu-skryta`) и подложки нет:
+     владелец счёл строку под кнопкой потерянным местом на телефоне. */
   @media (max-width:1024px){
+    .nav-toggle{ transition:transform .2s ease, opacity .2s ease; }
+    body.menyu-skryta .nav-toggle{
+      transform:translateY(calc(-100% - 30px - env(safe-area-inset-top, 0px)));
+      opacity:0; pointer-events:none;
+    }
     .verh-tuman{ transition:height .15s ease; }
     body.menyu-podlozhka .verh-tuman{
       height:calc(env(safe-area-inset-top, 0px) + 24px + var(--menyu-razmer) + 20px);
@@ -4251,7 +4259,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-21-293';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-21-294';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -12621,13 +12629,43 @@ function setNav(open){
   document.body.classList.toggle('nav-open', open);
 }
 
-// ПОДЛОЖКА ПОД КНОПКОЙ МЕНЮ — когда страницу сдвинули, а своей прилипшей
-// шапки у экрана нет (см. стиль `body.menyu-podlozhka .verh-tuman`).
-// Ширину не проверяем: стиль действует только до 1024 точек, шире кнопки
-// меню нет вовсе. Проверка дешёвая — один поиск по странице на кадр.
+// КНОПКА МЕНЮ ПРИ ПРОКРУТКЕ: ВНИЗ — ПРЯЧЕТСЯ, ВВЕРХ — ВОЗВРАЩАЕТСЯ.
+//
+// Сборка 292 ставила под кнопку сплошную подложку на всё время прокрутки.
+// Перекрывать перестало, но владелец 21 сентября 2026 на айфоне: «теперь
+// из-за бургера там целая строка бесполезна, учитывая, что на смартфоне
+// и так не большой экран». Около 90 точек из 840 — десятая часть экрана.
+// Выбран вариант 1: как панель в Safari. Листаете вниз — кнопка уезжает
+// вверх, подложки нет, экран свободен целиком. Чуть потянули вверх —
+// кнопка вернулась, и ТОЛЬКО ТОГДА под ней подложка: без неё вернувшаяся
+// кнопка снова легла бы на страницу. Наверху страницы — как было всегда.
+//
+// Порог в 6 точек — чтобы дрожание пальца и пружина айфона в конце
+// страницы не дёргали кнопку туда-сюда: мелкие сдвиги копятся, пока
+// не наберут порог.
+// Открыто меню — кнопку не прячем: ею его и закрывают.
+// На экране со своей прилипшей шапкой подложки нет (она закрыла бы
+// шапку), но кнопка прячется так же — одно поведение на все экраны.
+// Стили — `body.menyu-skryta .nav-toggle` и `body.menyu-podlozhka
+// .verh-tuman`, оба только до 1024 точек: шире кнопки меню нет.
+let menyuPoslY = 0;
 function menyuPodlozhka(){
-  const nado = window.scrollY > 4 && !document.querySelector('.main .proj-header.sticky-head');
-  document.body.classList.toggle('menyu-podlozhka', nado);
+  const y = window.scrollY;
+  const dy = y - menyuPoslY;
+  const b = document.body;
+  if(y <= 4 || b.classList.contains('nav-open')){
+    b.classList.remove('menyu-skryta');
+    menyuPoslY = y;
+  } else if(dy > 6){
+    b.classList.add('menyu-skryta');
+    menyuPoslY = y;
+  } else if(dy < -6){
+    b.classList.remove('menyu-skryta');
+    menyuPoslY = y;
+  }
+  const vidna = !b.classList.contains('menyu-skryta');
+  b.classList.toggle('menyu-podlozhka',
+    vidna && y > 4 && !document.querySelector('.main .proj-header.sticky-head'));
 }
 (function menyuPodlozhkaSlezhka(){
   let zhdyom = false;
