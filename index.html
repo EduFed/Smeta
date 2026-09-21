@@ -4237,7 +4237,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-21-309';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-21-310';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -16937,6 +16937,23 @@ function dopSoglRabotyBlocks(proj){
 // Местная дата отметки в виде ГГГГ-ММ-ДД. Сравнивать надо по местному
 // дню, а не по всемирному времени: отметка, поставленная в 2 часа ночи,
 // иначе уехала бы во вчера.
+// ГОТОВЫЕ ПЕРИОДЫ «СЕГОДНЯ» И «ВЧЕРА И СЕГОДНЯ». Решение владельца
+// 3 сентября 2026 (задача 2026-09-03-06): период — по датам, «человек
+// указывает даты или берёт предложенные „сегодня“ / „вчера-сегодня“».
+// Отчёт был собран без них — остались два пустых поля, и незаполненные
+// давали «за всё время». Досделано 21 сентября 2026. День — местный,
+// а не по Гринвичу: вечером по Москве «сегодня» по UTC ещё вчера.
+function otchyotMestnyDen(sdvig){
+  const d = new Date(); d.setDate(d.getDate() + (sdvig || 0));
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
+// Какая из готовых кнопок совпадает с выбранными датами — её и подсвечиваем.
+function otchyotBystro(){
+  const s = otchyotMestnyDen(0), v = otchyotMestnyDen(-1);
+  if(uiOtchyotS === s && uiOtchyotPo === s) return 'segodnya';
+  if(uiOtchyotS === v && uiOtchyotPo === s) return 'vchera';
+  return '';
+}
 function otchyotDenOtmetki(rw){
   if(!rw || !rw.doneAt) return '';
   const d = new Date(rw.doneAt);
@@ -18482,6 +18499,10 @@ function renderOtchyotDocPanel(proj){
         d === null ? '' : ` · готовность ${d} %`}</button>
       <div class="doc-panel-body">
         ${estOtmetki ? `
+          <div class="calc-mode" style="margin-bottom:10px;">
+            <button type="button" class="calc-mode-btn uzkiy${otchyotBystro()==='segodnya'?' active':''}" data-otchyot-bystro="segodnya">Сегодня</button>
+            <button type="button" class="calc-mode-btn uzkiy${otchyotBystro()==='vchera'?' active':''}" data-otchyot-bystro="vchera">Вчера и сегодня</button>
+          </div>
           <div class="cust-grid" style="margin-bottom:12px;">
             <div class="cust-field"><label>Период с</label>
               <input type="date" value="${escapeAttr(uiOtchyotS)}" data-otchyot-s></div>
@@ -22135,9 +22156,20 @@ function attachHandlers(){
   const stg = main.querySelector('[data-stageno]');
   if(stg) stg.addEventListener('input', ()=>{ uiStageNo = stg.value; });
   const ots = main.querySelector('[data-otchyot-s]');
-  if(ots) ots.addEventListener('input', ()=>{ uiOtchyotS = ots.value; });
+  // Правка даты руками — подсветка готовой кнопки должна следовать за ней.
+  const otchyotPodsvetka = ()=> main.querySelectorAll('[data-otchyot-bystro]').forEach(b=>
+    b.classList.toggle('active', b.getAttribute('data-otchyot-bystro') === otchyotBystro()));
+  if(ots) ots.addEventListener('input', ()=>{ uiOtchyotS = ots.value; otchyotPodsvetka(); });
   const otp = main.querySelector('[data-otchyot-po]');
-  if(otp) otp.addEventListener('input', ()=>{ uiOtchyotPo = otp.value; });
+  if(otp) otp.addEventListener('input', ()=>{ uiOtchyotPo = otp.value; otchyotPodsvetka(); });
+  main.querySelectorAll('[data-otchyot-bystro]').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      const vchera = el.getAttribute('data-otchyot-bystro') === 'vchera';
+      uiOtchyotS = otchyotMestnyDen(vchera ? -1 : 0);
+      uiOtchyotPo = otchyotMestnyDen(0);
+      render();
+    });
+  });
   const dpn = document.querySelector('[data-dopno]');
   // Теперь это <select>, а не поле ввода: слушаем и change тоже.
   if(dpn){
