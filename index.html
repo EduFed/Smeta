@@ -4293,7 +4293,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-21-302';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-21-303';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -25445,27 +25445,34 @@ function skProyomyHtml(razdel, sPolozheniem, iSteny, opts){
   // Адрес проёма несёт и раздел: стены теперь есть и у листового,
   // и у блоков, и по одному номеру их уже не различить.
   const adr = vStene ? ('st:' + razdel + ':' + iSteny) : razdel;
+  // ПОДПИСИ НАД ПОЛЯМИ И ЧЕРТА МЕЖДУ СТРОКАМИ — как у проёмов в раскладке
+  // плитки (`tcProyomyHTML`), тем же кодом: `.tc-field` и `.tc-proyomy`.
+  // Владелец 21 сентября 2026 про тёплый пол: «при добавлении, что
+  // вычитаем, все строки идут подряд, ничего не понятно, нужно какое-то
+  // разделение». Было: поля с подсказкой ВНУТРИ — вписал число, подсказка
+  // пропала, и «0,7» уже не отличить от «0,75»; строки из двух-трёх этажей
+  // без черты между ними сливались в одну кашу. Раскладка плитки решила
+  // ровно это ещё раньше — берём её решение, а не заводим третий вид.
+  // Первое слово подсказки — с большой буквы: это теперь подпись.
+  const podpis = (t)=> t ? t.charAt(0).toUpperCase() + t.slice(1) : '';
+  const pole = (o, i, k, l, mode)=> `<div class="tc-field"><label>${escapeHtml(l)}</label>`+
+    `<input type="text" inputmode="${mode || 'decimal'}" value="${escapeAttr(o[k]||'')}" placeholder="0" `+
+    `data-sk-pr="${adr}|${i}|${k}"></div>`;
   const stroki = spisok.map((o,i)=>`
     <div class="sk-proyom">
-      <input type="text" inputmode="decimal" class="ownw-inp" placeholder="${escapeAttr(p.wPodskazka || 'ширина, м')}"
-             value="${escapeAttr(o.w||'')}" data-sk-pr="${adr}|${i}|w">
-      <input type="text" inputmode="decimal" class="ownw-inp" placeholder="${escapeAttr(p.hPodskazka || 'высота, м')}"
-             value="${escapeAttr(o.h||'')}" data-sk-pr="${adr}|${i}|h">
+      ${pole(o, i, 'w', podpis(p.wPodskazka || 'ширина, м'))}
+      ${pole(o, i, 'h', podpis(p.hPodskazka || 'высота, м'))}
       ${sPolozheniem ? `
       <div class="calc-mode sk-pr-seg">
         <button type="button" class="calc-mode-btn uzkiy${o.kray==='R'?'':' active'}" data-sk-pr-kray="${adr}|${i}|L" title="Отступ от левого края ${escapeAttr(p.chto || 'стены')}">Слева</button>
         <button type="button" class="calc-mode-btn uzkiy${o.kray==='R'?' active':''}" data-sk-pr-kray="${adr}|${i}|R" title="Отступ от правого края ${escapeAttr(p.chto || 'стены')}">Справа</button>
       </div>
-      <input type="text" inputmode="decimal" class="ownw-inp" placeholder="${o.kray==='R'?'от правого края, м':'от левого края, м'}"
-             value="${escapeAttr(o.x||'')}" data-sk-pr="${adr}|${i}|x">
-      <input type="text" inputmode="decimal" class="ownw-inp" placeholder="${escapeAttr(p.yPodskazka || 'от пола, м')}"
-             value="${escapeAttr(o.y||'')}" data-sk-pr="${adr}|${i}|y">` : ''}
-      ${sPolozheniem ? '' : `
-      <input type="text" inputmode="numeric" class="ownw-inp sk-uzko" placeholder="шт."
-             value="${escapeAttr(o.n||'')}" data-sk-pr="${adr}|${i}|n">`}
-      <button type="button" class="btn-icon" data-sk-pr-del="${adr}|${i}" title="Убрать">✕</button>
+      ${pole(o, i, 'x', o.kray==='R' ? 'Отступ справа, м' : 'Отступ слева, м')}
+      ${pole(o, i, 'y', podpis(p.yPodskazka || 'от пола, м'))}` : `
+      ${pole(o, i, 'n', 'Шт.', 'numeric')}`}
+      <button type="button" class="btn-icon tc-pr-ubrat" data-sk-pr-del="${adr}|${i}" title="Убрать">✕</button>
     </div>`).join('');
-  return `<div class="sk-proyomy">
+  return `<div class="sk-proyomy tc-proyomy">
     <div class="sk-podzag">${escapeHtml(p.zagolovok || 'Проёмы')}</div>
     ${stroki || `<div class="mat-note">${escapeHtml(p.pusto || 'Окон и дверей нет.')}</div>`}
     <button type="button" class="add-link" data-sk-pr-add="${adr}">${escapeHtml(p.dobavit || '+ Проём')}</button>
