@@ -1664,6 +1664,17 @@
   }
   .cust-field input:focus,.cust-field textarea:focus{outline:none;border-color:var(--blue);background:var(--white);}
   .cust-err{color:var(--red);font-size:11px;min-height:13px;}
+  /* ВПИСАНО НЕ ЧИСЛОМ — НЕ СЧИТАЕТСЯ, И ЭТО ВИДНО (задача 2026-09-21-01).
+     Красный тот же, что у сообщения об ошибке поля заказчика. Рамка, а не
+     надпись под полем: поля с числами стоят в строках и сетках, и лишняя
+     строка текста ломала бы их; зачем краснеет — говорит подсказка
+     при наведении и короткое сообщение, когда поле покидают. */
+  input.ne-chislo{border-color:var(--red) !important;
+    background:color-mix(in srgb, var(--red) 8%, transparent) !important;}
+  /* Сумма с тремя цифрами после точки — «1.200»: поняли как 1,2 ₽,
+     а человек, скорее всего, писал тысячу двести. Не ошибка, но проверить. */
+  input.chislo-somnitelno{border-color:var(--orange) !important;
+    border-style:dashed !important;}
   .cust-hint{color:var(--ink-soft);font-size:11px;}
   .cust-words{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--ink-soft);font-style:italic;}
   .cust-readonly{font-size:16px;color:var(--ink);padding:4px 0;}
@@ -4217,7 +4228,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-21-290';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-21-291';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -7341,10 +7352,15 @@ function execFromRow(r, masked){
 // Одноимённые объявления не спорят — последнее бесшумно заменяет первое
 // на весь файл, и пустое количество уедет в базу нулём вместо `null`.
 // См. грабля 77.
+// В БАЗУ — ТЕМ ЖЕ ПРАВИЛОМ, ЧТО В РАСЧЁТ (`num`, задача 2026-09-21-01).
+// Прежде здесь стоял `Number()`, а он пробелов не прощает: «1 200»
+// на экране считалось как 1 200, а в базу уходило пустым — и после
+// перезагрузки число пропадало. Два правила разбора одного поля
+// расходятся молча (грабля 77).
 function chisloIliPusto(v){
   if(v === '' || v === null || v === undefined) return null;
-  const n = Number(String(v).replace(',', '.'));
-  return isFinite(n) ? n : null;
+  if(typeof v === 'number') return isFinite(v) ? v : null;
+  return summaVpisana(v) ? num(v) : null;
 }
 function txt(v){ return (v === undefined || v === null) ? null : String(v); }
 
@@ -15252,10 +15268,111 @@ function normalizeProjects(){
   });
 }
 
+// ЧИСЛО — ЛИБО ЧИСЛО ЦЕЛИКОМ, ЛИБО НЕ ЧИСЛО (задача 2026-09-21-01).
+//
+// Прежде здесь стоял `parseFloat`: он берёт начало строки, похожее на число,
+// и молча выбрасывает хвост. «12abc» было 12, «5т» — 5, «2х3» — 2, «пять
+// тысяч» — 0, длинный минус с телефона «−5» — 0. Ни один случай не был
+// виден как ошибка: человек узнавал о нём из договора, если узнавал.
+//
+// Решение владельца 21 сентября 2026 (вариант 1): вписанное не числом
+// НЕ СЧИТАЕТСЯ — поле краснеет (`chisloPometit`), в документе вместо нуля
+// линия для руки (`summaVpisana`). Для чистых чисел не меняется ничего.
+//
+// Что считается числом: цифры, одна запятая или точка, пробелы любые
+// (обычный, неразрывный, узкий — телефон вставляет их при копировании),
+// минус в начале — и обычный, и длинный, и тире. Запятая или точка в конце
+// («12,») — ещё число: так человек его набирает, и красная вспышка на каждой
+// дроби мешала бы. Выражения («1.2+0.85») — не сюда, их считает `calcNum`.
+function chisloOchistit(v){
+  return String(v == null ? '' : v)
+    .replace(/[\s   ]/g, '')
+    .replace(/^[−–—]/, '-');
+}
+const CHISLO_OBRAZEC = /^[-+]?(\d+([.,]\d*)?|[.,]\d+)$/;
+// Пусто или число целиком. Одиночный минус — ещё не число, но и не ошибка:
+// человек только начал набирать.
+function chisloLi(v){
+  const s = chisloOchistit(v);
+  return s === '' || s === '-' || s === '+' || CHISLO_OBRAZEC.test(s);
+}
+// Вписана ли сумма — для документов: непустое И число. Прежде документы
+// проверяли только «строка не пустая», и «пять тысяч» уходило в договор
+// «0 (Ноль) рублей».
+function summaVpisana(v){
+  return CHISLO_OBRAZEC.test(chisloOchistit(v));
+}
 function num(v){
-  const n = parseFloat(String(v==null?'':v).replace(',', '.').replace(/\s/g,''));
+  if(typeof v === 'number') return isFinite(v) ? v : 0;
+  const s = chisloOchistit(v);
+  if(!CHISLO_OBRAZEC.test(s)) return 0;
+  const n = parseFloat(s.replace(',', '.'));
   return isFinite(n) ? n : 0;
 }
+
+// ПОМЕТКА ПОЛЕЙ С ЧИСЛАМИ — ОДНА НА ВСЁ ПРИЛОЖЕНИЕ. Поля с числами
+// рисуются в десятках мест, и проверка в каждом где-нибудь да забылась бы.
+// Поэтому смотрим на все поля с цифровой клавиатурой разом: при вводе,
+// при уходе с поля и после каждой перерисовки (поле, пришедшее из базы
+// с мусором, должно быть красным сразу, а не после того, как его тронут).
+//
+// Окно черчения контура — мимо: там можно писать выражения («1.2+0.85»),
+// и считает их `calcNum`.
+const CHISLO_POLYA = 'input[inputmode="decimal"], input[inputmode="numeric"]';
+// Деньги — отдельно: в рублях трёх цифр после точки не бывает, и «1.200»
+// почти наверняка тысяча двести, а не рубль двадцать. В размерах так нельзя:
+// «1.685» — это законные метры с миллиметрами, их в базе полно.
+const DENGI_POLYA = '#ownWorkPrice, .mat-price, .pm-price, .extra-cena, .opl-summa, '
+  + '[data-cust$="|advance"], [data-cat-field$="|price"], #refBaseInput, [data-settlement]';
+const CHISLO_NE = 'Не число — не считается';
+function chisloSomnitelno(el){
+  return el.matches(DENGI_POLYA) && /^[-+]?\d{1,3}\.\d{3}$/.test(chisloOchistit(el.value));
+}
+function chisloPometit(el){
+  if(!el || !el.matches || !el.matches(CHISLO_POLYA)) return;
+  if(el.closest('#polyDrawOverlay')) return;
+  const plohoe = !chisloLi(el.value);
+  const somnit = !plohoe && chisloSomnitelno(el);
+  el.classList.toggle('ne-chislo', plohoe);
+  el.classList.toggle('chislo-somnitelno', somnit);
+  // Своя подсказка у поля бывает («пусто — считается из размеров…»):
+  // не затираем её насовсем, а возвращаем, когда поле исправили.
+  if(plohoe || somnit){
+    if(el.dataset.titleBylo === undefined) el.dataset.titleBylo = el.title || '';
+    el.title = plohoe ? CHISLO_NE : ('Поняли как ' + fmt(num(el.value)) + ' ₽ — проверьте');
+  } else if(el.dataset.titleBylo !== undefined){
+    el.title = el.dataset.titleBylo;
+    delete el.dataset.titleBylo;
+  }
+}
+function chisloPometitVse(koren){
+  (koren || document).querySelectorAll(CHISLO_POLYA).forEach(chisloPometit);
+}
+(function chisloSlezhka(){
+  const ustanovit = ()=>{
+    document.addEventListener('input', e=> chisloPometit(e.target), true);
+    // Уходя с поля, человек должен узнать, почему оно красное, — на телефоне
+    // подсказки при наведении нет.
+    document.addEventListener('change', e=>{
+      const el = e.target;
+      chisloPometit(el);
+      if(!el || !el.classList) return;
+      if(el.classList.contains('ne-chislo'))
+        toast('«' + String(el.value).trim() + '» — не число. Пока не исправите, оно не считается.');
+      else if(el.classList.contains('chislo-somnitelno'))
+        toast('Поняли как ' + fmt(num(el.value)) + ' ₽. Если это тысяча двести — пишите 1200 или 1 200.');
+    }, true);
+    let zhdyom = false;
+    new MutationObserver(()=>{
+      if(zhdyom) return;
+      zhdyom = true;
+      requestAnimationFrame(()=>{ zhdyom = false; chisloPometitVse(document); });
+    }).observe(document.body, { childList:true, subtree:true });
+    chisloPometitVse(document);
+  };
+  if(document.body) ustanovit();
+  else document.addEventListener('DOMContentLoaded', ustanovit);
+})();
 
 // ---------- ЧТО НОВОГО ----------
 // Приложение обновляется само и молча. За 3–4 сентября 2026 вышло больше
@@ -16431,7 +16548,7 @@ function rastorzhenieBlocks(proj){
   const B = [];
   const P=(t,o)=>B.push(Object.assign({text:t,style:'normal'},o||{}));
   const compDate = _or(formatDate(uiContractDate), '«___» __________ 20___ г.');
-  const settl = uiSettlementAmount ? amountInline(num(uiSettlementAmount)) : '______________ (____________________________________________________________________) рублей ___ копеек';
+  const settl = summaVpisana(uiSettlementAmount) ? amountInline(num(uiSettlementAmount)) : '______________ (____________________________________________________________________) рублей ___ копеек';
   P('Соглашение о расторжении', {style:'h1', align:'center', gap:2});
   P(`Договора оказания услуг № ${cn} от ${date}`, {align:'center', gap:8, style:'small'});
   P(`г. ${_or(c.city,'____________________')},          ${compDate}`, {align:'right', gap:12, style:'small'});
@@ -16470,7 +16587,7 @@ function dogovorBlocks(proj){
 
   H('2. Стоимость работ и порядок оплаты');
   P(`2.1. Общая стоимость Работ по настоящему Договору составляет ${amountInline(total)} и определяется Сметой (Приложение № 1).`);
-  P(`2.2. При заключении Договора Заказчик выплачивает Подрядчику аванс в размере ${c.advance ? amountInline(num(c.advance)) : '______________ (______________________) рублей ___ копеек'}.`);
+  P(`2.2. При заключении Договора Заказчик выплачивает Подрядчику аванс в размере ${summaVpisana(c.advance) ? amountInline(num(c.advance)) : '______________ (______________________) рублей ___ копеек'}.`);
   P('2.3. Дальнейшая оплата производится поэтапно, по факту выполнения соответствующего этапа Работ, на основании подписанного Сторонами акта этапа — в течение 2 (двух) рабочих дней после его подписания.');
   P('2.4. Окончательный расчёт производится после подписания Сторонами итогового акта приёма-сдачи выполненных Работ, не позднее 2 (двух) рабочих дней после его подписания.');
   P('2.5. Оплата производится наличными денежными средствами или переводом на реквизиты, указанные Подрядчиком. Получение денежных средств подтверждается распиской Подрядчика.');
@@ -16562,7 +16679,7 @@ function raspiskaBlocks(proj){
   // Поле пустое — печатается линия под руку, тем же помощником
   // `_or` и той же линией, что в акте этапа: ноль в расписке хуже
   // пустого места. Задача 2026-09-10-07.
-  const amt = _or(uiSettlementAmount && amountInline(num(uiSettlementAmount)),
+  const amt = _or(summaVpisana(uiSettlementAmount) && amountInline(num(uiSettlementAmount)),
                   '______________ (______________________) рублей ___ копеек');
   const B = [];
   const P=(t,o)=>B.push(Object.assign({text:t,style:'normal'},o||{}));
@@ -16839,7 +16956,7 @@ function aktEtapaBlocks(proj){
   const date = _or(formatDate(c.date), '«___» __________ 20___ г.');
   const cn = contractNumber(proj);
   const compDate = _or(formatDate(uiContractDate), '«___» __________ 20___ г.');
-  const amt = uiSettlementAmount ? amountInline(num(uiSettlementAmount)) : '______________ (______________________) рублей ___ копеек';
+  const amt = summaVpisana(uiSettlementAmount) ? amountInline(num(uiSettlementAmount)) : '______________ (______________________) рублей ___ копеек';
   const stage = _or(uiStageNo, '____');
   const B = [];
   const P=(t,o)=>B.push(Object.assign({text:t,style:'normal'},o||{}));
@@ -20675,7 +20792,7 @@ function renderCustomerBlock(proj){
         <div class="cust-field">
           <label>Аванс, ₽</label>
           <input type="text" inputmode="decimal" placeholder="0" value="${escapeAttr(c.advance||'')}" data-cust="${proj.id}|advance">
-          <div class="cust-words" data-cust-adv-words="${proj.id}">${c.advance?rublesToWords(num(c.advance)):''}</div>
+          <div class="cust-words" data-cust-adv-words="${proj.id}">${summaVpisana(c.advance)?rublesToWords(num(c.advance)):''}</div>
         </div>
         ${field('termDays','Срок, рабочих дней','напр. 30')}
       </div>
@@ -22560,7 +22677,7 @@ function attachHandlers(){
       if(errBox) errBox.textContent = validateCustomer(key, el.value);
       if(key === 'advance'){
         const w = main.querySelector(`[data-cust-adv-words="${pid}"]`);
-        if(w) w.textContent = el.value ? rublesToWords(num(el.value)) : '';
+        if(w) w.textContent = summaVpisana(el.value) ? rublesToWords(num(el.value)) : '';
       }
       scheduleSave();
     });
