@@ -4251,7 +4251,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-21-292';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-21-293';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -15391,6 +15391,25 @@ function chisloPometit(el){
 }
 function chisloPometitVse(koren){
   (koren || document).querySelectorAll(CHISLO_POLYA).forEach(chisloPometit);
+  avtozapolnenieUbrat(koren);
+}
+
+// «АВТОЗАПОЛНЕНИЕ» АЙФОНА — ТОЛЬКО ТАМ, ГДЕ ОНО ВЕРНОЕ.
+// Владелец 21 сентября 2026, снимок с айфона: над названием проекта
+// «постоянно выходит автозаполнение». iOS предлагает подставить данные
+// из карточки владельца телефона в любое поле, которое сочтёт «именем»
+// или «контактом», — а поле названия проекта называлось `projName`.
+// Хуже того же самого в «Данных для договора»: там ФИО, телефон, почта
+// и паспорт ЗАКАЗЧИКА, а айфон подставил бы туда мастера. Одно
+// нечаянное нажатие — и заказчиком в договоре стоит сам мастер.
+//
+// Поэтому по умолчанию — «не подставлять». Исключения два, и оба — где
+// подставлять правильно: вход (там у полей уже свой `autocomplete`,
+// его не трогаем) и форма исполнителя (`.exec-form`) — это данные самого
+// мастера, их айфон и знает.
+function avtozapolnenieUbrat(koren){
+  (koren || document).querySelectorAll('input:not([type=password]):not([type=hidden]):not([autocomplete]), textarea:not([autocomplete])')
+    .forEach(el=>{ if(!el.closest('.exec-form')) el.setAttribute('autocomplete', 'off'); });
 }
 (function chisloSlezhka(){
   const ustanovit = ()=>{
@@ -19385,7 +19404,7 @@ function renderProjectView(proj){
     </div>`) : ''}
     <div class="proj-header">
       <div>
-        <input class="proj-title-input" id="projName" value="${escapeAttr(proj.name)}" placeholder="Название проекта">
+        <input class="proj-title-input" id="projNazvanie" autocomplete="off" value="${escapeAttr(proj.name)}" placeholder="Название проекта">
         <div class="proj-meta">${proj.rooms.length} помещ. · создан ${new Date(proj.createdAt).toLocaleDateString('ru-RU')}</div>
       </div>
       <div class="header-actions no-print">
@@ -21804,7 +21823,9 @@ function attachHandlers(){
   // это как «сломалась синхронизация».
   // Правило: любой элемент, который хоть при каком-то условии может
   // не отрисоваться, берётся с проверкой. Дешевле одной строки.
-  const nameInput = document.getElementById('projName');
+  // Имя поля без «Name»: по нему iOS решал, что это имя человека, и совал
+  // «Автозаполнение» (владелец 21 сентября 2026). См. `avtozapolnenieUbrat`.
+  const nameInput = document.getElementById('projNazvanie');
   if(nameInput) nameInput.addEventListener('input', (e)=>{
     proj.name = e.target.value; scheduleSave(); renderSidebar();
     document.querySelectorAll('.proj-meta')[0] && (document.querySelectorAll('.proj-meta')[0].textContent = `${proj.rooms.length} помещ. · создан ${new Date(proj.createdAt).toLocaleDateString('ru-RU')}`);
