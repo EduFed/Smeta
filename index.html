@@ -4217,7 +4217,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-17-288';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-21-289';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -20711,9 +20711,18 @@ function renderRoomWorks(room){
     // Зачёркиваем только подписанное: черновик ещё считается в смете,
     // и зачёркнутая строка с живой суммой врала бы.
     const isk = iskPodpisana(rw);
+    // ЦЕНА ЗА ЕДИНИЦУ — ПОД КАЖДОЙ СТРОКОЙ. Прежде она стояла только
+    // у укладки из конфигуратора (вместе с её параметрами), а у остальных
+    // строк её не было вовсе. Владелец 21 сентября 2026: «в позиции укладка
+    // плитки пишет под названием цену за квадрат, а в других позициях
+    // не пишет. Пусть пишет везде». Вид тот же, что в списке выбора
+    // (`wd-unit`): цена, косая, единица. Сумма справа — это ровно
+    // количество × эта цена (`calcWorkLine`), так что они сходятся.
+    const edLabel = workUnitLabel(work, rw);
+    const zaEd = fmtMoney(work.price) + (edLabel ? '/' + edLabel : '');
     return `<div class="sel-work ${rw.cfg?'sel-work-cfg':''} ${line.over?'sel-work-over':''} ${isk?'pozicia-isklyuchena':''}">
-      <span class="sel-work-name">${escapeHtml(rw.cfg ? REF_TILING.layName : work.name)}${
-        cfgParts ? `<span class="sel-work-sub">${escapeHtml(cfgParts)} · ${fmtMoney(work.price)}/м²</span>` : ''}${
+      <span class="sel-work-name">${escapeHtml(rw.cfg ? REF_TILING.layName : work.name)}<span class="sel-work-sub">${
+        cfgParts ? escapeHtml(cfgParts) + ' · ' : ''}${escapeHtml(zaEd)}</span>${
         (rw.doneNote||'').trim() ? `<span class="sel-work-sub otm-zametka">${escapeHtml(rw.doneNote)}</span>` : ''}</span>
       ${rw.cfg ? `<button class="btn-icon sel-work-gear" data-cfg-edit="${room.id}|${rw.lid}" title="Изменить параметры укладки">${ZN_SHESTERNYA}</button>` : ''}
       ${svoya ? `<button class="btn-icon sel-work-gear" data-own-edit="${room.id}|${rw.lid}" title="Изменить название, единицу и цену">✎</button>` : ''}
