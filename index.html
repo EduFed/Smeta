@@ -668,6 +668,17 @@
       opacity:0; pointer-events:none;
       transition:transform .45s cubic-bezier(.45,0,.55,1), opacity .45s ease-in;
     }
+    /* Прилипшая шапка уезжает вместе с кнопкой — те же длина и кривые,
+       см. `menyuPodlozhka`. Уезжает целиком со своей полосой-заслонкой
+       сверху (::before), вверх за край экрана. */
+    .main .proj-header.sticky-head{
+      will-change:transform;
+      transition:transform .45s cubic-bezier(.23,1,.32,1);
+    }
+    body.menyu-skryta .main .proj-header.sticky-head{
+      transform:translateY(calc(-100% - 34px - env(safe-area-inset-top, 0px)));
+      transition:transform .45s cubic-bezier(.45,0,.55,1);
+    }
   }
   .scroll-bottom-btn{
     position:fixed; bottom:calc(20px + env(safe-area-inset-bottom, 0px)); right:20px; z-index:1050;
@@ -4282,7 +4293,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-21-301';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-21-302';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -12661,18 +12672,26 @@ function setNav(open){
 // страницы не дёргали кнопку туда-сюда: мелкие сдвиги копятся, пока
 // не наберут порог.
 // Открыто меню — кнопку не прячем: ею меню и закрывают.
-// ПРИЛИПШАЯ ШАПКА — КНОПКА НА МЕСТЕ. Владелец 21 сентября 2026: «и он не
-// должен улетать в закреплённых шапках, как в видах работ». Там кнопка
-// стоит в строке с заголовком шапки, шапка никуда не уезжает — значит,
-// и кнопке уезжать незачем: под ней не страница, а сама шапка. Таких
-// экранов три: «Виды работ», «Материалы», справочник плиточника.
+// ПРИЛИПШАЯ ШАПКА УЕЗЖАЕТ ВМЕСТЕ С КНОПКОЙ. Сборка 298 держала кнопку
+// на месте в «Видах работ», «Материалах» и справочнике — там она стоит
+// в строке шапки. Владелец 21 сентября 2026: «давай, может, закреплённые
+// шапки тоже сделаем уезжающими?» — одно поведение на всё приложение,
+// и на телефоне освобождается ещё полоса. Шапка и кнопка уезжают
+// и возвращаются вместе (стиль `body.menyu-skryta .proj-header.sticky-head`).
+// Два исключения, иначе мешало бы:
+// · пока страницу не прокрутили на высоту шапки, шапка стоит на своём
+//   месте — спрятав её раньше, оставили бы у верха пустую полосу;
+// · человек печатает в поле внутри шапки — не прячем из-под пальцев.
 let menyuPoslY = 0;
 function menyuPodlozhka(){
   const y = window.scrollY;
   const dy = y - menyuPoslY;
   const b = document.body;
-  if(y <= 4 || b.classList.contains('nav-open')
-     || document.querySelector('.main .proj-header.sticky-head')){
+  const shapka = document.querySelector('.main .proj-header.sticky-head');
+  const pechataet = shapka && document.activeElement && document.activeElement !== b
+                    && shapka.contains(document.activeElement);
+  if(y <= 4 || b.classList.contains('nav-open') || pechataet
+     || (shapka && y <= shapka.offsetHeight)){
     b.classList.remove('menyu-skryta');
     menyuPoslY = y;
   } else if(dy > 6){
