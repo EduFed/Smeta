@@ -615,6 +615,29 @@
     -webkit-mask-image:linear-gradient(to bottom, #000 55%, transparent 100%);
     mask-image:linear-gradient(to bottom, #000 55%, transparent 100%);
   }
+  /* ПОДЛОЖКА ПОД КНОПКОЙ МЕНЮ, КОГДА СТРАНИЦУ ПРОКРУТИЛИ.
+     Владелец 21 сентября 2026: «кнопка-бургер иногда перекрывает либо
+     названия, либо даже кнопки… в калькуляторе либо в настройках»;
+     уточнил: «при прокрутке». Кнопка стоит на месте, а страница едет
+     под ней. Замер на ширине 390: в проекте под кнопкой было видно
+     кнопки, раскрывашки и поля в 128 положениях прокрутки из 143,
+     в калькуляторе — в 22 из 23, в настройках исполнителя — в 5 из 9.
+     А в «Видах работ» — ни в одном: там шапка прилипает к верху
+     и сплошным фоном закрывает всё, что едет под кнопку. Это решение
+     уже было в приложении — его и берём для остальных экранов.
+     Полоса растёт до низа кнопки и становится сплошной; уехавшее вверх
+     уходит под неё, а не под кнопку. На экране со своей прилипшей шапкой
+     полоса остаётся прежней: выросшая, она закрыла бы саму шапку.
+     Включает класс сценарий `menyuPodlozhka`. */
+  @media (max-width:1024px){
+    .verh-tuman{ transition:height .15s ease; }
+    body.menyu-podlozhka .verh-tuman{
+      height:calc(env(safe-area-inset-top, 0px) + 24px + var(--menyu-razmer) + 20px);
+      background:linear-gradient(to bottom, var(--paper) calc(100% - 14px), transparent 100%);
+      -webkit-mask-image:linear-gradient(to bottom, #000 calc(100% - 14px), transparent 100%);
+      mask-image:linear-gradient(to bottom, #000 calc(100% - 14px), transparent 100%);
+    }
+  }
   .scroll-bottom-btn{
     position:fixed; bottom:calc(20px + env(safe-area-inset-bottom, 0px)); right:20px; z-index:1050;
     width:44px; height:44px; border:none; border-radius:50%;
@@ -4228,7 +4251,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-21-291';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-21-292';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -12597,6 +12620,27 @@ async function afterLogin(){
 function setNav(open){
   document.body.classList.toggle('nav-open', open);
 }
+
+// ПОДЛОЖКА ПОД КНОПКОЙ МЕНЮ — когда страницу сдвинули, а своей прилипшей
+// шапки у экрана нет (см. стиль `body.menyu-podlozhka .verh-tuman`).
+// Ширину не проверяем: стиль действует только до 1024 точек, шире кнопки
+// меню нет вовсе. Проверка дешёвая — один поиск по странице на кадр.
+function menyuPodlozhka(){
+  const nado = window.scrollY > 4 && !document.querySelector('.main .proj-header.sticky-head');
+  document.body.classList.toggle('menyu-podlozhka', nado);
+}
+(function menyuPodlozhkaSlezhka(){
+  let zhdyom = false;
+  const raz = ()=>{
+    if(zhdyom) return;
+    zhdyom = true;
+    requestAnimationFrame(()=>{ zhdyom = false; menyuPodlozhka(); });
+  };
+  window.addEventListener('scroll', raz, { passive:true });
+  // Сменился экран — прилипшая шапка могла появиться или пропасть.
+  const ustanovit = ()=> new MutationObserver(raz).observe(document.body, { childList:true, subtree:true });
+  if(document.body) ustanovit(); else document.addEventListener('DOMContentLoaded', ustanovit);
+})();
 function initNav(){
   const open = true; // при каждом открытии приложения меню всегда открыто
   document.body.classList.toggle('nav-open', open);
