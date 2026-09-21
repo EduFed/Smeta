@@ -53,9 +53,6 @@
   }catch(e){}
 })();
 </script>
-<!-- Значок вкладки: тёмный домик на светлой теме, светлый — на тёмной.
-     Манифест приложения тему не различает, поэтому ярлык на экране
-     всегда берёт icon-192.png и icon-512.png. -->
 <!-- Значок вкладки: на светлой теме домик тёмный, на тёмной — светлый.
      Ярлык на домашнем экране берёт icon-192/512.png из манифеста —
      там домик светлый, он одинаково читается на любых обоях. -->
@@ -482,7 +479,6 @@
   .btn-ink{background:var(--ink);color:var(--white);border:1px solid var(--ink);}
   .btn-ink:hover{opacity:.92;}
   .btn-outline:hover{background:var(--ink);color:var(--white);}
-  .btn-danger-text{background:none;border:none;color:var(--red);font-size:12px;cursor:pointer;padding:2px 4px;}
   .btn-icon{background:none;border:none;color:var(--ink-soft);cursor:pointer;font-size:14px;padding:2px 6px;}
   .btn-icon:hover{color:var(--red);}
 
@@ -762,8 +758,7 @@
     transform:rotate(-90deg);        /* по умолчанию свёрнуто — вбок */
   }
   .cust-acc.open .cust-head .chev,
-  .doc-panel.open .doc-main-btn .chev,
-  .smeta-toggle[aria-expanded="true"] .chev{transform:rotate(0deg);}
+  .doc-panel.open .doc-main-btn .chev{transform:rotate(0deg);}
   /* шеврон выпадающего списка «применяется к» не вращается — это не аккордеон */
   .applies-btn .chev{font-size:11px;transition:none;}
 
@@ -1534,16 +1529,12 @@
      к оранжевому, ожидая, что прибавится, а точка исчезнет. */
   #pdDelVert{border-color:var(--paper-line);color:var(--ink-soft);}
   #pdDelVert:hover{border-color:var(--red);color:var(--red);background:none;}
-
-  .work-list{display:flex;flex-direction:column;gap:6px;}
   .work-row{
     display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--paper-line);
     border-radius:var(--radius);background:var(--paper);
   }
   .work-row.checked{border-color:var(--blue);background:var(--white);}
   .work-row input[type=checkbox]{accent-color:var(--orange);width:16px;height:16px;cursor:pointer;}
-  .work-row .wname{flex:1;font-size:13px;}
-  .work-row .wmeta{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--ink-soft);}
   .work-row .manual-qty{
     width:70px;font-family:'JetBrains Mono',monospace;font-size:12px;
     border:1px solid var(--paper-line);border-radius:var(--radius);padding:4px 6px;background:var(--white);
@@ -1761,9 +1752,6 @@
   /* ДОКУМЕНТЫ */
   .docs-block{margin-top:24px;border:1px solid var(--paper-line);border-radius:var(--radius);padding:18px 20px;background:var(--white);}
   .docs-title{font-family:'Space Grotesk','Inter',sans-serif;font-size:15px;font-weight:600;color:var(--ink);margin-bottom:12px;}
-  .docs-row{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:10px 0;border-top:1px solid var(--paper-line);}
-  .docs-row:first-of-type{border-top:none;}
-  .docs-name{font-family:'JetBrains Mono',monospace;font-size:12px;text-transform:uppercase;letter-spacing:0.08em;color:var(--ink-soft);min-width:70px;}
   .docs-btns{display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
   .docs-btns .btn{font-size:13px;padding:8px 12px;}
   .docs-group{display:inline-flex;align-items:center;gap:6px;padding:5px 8px 5px 6px;border:1px solid var(--paper-line);border-radius:var(--radius);}
@@ -1862,7 +1850,6 @@
   .catalog-table td.name-cell{position:relative;overflow:visible;}
   tr.dragging{opacity:0.35;background:var(--orange-soft) !important;}
   tr.dragging td{background:var(--orange-soft) !important;}
-  tr.drag-over td{box-shadow:inset 0 3px 0 var(--orange), inset 0 -3px 0 var(--orange); background:var(--blue-soft) !important;}
   .drag-handle{cursor:grab;color:var(--ink-soft);text-align:center;user-select:none;width:20px;touch-action:none;min-width:28px;font-size:16px;}
   .applies-dd{position:relative;}
   .applies-btn{width:100%;max-width:100%;box-sizing:border-box;text-align:left;font-family:'Inter',sans-serif;font-size:13px;border:1px solid var(--paper-line);border-radius:var(--radius);padding:6px 8px;background:var(--paper);color:var(--ink);cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:6px;}
@@ -1884,8 +1871,6 @@
   .doc-main-btn{width:100%;display:flex;justify-content:flex-start;align-items:center;gap:8px;background:none;border:none;cursor:pointer;padding:16px 20px;text-align:left;font-family:'Space Grotesk','Inter',sans-serif;font-size:15px;font-weight:600;color:var(--ink);}
   .doc-panel-body{max-height:0;overflow:hidden;transition:max-height .35s ease;padding:0 20px;}
   .doc-panel.open .doc-panel-body{max-height:1600px;padding:0 20px 20px;}
-  .extra-works{margin-top:16px;border-top:1px solid var(--paper-line);padding-top:14px;}
-  .extra-title{font-family:'JetBrains Mono',monospace;font-size:11px;text-transform:uppercase;letter-spacing:0.08em;color:var(--ink-soft);margin-bottom:10px;}
   .extra-list{display:flex;flex-direction:column;gap:6px;margin-bottom:8px;}
   /* ДОП. РАБОТА — ТА ЖЕ СТРОКА, ЧТО У ВИДОВ РАБОТ (1 сентября 2026).
      Вид целиком берётся из .sel-work: класс на строке стоит тот же,
@@ -1932,7 +1917,6 @@
      из двух схем в одном и том же блоке одна была видна, а вторая нет.
      `--ink` меняется вместе с темой сам: #1E2A32 на светлой, #E6EAED
      на тёмной. Оба варианта дают контраст с фоном блока с запасом. */
-  .wall-hint{font-size:11px;color:var(--ink-soft);margin:-4px 0 10px;font-style:italic;}
 
   /* СТЕНЫ */
   /* .wall-row — вид из общего правила строки позиции. Своя сетка здесь
@@ -1952,10 +1936,6 @@
     margin-top:8px;font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--ink-soft);
   }
   .floor-total b{color:var(--ink);font-size:14px;}
-  @media (max-width:520px){
-  }
-  @media (max-width:520px){
-  }
 
   .add-room-btn{
     width:100%;padding:16px;border:2px dashed var(--paper-line);border-radius:var(--radius);
@@ -1966,37 +1946,18 @@
 
   /* SMETA TABLE */
   .smeta-wrap{background:var(--white);border:1px solid var(--ink);margin-top:10px;}
-  .smeta-head{
-    padding:14px 20px;border-bottom:1px solid var(--ink);
-    display:flex;justify-content:space-between;align-items:center;
-  }
-  .smeta-head h2{font-family:'Space Grotesk','Inter',sans-serif;font-size:16px;margin:0;}
-  .smeta-toggle{
-    width:100%;background:none;border:none;border-bottom:1px solid var(--ink);
-    cursor:pointer;font:inherit;color:inherit;text-align:left;
-  }
   .smeta-body{max-height:0;overflow:hidden;transition:max-height .3s ease;}
   .smeta-body.open{max-height:6000px;}
-  @media print{ .smeta-body{max-height:none !important;overflow:visible !important;} .smeta-toggle{border-bottom:none;} }
+  @media print{ .smeta-body{max-height:none !important;overflow:visible !important;} }
   table.smeta{width:100%;border-collapse:collapse;font-size:13px;}
   table.smeta th{
     font-family:'JetBrains Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:0.06em;
     text-align:left;color:var(--ink-soft);padding:8px 20px;border-bottom:1px solid var(--paper-line);
   }
   table.smeta td{padding:9px 20px;border-bottom:1px solid var(--paper-line);}
-  table.smeta tr.room-divider td{
-    background:var(--blue-soft);font-weight:600;font-family:'JetBrains Mono',monospace;font-size:11px;
-    text-transform:uppercase;letter-spacing:0.05em;color:var(--blue);
-  }
   table.smeta td.num{font-family:'JetBrains Mono',monospace;text-align:right;white-space:nowrap;}
   table.smeta th:not(:first-child){white-space:nowrap;}
-  .smeta-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;position:relative;}
-  .smeta-scroll-hint{display:none;}
   @media (max-width:640px){
-    .smeta-scroll-hint{
-      display:block;font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--ink-soft);
-      text-align:center;padding:6px 10px;background:var(--paper);border-bottom:1px solid var(--paper-line);
-    }
     .smeta-wrap{position:relative;}
     .smeta-wrap::after{
       content:'';position:absolute;top:60px;bottom:0;right:0;width:24px;
@@ -2004,7 +1965,6 @@
       pointer-events:none;
     }
   }
-  .hint-inline{text-transform:none;letter-spacing:0;font-weight:400;color:var(--ink-soft);font-size:10px;}
   @media (max-width:520px){
     table.smeta{font-size:12px;}
     table.smeta th{padding:8px 10px;}
@@ -2105,8 +2065,6 @@
     .ap-item span{flex:0 0 auto;}
     .ap-item:has(input:checked){border-color:var(--orange);background:var(--orange-soft);}
     /* подсветка при перетаскивании: рамка вокруг карточки, а не полосы в ячейках */
-    .catalog-table tr.drag-over{border-color:var(--orange);background:var(--blue-soft);}
-    .catalog-table tr.drag-over td{box-shadow:none !important;background:transparent !important;}
     .catalog-table tr.dragging td{background:transparent !important;}
   }
 
@@ -2284,17 +2242,6 @@
   .auth-field input:focus{outline:none;border-color:var(--blue);}
   .auth-actions{display:flex;gap:8px;margin-top:4px;}
   .auth-actions .btn{flex:1;}
-  .auth-or{
-    display:flex;align-items:center;gap:10px;
-    margin:18px 0 16px;
-  }
-  .auth-or::before, .auth-or::after{
-    content:'';flex:1;height:1px;background:var(--paper-line);
-  }
-  .auth-or span{
-    font-family:'JetBrains Mono',monospace;font-size:9px;
-    text-transform:uppercase;letter-spacing:0.1em;color:var(--ink-soft);
-  }
 
   .auth-pass-wrap{position:relative;display:flex;}
   .auth-pass-wrap input{flex:1;padding-right:38px;}
@@ -2310,10 +2257,6 @@
   [data-theme="dark"] .auth-eye{ color:var(--sb-muted); }
   [data-theme="dark"] .auth-eye:hover{ color:var(--sb-text); }
   [data-theme="dark"] .auth-eye.on{ color:var(--orange); }
-  .auth-hint{
-    margin-top:14px;font-size:12px;line-height:1.6;text-align:center;
-    color:var(--ink-soft);
-  }
 
   .auth-links{
     display:flex;justify-content:space-between;gap:10px;margin-top:12px;flex-wrap:wrap;
@@ -3028,11 +2971,6 @@
 
   /* произвольный контур помещения */
   .poly-hint{font-size:12px;color:var(--ink-soft);line-height:1.55;margin:0 0 12px;}
-  .poly-head{display:grid;grid-template-columns:26px 1fr 74px 14px 30px;gap:8px;font-size:11px;color:var(--ink-soft);margin-bottom:4px;}
-  .poly-row{display:grid;grid-template-columns:26px 1fr 74px 14px 30px;gap:8px;align-items:center;margin-bottom:6px;}
-  .poly-no{font-size:12px;color:var(--ink-soft);text-align:center;}
-  .poly-in{width:100%;padding:7px 9px;border:1px solid var(--paper-line);border-radius:7px;background:var(--white);color:var(--ink);font-size:14px;}
-  .poly-deg{font-size:12px;color:var(--ink-soft);}
   .poly-warn{margin:12px 0;padding:11px 13px;border-radius:8px;background:var(--akcent-fon);font-size:13px;line-height:1.5;color:var(--ink);}
   .poly-close-btn{display:block;margin-top:10px;}
   .room-plan{display:block;margin:0 auto;max-height:300px;color:var(--ink);}
@@ -3169,7 +3107,6 @@
   .pd-lbl-g.closing .pd-lbl-bg{stroke-dasharray:4 3;fill:var(--paper);}
   .pd-lbl-g.closing .pd-lbl{opacity:.7;}
   .pd-lbl-g.on .pd-lbl{fill:var(--na-akcente);}
-  .pd-svg .pd-lbl-tick{stroke:var(--ink-soft);stroke-width:1;opacity:.4;}
   /* размерная линия по-чертёжному: выноски, сама линия, засечки */
   .pd-svg .pd-dim-ext{stroke:var(--ink-soft);stroke-width:1;opacity:.45;}
   .pd-svg .pd-dim-line{stroke:var(--ink-soft);stroke-width:1.2;opacity:.7;}
@@ -3321,7 +3258,6 @@
   /* Шапка прилипает к верху и перекрывает то, что идёт сразу под ней.
      Отступ нужен всем экранам с sticky-head, а не каждому по отдельности. */
   .proj-header.sticky-head + *{ margin-top:16px; }
-  .catalog-wrap{ padding-top:6px; }
   .mat-hint{max-width:900px;margin:14px 0 18px;font-size:13px;color:var(--ink-soft);line-height:1.55;}
   .mat-sec{margin-bottom:20px;max-width:900px;}
   .mat-sec-title{font-family:'Space Grotesk','Inter',sans-serif;font-size:15px;font-weight:700;
@@ -3354,9 +3290,6 @@
   /* .pm-row — вид берётся из общего правила строки позиции выше. */
   /* Вид полей — из общего правила строки позиции, см. выше. */
   .pm-row .pm-qty{text-align:right;}
-  .pm-actions{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-top:12px;}
-  .pm-actions select{padding:8px 10px;border:1px solid var(--paper-line);border-radius:7px;
-    background:var(--white);color:var(--ink);font-size:14px;min-width:280px;max-width:100%;}
   @media (max-width:760px){
     /* КАЖДЫЙ МАТЕРИАЛ — ОТДЕЛЬНОЙ КАРТОЧКОЙ (сборка 2026-08-10-10).
        На телефоне строка разворачивается в три ряда полей, а между
@@ -3489,7 +3422,6 @@
   /* Строка выполненной работы — приглушённая. Она сделана, и глаз должен
      цепляться за оставшееся, а не за неё. Зачёркивать НЕ стали: работа
      выполнена, а не отменена; зачёркнутое здесь означает исключённое. */
-  .sel-work.rabota-sdelana .sel-work-name{opacity:.62;}
   .otm-bystro{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;}
   .otm-bystro button{flex:1 1 0;min-width:56px;border:1px solid var(--paper-line);
     border-radius:8px;background:var(--white);color:var(--ink);
@@ -3518,7 +3450,6 @@
      правила не заводим (CLAUDE.md). */
   .sk-pr-seg{margin:0 0 4px;flex:1 1 100%;gap:6px;}
   .sk-proyom .ownw-inp{flex:1 1 110px;min-width:0;}
-  .sk-proyom .sk-uzko{flex:0 0 70px;}
   .sk-itog{margin-top:18px;padding-top:14px;border-top:1px solid var(--paper-line);}
   .sk-itog-imya{font-weight:600;margin-bottom:8px;}
   .sk-chisla{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:8px;}
@@ -4306,7 +4237,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-21-308';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-21-309';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -6462,14 +6393,6 @@ function conflictBackup(){
   a.download = 'smeta-копия-' + new Date().toISOString().slice(0,10) + '.json';
   a.click();
   setTimeout(()=> URL.revokeObjectURL(a.href), 2000);
-}
-
-// сеть вернулась — отправляем накопленное
-async function syncPending(){
-  const local = readLocal();
-  if(!local || !local.dirty || !currentUser || !sb) return;
-  setSync('', 'отправляем изменения…');
-  await persist();
 }
 
 // ============================================================
@@ -10547,7 +10470,6 @@ function ocheredVzyat(){
 function ocheredPisat(a){
   try{ localStorage.setItem(FOTO_OCHERED, JSON.stringify(a)); }catch(_){}
 }
-function ocheredSkolko(){ return ocheredVzyat().length; }
 function ocheredZhdyot(id){
   return ocheredVzyat().some(d=> d.id === id && d.delo !== 'udalit');
 }
@@ -12665,10 +12587,6 @@ async function afterLogin(){
   render();
 
   if(!haveCache) hideSplash();   // первый вход: ждать пришлось, зато без пустого экрана
-
-  console.log('Тариф:', isPro() ? 'PRO' : 'FREE',
-              '| оплачен:', isPaid(),
-              '| дней триала:', trialDaysLeft());
 }
 
 // ---------- NAV (сворачивание меню) ----------
@@ -13060,9 +12978,6 @@ async function bootstrap(){
 }
 
 // ---------- CALCULATIONS ----------
-// какие аккордеоны "Виды работ" раскрыты (по помещению), в пределах сессии
-const uiWorksOpen = {};
-
 // СВЁРНУТЫЕ ПОМЕЩЕНИЯ ПЕРЕЖИВАЮТ ЗАКРЫТИЕ ПРИЛОЖЕНИЯ (сборка 2026-08-10-10).
 // Раньше жили в памяти вкладки и терялись, как только телефон выгружал
 // свёрнутое приложение: человек аккуратно сворачивал всё, кроме нужного,
@@ -13472,8 +13387,6 @@ let polyDraw = null;   // {roomId, pts, step, sel, drag}
 // в выбранных единицах.
 const PD_UNITS = { m: { k:1, label:'м', dec:3 }, cm: { k:100, label:'см', dec:1 }, mm: { k:1000, label:'мм', dec:0 } };
 function pdUnit(){ return PD_UNITS[(polyDraw && polyDraw.unit) || 'm'] || PD_UNITS.m; }
-// метры -> выбранные единицы (для показа)
-function pdToU(m){ const u = pdUnit(); return Math.round(m * u.k * 1000)/1000; }
 // выбранные единицы -> метры (после ввода)
 function pdFromU(v){ return v / pdUnit().k; }
 // ТОЧНОСТЬ ДО МИЛЛИМЕТРА. Обычный fmt округляет до сотых — то есть
@@ -18027,9 +17940,6 @@ const PROJ_STATUS = {
 };
 const ICON_ARCH = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8"/><path d="M10 12h4"/></svg>`;
 const ICON_TRASH = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16"/><path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/><path d="M6 7v13a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V7"/></svg>`;
-// булавка, перечёркнутая косой чертой — «открепить»
-const PIN_OFF_SVG = PIN_SVG.replace('</svg>',
-  '<path d="M4 20L20 4" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>');
 
 // Есть ли у человека мышь. Спрашиваем именно про способ ввода, а не про
 // ширину экрана: планшет с клавиатурой и ноутбук с сенсорным экраном —
@@ -21846,14 +21756,11 @@ function attachHandlers(){
       });
     });
     // перетаскивание строк для изменения порядка (Pointer Events — работает мышью и тачем, включая iPad)
-    let dragId = null;
-    let dragOverEl = null;
     main.querySelectorAll('[data-drag-handle]').forEach(handle=>{
       handle.style.touchAction = 'none';
       handle.addEventListener('pointerdown', (e)=>{
         const tr = handle.closest('[data-drag-id]');
         if(!tr) return;
-        dragId = tr.getAttribute('data-drag-id');
         tr.classList.add('dragging');
         handle.setPointerCapture(e.pointerId);
 
@@ -21886,7 +21793,6 @@ function attachHandlers(){
           document.removeEventListener('pointerup', onUp);
           document.removeEventListener('pointercancel', onUp);
           tr.classList.remove('dragging');
-          dragOverEl = null;
           // порядок берём из разметки — ровно тот, который человек видит
           const rows = Array.from(tr.parentNode.querySelectorAll('[data-drag-id]'))
             .map(el=>el.getAttribute('data-drag-id'));
@@ -21906,7 +21812,6 @@ function attachHandlers(){
             const changed = next.some((w,i)=> w.id !== real[i].id);
             if(changed){ state.catalog = next.concat(ghosts); scheduleSave(); render(); }
           }
-          dragId = null;
         };
         document.addEventListener('pointermove', onMove);
         document.addEventListener('pointerup', onUp);
@@ -23249,7 +23154,6 @@ function escapeHtml(s){
 }
 function escapeAttr(s){ return escapeHtml(s); }
 
-// тема: «Авто» = тема телефона, плюс ручной выбор
 // тема: «Авто» = как на телефоне (системная), либо ручной выбор
 function getThemeMode(){ try{ return localStorage.getItem('theme-mode') || 'auto'; }catch(e){ return 'auto'; } }
 function systemPrefersDark(){
@@ -23723,7 +23627,7 @@ if('serviceWorker' in navigator){
 // ============================================================
 //  ЗАСТАВКА: когда прятать
 //  Три правила, каждое важное:
-//  1. Минимум 900 мс. Если приложение открылось мгновенно, заставка
+//  1. Минимум 1,3 секунды (`SPLASH_MIN_MS`). Если приложение открылось мгновенно, заставка
 //     не должна мигнуть — мелькание выглядит хуже пустого экрана.
 //     Заодно это время, за которое логотип успевает дорисоваться.
 //  2. Страховка 8 секунд. Если сеть повисла, заставка не остаётся навсегда.
