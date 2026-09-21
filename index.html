@@ -652,20 +652,21 @@
      `will-change` — выносит кнопку в свой слой отрисовки заранее, как
      у шапки лендинга (`header.nav`): без него айфон дорисовывает
      движение рывками.
-     ДЛИНА — в полтора раза дольше лендинга (владелец: «на 50% плавнее»):
-     0,675 с. Возврат — кривая лендинга (быстро трогается, долго
+     ДЛИНА — 0,45 с, как у лендинга. Была в полтора раза дольше (владелец:
+     «на 50% плавнее»), но плавность там решал айфон, а не длина, — после
+     сборки 300 владелец: «верни 0,45 секунд». Возврат — кривая лендинга (быстро трогается, долго
      тормозит — тормоз приходится на подъезд к месту). Уход — своя кривая:
      мягко трогается и мягко встаёт; таяние — всё движение. */
   @media (max-width:1024px){
     .nav-toggle{
       z-index:850; will-change:transform, opacity;
-      transition:transform .675s cubic-bezier(.23,1,.32,1), opacity .45s ease;
+      transition:transform .45s cubic-bezier(.23,1,.32,1), opacity .3s ease;
     }
     body.nav-open .nav-toggle{ z-index:1100; }
     body.menyu-skryta .nav-toggle{
       transform:translateY(calc(-100% - 30px - env(safe-area-inset-top, 0px)));
       opacity:0; pointer-events:none;
-      transition:transform .675s cubic-bezier(.45,0,.55,1), opacity .675s ease-in;
+      transition:transform .45s cubic-bezier(.45,0,.55,1), opacity .45s ease-in;
     }
   }
   .scroll-bottom-btn{
@@ -4281,7 +4282,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 // Поставьте true, когда настроите SMTP — форма вернётся, код на месте.
 const PASSWORD_LOGIN_ENABLED = true;
 
-const APP_BUILD = '2026-09-21-300';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
+const APP_BUILD = '2026-09-21-301';   // версия сборки — держать в паре с CACHE_VERSION в sw.js
 
 // ============================================================
 //  ЛОКАЛЬНАЯ ПРОВЕРКА БЕЗ СЕРВЕРА
@@ -12653,8 +12654,9 @@ function setNav(open){
 
 // КНОПКА МЕНЮ ПРИ ПРОКРУТКЕ: ВНИЗ — УЕЗЖАЕТ, ВВЕРХ — ВОЗВРАЩАЕТСЯ.
 // Почему так и откуда числа — в стиле `body.menyu-skryta .nav-toggle`.
-// Прячется, как шапка лендинга, только после первых 120 точек: у самого
-// верха страницы кнопка стоит на своём месте рядом с заголовком.
+// УЕЗЖАЕТ СРАЗУ, с первых точек прокрутки. Сборки 295–300 прятали её,
+// как шапку лендинга, только после первых 120 точек; владелец 21 сентября
+// 2026: «да, пусть уезжает сразу».
 // Порог в 6 точек — чтобы дрожание пальца и пружина айфона в конце
 // страницы не дёргали кнопку туда-сюда: мелкие сдвиги копятся, пока
 // не наберут порог.
@@ -12669,7 +12671,7 @@ function menyuPodlozhka(){
   const y = window.scrollY;
   const dy = y - menyuPoslY;
   const b = document.body;
-  if(y <= 120 || b.classList.contains('nav-open')
+  if(y <= 4 || b.classList.contains('nav-open')
      || document.querySelector('.main .proj-header.sticky-head')){
     b.classList.remove('menyu-skryta');
     menyuPoslY = y;
